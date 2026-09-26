@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Duel Monitor</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="title">
+        <span id="me" class="me">—</span>
+        <span class="dot">·</span>
+        <span>vs <b id="them">—</b></span>
+        <span id="meta" class="meta"></span>
+      </div>
+      <div class="right">
+        <nav id="tabs" class="tabs"></nav>
+        <button id="follow" class="follow on" title="Show the newest decision as it arrives">following live</button>
+        <span id="live" class="live">● live</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="log">
+        <ol id="decisions"></ol>
+      </aside>
+
+      <section class="grid">
+        <article class="card accent-green span-2-md">
+          <h2>Decision</h2>
+          <div id="decision" class="decision"><p class="empty">waiting for the first decision…</p></div>
+        </article>
+
+        <article class="card accent-violet">
+          <h2>Mode <small>nextAction</small></h2>
+          <div id="mode" class="bars"></div>
+        </article>
+
+        <article class="card accent-cyan arena-card span-2">
+          <h2>Arena <small id="arena-note"></small></h2>
+          <canvas id="arena"></canvas>
+        </article>
+
+        <article class="card accent-green">
+          <h2>Damage spell</h2>
+          <div id="damage" class="bars"></div>
+        </article>
+
+        <article class="card accent-violet">
+          <h2>Interrupt spell</h2>
+          <div id="interrupt" class="bars"></div>
+          <h2 class="sub">Defense spell</h2>
+          <div id="defense" class="bars"></div>
+        </article>
+
+        <article class="card accent-blue">
+          <h2>Us <small id="us-name"></small></h2>
+          <div id="us" class="status"></div>
+        </article>
+
+        <article class="card accent-red">
+          <h2>Them <small id="them-name"></small></h2>
+          <div id="themStatus" class="status"></div>
+        </article>
+
+        <article class="card accent-amber span-2">
+          <h2>Match <small id="match-title"></small></h2>
+          <div id="match" class="match"></div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

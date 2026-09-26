@@ -1,0 +1,10 @@
+# Pinned upstream sources. Nothing here is modified; our additions live in this repo
+# (server/overlay) and are layered on at build time.
+#
+#   scripts/deps.sh sync     check each one out into vendor/<name> at its pinned commit
+#                            (falls back to the offline bundle when upstream is gone)
+#   scripts/deps.sh backup   refresh the offline git bundles in backups/
+#
+# name      commit                                    url
+modernuo    225c634bf798e545972c16e3465d7896412eefcd  https://github.com/modernuo/ModernUO.git
+laya        4066d5d5fbf08b66c6757ddeedbd797bd7655bc0  https://github.com/NandhaKishorM/laya.git

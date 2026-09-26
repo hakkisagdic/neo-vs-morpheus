@@ -1,0 +1,19 @@
+# dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# pinned upstream checkouts (scripts/deps.sh sync) and their offline bundles
+/vendor/
+/backups/
+
+# EA's Ultima Online client files (copyrighted, never committed)
+/server/client-files/*
+!/server/client-files/README.md
+
+# local secrets and runtime output
+.env
+*.log
+/runs/
+
+.DS_Store

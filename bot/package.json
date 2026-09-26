@@ -1,0 +1,25 @@
+{
+  "name": "neo-vs-morpheus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Headless Ultima Online duel bot driven by System One decision models (Laya, Jev)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "nvm": "node --env-file-if-exists=../.env src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  }
+}

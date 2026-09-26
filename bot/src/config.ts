@@ -1,0 +1,31 @@
+// Settings from the environment (the repo-root .env is loaded by `npm run nvm`).
+
+const env = (name: string, fallback = ""): string => process.env[name]?.trim() || fallback;
+const envInt = (name: string, fallback: number): number => {
+  const value = Number.parseInt(env(name), 10);
+  return Number.isFinite(value) ? value : fallback;
+};
+
+export const config = {
+  uoHost: env("UO_HOST", "127.0.0.1"),
+  uoPort: envInt("UO_PORT", 2593),
+  clientVersion: env("UO_CLIENT_VERSION", "7.0.102.3"),
+  /** Password for the bot accounts (neo, morpheus, ...); they are created on first login. */
+  botPassword: env("BOT_PASSWORD"),
+  ownerAccount: env("NEO_OWNER_USER", "architect"),
+  ownerPassword: env("NEO_OWNER_PASS"),
+  layaUrl: env("LAYA_URL", "http://127.0.0.1:8000"),
+  layaApiKey: env("LAYA_API_KEY"),
+  jevUrl: env("JEV_URL", "https://api.typesafe.ai"),
+  jevPath: env("JEV_PATH", "/v1/systemone"),
+  jevApiKey: env("JEV_API_KEY"),
+  jevModel: env("JEV_MODEL"), // TypeSafe: jev-latest; FreeJev rejects the field
+  monitorPort: envInt("MONITOR_PORT", 8765),
+};
+
+export function requireSetting(value: string, name: string): string {
+  if (!value) {
+    throw new Error(`${name} is not set; add it to .env (see .env.example)`);
+  }
+  return value;
+}

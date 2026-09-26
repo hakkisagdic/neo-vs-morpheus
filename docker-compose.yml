@@ -1,0 +1,78 @@
+# neo-vs-morpheus: ModernUO arena + Laya decision model.
+#
+#   scripts/deps.sh sync                 # pinned upstream sources into vendor/
+#   cp .env.example .env                 # then set NEO_OWNER_PASS
+#   docker compose up -d --build         # server on :2593, Laya on :8000
+#   docker compose down -v --rmi local   # remove everything, including the world and weights
+name: neo-vs-morpheus
+
+services:
+  uo-server:
+    build:
+      context: ./server
+      additional_contexts:
+        modernuo: ./vendor/modernuo
+    image: neo-vs-morpheus/modernuo:225c634
+    ports:
+      # The server hands clients NEO_PUBLIC_ADDRESS:2593 for the game connection, so the host
+      # port must stay 2593. For LAN play set UO_BIND_ADDRESS=0.0.0.0 and NEO_PUBLIC_ADDRESS to
+      # this machine's LAN IP.
+      - "${UO_BIND_ADDRESS:-127.0.0.1}:2593:2593"
+    environment:
+      NEO_OWNER_USER: "${NEO_OWNER_USER:-architect}"
+      NEO_OWNER_PASS: "${NEO_OWNER_PASS:?set NEO_OWNER_PASS in .env (see .env.example)}"
+      NEO_PUBLIC_ADDRESS: "${NEO_PUBLIC_ADDRESS:-127.0.0.1}"
+      NEO_SERVER_NAME: "${NEO_SERVER_NAME:-Neo vs Morpheus}"
+      NEO_EXPANSION: "${NEO_EXPANSION:-7}"
+      NEO_ARENA_MAP: "${NEO_ARENA_MAP:-Felucca}"
+      NEO_ARENA_X: "${NEO_ARENA_X:-1180}"
+      NEO_ARENA_Y: "${NEO_ARENA_Y:-3610}"
+      NEO_REAGENTS: "${NEO_REAGENTS:-200}"
+    volumes:
+      - uo-world:/app/World
+      # Real Ultima Online client files, read-only. Empty folder = synthetic flat arena.
+      - "${UO_DATA_DIR:-./server/client-files}:/uodata:ro"
+    init: true
+    restart: unless-stopped
+
+  laya:
+    # Upstream's own Dockerfile at the pinned commit; CPU inference (Docker on macOS has no GPU).
+    build:
+      context: ./vendor/laya
+      args:
+        TORCH_INDEX: cpu
+        TORCH_VERSION: "2.14.0"
+    image: neo-vs-morpheus/laya:4066d5d
+    command: ["laya-serve"]
+    ports:
+      # Loopback by default; to serve bots on other machines set LAYA_BIND_ADDRESS=0.0.0.0
+      # and LAYA_API_KEY.
+      - "${LAYA_BIND_ADDRESS:-127.0.0.1}:${LAYA_PORT:-8000}:8000"
+    environment:
+      LAYA_HOST: "0.0.0.0"
+      LAYA_PORT: "8000"
+      LAYA_DEVICE: cpu
+      # Preload only the checkpoint the bot uses: laya-typed-decisions beats the base
+      # checkpoints by a wide margin on typed decisions (0.766 vs 0.362 in upstream's benchmark).
+      LAYA_PRELOAD: "1"
+      LAYA_MODELS: "${LAYA_MODELS:-typed-decisions}"
+      LAYA_THREADS: "${LAYA_THREADS:-4}"
+      OMP_NUM_THREADS: "${LAYA_THREADS:-4}"
+      LAYA_API_KEY: "${LAYA_API_KEY:-}"
+      LAYA_LOG_LEVEL: "${LAYA_LOG_LEVEL:-info}"
+      HF_HUB_OFFLINE: "${HF_HUB_OFFLINE:-0}"
+    volumes:
+      - laya-models:/home/laya/.cache/huggingface
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10m
+      start_interval: 2s
+
+volumes:
+  uo-world:
+  laya-models:
