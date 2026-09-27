@@ -24,3 +24,6 @@ coverage/
 # distillation data (teacher outputs) and checkpoints stay local
 /training/data/
 /training/checkpoints/
+
+# python bytecode
+__pycache__/
