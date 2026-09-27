@@ -114,7 +114,15 @@ export class Caster {
         }
       };
 
-      const timer = setTimeout(() => finish("timeout"), castDelayMs(spell) + 2_500);
+      // Self and untargeted spells (Magic Reflection, Earthquake, ...) show no cursor: they are
+      // done once the cast delay passes without a failure message.
+      const noCursor = spell.target === "self" || spell.target === "none";
+      const timer = noCursor
+        ? setTimeout(() => {
+            cursorAt = world.now() - 300;
+            finish("cast");
+          }, castDelayMs(spell) + 300)
+        : setTimeout(() => finish("timeout"), castDelayMs(spell) + 2_500);
       world.on("target", onTarget);
       world.on("journal", onJournal);
       client.send(out.castSpell(spell.id));

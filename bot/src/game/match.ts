@@ -2,6 +2,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelBrain, RuleBrain } from "../brain/brains.ts";
+import { SCENARIOS } from "../eval/scenarios.ts";
 import type { DuelBrain } from "../brain/types.ts";
 import { config, requireSetting } from "../config.ts";
 import type { MatchInfo, MonitorHub, RoundResult } from "../monitor/hub.ts";
@@ -84,6 +85,13 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     startedAt: Date.now(),
   };
   const records: DecisionRecord[] = [];
+
+  // The first call to a model backend is slow (weights to the GPU, kernels compiled); pay it now.
+  for (const brain of [brainA, brainB]) {
+    if (brain instanceof ModelBrain) {
+      await brain.decide(SCENARIOS[0].snapshot).catch((err) => log(`${brain.name} warm-up failed: ${err.message}`));
+    }
+  }
 
   try {
     for (let round = 1; round <= o.rounds; round++) {

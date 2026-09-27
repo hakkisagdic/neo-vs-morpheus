@@ -32,7 +32,8 @@ const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", min
 const hex = (n) => `0x${(n >>> 0).toString(16).toUpperCase().padStart(8, "0")}`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const spellOf = (d) => (d.plan.kind === "cast" ? d.plan.spell : d.plan.kind === "teleport" ? "teleport" : d.plan.kind);
-const modeOf = (d) => (d.plan.kind === "cast" || d.plan.kind === "teleport" ? d.mode.choice : "wait");
+const modeOf = (d) =>
+  d.plan.kind === "cast" || d.plan.kind === "teleport" ? d.mode.choice : d.plan.kind === "retreat" ? "defense" : "wait";
 const probOf = (d) => {
   const dist = { damage: d.damage, interrupt: d.interrupt, defense: d.defense }[d.mode.choice];
   const s = spellOf(d);

@@ -91,6 +91,9 @@ export class RuleBrain implements DuelBrain {
     if (us.poisoned && hp < 0.85 && can("cure")) {
       mode = "defense";
       defense = "cure";
+    } else if (hp < 0.3 && !can("greaterHeal")) {
+      mode = "defense";
+      defense = "retreat";
     } else if (hp < 0.45 && can("greaterHeal")) {
       mode = "defense";
       defense = "greaterHeal";

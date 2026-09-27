@@ -3,11 +3,16 @@ import { parseArgs } from "node:util";
 import { ModelBrain } from "./brain/brains.ts";
 import { systemOne } from "./brain/systemone.ts";
 import { SCENARIOS, scenarioRequest } from "./eval/scenarios.ts";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { labelStates } from "./distill/label.ts";
+import { sampledStates, statesFromRuns } from "./distill/states.ts";
 import { describeDuel, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
 import { Session } from "./game/session.ts";
+import { SkillTrainer } from "./game/train.ts";
 import { MonitorHub } from "./monitor/hub.ts";
 
 const USAGE = `usage: npm run nvm -- <command>
@@ -23,9 +28,15 @@ const USAGE = `usage: npm run nvm -- <command>
            duel Neo:laya npc:EvilMageLord
            duel Neo:laya human:Trinity
 
+  train <Name> [--partner Name] [--resist] [--minutes N] [--goal N]
+                      level a bot: Magery at the best circle, Meditation and Eval Int;
+                      with --partner and --resist they also curse each other for Resisting Spells
   login <Name>        log a bot in (creates account and character) and report
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
   eval [laya] [jev]   decision quality on canonical duel moments, no clock involved
+
+  distill states [n]        write recorded + n sampled duel states to training/data/states.jsonl
+  distill label [limit]     label them with Jev (resumable) into training/data/labeled.jsonl
 `;
 
 const BRAINS = new Set(["laya", "jev", "rules"]);
@@ -92,6 +103,66 @@ async function duel(args: string[]): Promise<void> {
   } finally {
     await new Promise((r) => setTimeout(r, 2_000)); // let the page receive the last frames
     await hub.stop();
+  }
+}
+
+async function train(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      partner: { type: "string" },
+      resist: { type: "boolean", default: false },
+      minutes: { type: "string", default: "30" },
+      goal: { type: "string", default: "100" },
+    },
+  });
+  const name = positionals[0] ?? "Neo";
+  const gm = await Session.gm();
+  const sessions = [await Session.bot(name)];
+  if (values.partner) {
+    sessions.push(await Session.bot(values.partner));
+  }
+  // Put the trainees next to each other at the arena, stocked with reagents.
+  await gm.command(`[NeoPlace ${name} west 2`);
+  if (values.partner) {
+    await gm.command(`[NeoPlace ${values.partner} east 2`);
+  }
+  await new Promise((r) => setTimeout(r, 1_000));
+
+  const ac = new AbortController();
+  const deadline = setTimeout(() => ac.abort(), Number(values.minutes) * 60_000);
+  const trainers = sessions.map((s) => new SkillTrainer(s));
+  if (trainers.length === 2) {
+    trainers[0].partner = sessions[1].world.playerSerial;
+    trainers[1].partner = sessions[0].world.playerSerial;
+    trainers[0].resist = trainers[1].resist = values.resist;
+  }
+  const start = trainers.map((t) => t.snapshot());
+  const report = () => {
+    for (const [i, t] of trainers.entries()) {
+      const now = t.snapshot();
+      const line = Object.entries(now)
+        .map(([k, v]) => `${k} ${v.toFixed(1)}${v > start[i][k] ? ` (+${(v - start[i][k]).toFixed(1)})` : ""}`)
+        .join(", ");
+      console.log(`${t.session.name}: ${line} | ${t.casts} casts, ${t.fizzles} fizzled`);
+    }
+  };
+  const ticker = setInterval(report, 60_000);
+  for (const t of trainers) {
+    t.on("log", (m) => console.log(`${t.session.name}: ${m}`));
+  }
+  try {
+    await Promise.all(
+      trainers.map((t) => t.run(ac.signal, Number(values.goal), async () => void (await gm.command(`[NeoPrep ${t.session.name}`)))),
+    );
+  } finally {
+    clearTimeout(deadline);
+    clearInterval(ticker);
+    report();
+    for (const s of [gm, ...sessions]) {
+      s.close();
+    }
   }
 }
 
@@ -187,17 +258,48 @@ async function evaluate(kinds: string[]): Promise<void> {
   }
 }
 
+const DATA = join(import.meta.dirname, "..", "..", "training", "data");
+
+async function distill(sub: string | undefined, rest: string[]): Promise<void> {
+  await mkdir(DATA, { recursive: true });
+  const statesPath = join(DATA, "states.jsonl");
+  if (sub === "states") {
+    const fromRuns = await statesFromRuns(join(import.meta.dirname, "..", "..", "runs"));
+    const sampled = sampledStates(Number(rest[0] ?? 1200));
+    const all = [...fromRuns, ...sampled];
+    await writeFile(statesPath, all.map((s) => JSON.stringify(s)).join("\n") + "\n");
+    console.log(`${all.length} states (${fromRuns.length} from runs, ${sampled.length} sampled) -> ${statesPath}`);
+  } else if (sub === "label") {
+    const brain = makeBrain("jev");
+    if (!(brain instanceof ModelBrain)) {
+      throw new Error("the teacher must be a model backend");
+    }
+    // Generous timeout: a response lost to a timeout cannot be fetched again (FreeJev answers 409).
+    const teacher = { ...brain.backend, timeoutMs: 30_000 };
+    const n = await labelStates(teacher, statesPath, join(DATA, "labeled.jsonl"), Number(rest[0] ?? 1e9), (m) => console.log(m));
+    console.log(`labeled ${n} states`);
+  } else {
+    console.log(USAGE);
+  }
+}
+
 const [command, ...args] = process.argv.slice(2);
 try {
   switch (command) {
     case "duel":
       await duel(args);
       break;
+    case "train":
+      await train(args);
+      break;
     case "login":
       await login(args[0] ?? "Neo");
       break;
     case "bench":
       await bench(args[0] ?? "laya", Number(args[1] ?? 20));
+      break;
+    case "distill":
+      await distill(args[0], args.slice(1));
       break;
     case "eval":
       await evaluate(args.length ? args : ["laya"]);

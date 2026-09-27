@@ -28,6 +28,8 @@ services:
       NEO_ARENA_X: "${NEO_ARENA_X:-1180}"
       NEO_ARENA_Y: "${NEO_ARENA_Y:-3610}"
       NEO_REAGENTS: "${NEO_REAGENTS:-200}"
+      # Multiplies every skill's gain factor; 1 is the real rate, larger values speed up leveling tests.
+      NEO_SKILL_GAIN: "${NEO_SKILL_GAIN:-1}"
     volumes:
       - uo-world:/app/World
       # Real Ultima Online client files, read-only. Empty folder = synthetic flat arena.

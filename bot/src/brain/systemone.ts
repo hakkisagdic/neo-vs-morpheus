@@ -49,6 +49,7 @@ export async function systemOne(
   backend: Backend,
   state: string | Record<string, unknown>,
   questions: Record<string, ChoiceQuestion>,
+  idempotencyKey: string = crypto.randomUUID(),
 ): Promise<Decision> {
   const started = performance.now();
   const response = await fetch(`${backend.url.replace(/\/$/, "")}${backend.path ?? "/v1/systemone"}`, {
@@ -56,7 +57,7 @@ export async function systemOne(
     headers: {
       "content-type": "application/json",
       // FreeJev bills per request and requires one key per intended call; others ignore it.
-      "idempotency-key": crypto.randomUUID(),
+      "idempotency-key": idempotencyKey,
       ...(backend.apiKey ? { authorization: `Bearer ${backend.apiKey}` } : {}),
     },
     body: JSON.stringify({ ...(backend.model ? { model: backend.model } : {}), state, questions }),

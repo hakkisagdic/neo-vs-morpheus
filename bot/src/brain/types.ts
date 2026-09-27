@@ -15,7 +15,8 @@ export const DAMAGE_SPELLS = [
   "paralyze",
 ] as const;
 export const INTERRUPT_SPELLS = ["harm", "weaken", "magicArrow"] as const;
-export const DEFENSE_SPELLS = ["heal", "greaterHeal", "cure"] as const;
+/** Defensive moves: heals, cure, and running out of the opponent's range. */
+export const DEFENSE_SPELLS = ["heal", "greaterHeal", "cure", "retreat"] as const;
 
 export type Tile = { id: string; x: number; y: number; z: number; label: string };
 
@@ -68,6 +69,7 @@ export type Plan =
   | { kind: "cast"; spell: string; target: "them" | "self" }
   | { kind: "teleport"; tile: Tile }
   | { kind: "approach" }
+  | { kind: "retreat" }
   | { kind: "wait"; ms: number };
 
 export type Decision = {

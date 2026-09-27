@@ -66,6 +66,24 @@ export class Mover {
     });
   }
 
+  /** Runs directly away from a point, sidestepping when blocked; returns tiles gained. */
+  async retreat(from: { x: number; y: number }, maxSteps = 4): Promise<number> {
+    let steps = 0;
+    for (let tries = 0; steps < maxSteps && tries < maxSteps * 3; tries++) {
+      const away = (directionTo(this.session.world.player, from) + 4) % 8;
+      const direction = tries % 3 === 0 ? away : (away + (tries % 3 === 1 ? 1 : 7)) % 8;
+      const facing = this.session.world.player.direction === direction;
+      if (!(await this.step(direction))) {
+        continue;
+      }
+      if (facing) {
+        steps++;
+      }
+      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
+    }
+    return steps;
+  }
+
   /** Runs towards a point until within `stopAt` tiles, taking at most `maxSteps` steps. */
   async approach(target: { x: number; y: number }, stopAt: number, maxSteps = 4): Promise<number> {
     let steps = 0;

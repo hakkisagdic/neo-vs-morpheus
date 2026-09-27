@@ -36,6 +36,16 @@ jq -n \
     }
   }' > Configuration/modernuo.json
 
+# Optional faster leveling for tests: multiply every skill's gain factor (1 = the real rate).
+gain="${NEO_SKILL_GAIN:-1}"
+if [ "$gain" != "1" ]; then
+  [ -f Data/skills.json.orig ] || cp Data/skills.json Data/skills.json.orig
+  jq --argjson m "$gain" 'map(.GainFactor *= $m)' Data/skills.json.orig > Data/skills.json
+  echo "neo-server: skill gain x$gain"
+elif [ -f Data/skills.json.orig ]; then
+  cp Data/skills.json.orig Data/skills.json
+fi
+
 jq --argjson id "${NEO_EXPANSION:-7}" 'map(select(.Id == $id)) | first' \
   Data/expansions.json > Configuration/expansion.json
 

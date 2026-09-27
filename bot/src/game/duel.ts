@@ -239,6 +239,12 @@ export class DuelController extends EventEmitter<DuelEvents> {
       case "teleport":
         outcome = await this.caster.cast(spell("teleport"), { kind: "location", ...plan.tile });
         break;
+      case "retreat": {
+        const gained = await this.mover.retreat(w.mobile(this.opponent), 4);
+        record.outcome = { result: gained > 0 ? "moved" : "blocked" };
+        this.#note(`${this.name} ran ${gained} tiles away from ${this.opponentName}`);
+        break;
+      }
       case "approach":
         await this.mover.approach(w.mobile(this.opponent), SPELL_RANGE - 2, 3);
         record.outcome = { result: "moved" };

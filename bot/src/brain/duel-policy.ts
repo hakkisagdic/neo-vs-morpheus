@@ -54,6 +54,7 @@ const DEFENSE_CRITERIA: Record<string, string> = {
   heal: "In Mani: small quick heal, 0.75 s",
   greaterHeal: "In Vas Mani: large heal, 1.5 s, 11 mana",
   cure: "An Nox: removes poison",
+  retreat: "run out of their spell range to heal and wait out poison safely",
 };
 
 const pct = (value: number, max: number) => (max > 0 ? Math.round((100 * value) / max) : 0);
@@ -177,6 +178,10 @@ export function splitComposite(d: Distribution): Record<Mode | "mode", Distribut
 
 /** Why an option cannot be used right now, or null if it can. */
 export function blocked(key: string, s: DuelSnapshot): string | null {
+  if (key === "retreat") {
+    const hurt = s.us.hits < s.us.hitsMax * 0.8 || s.us.poisoned;
+    return !hurt ? "healthy enough to stand and fight" : s.them.distance > SPELL_RANGE + 2 ? "already out of reach" : null;
+  }
   const sp = spell(key);
   if (s.us.mana < sp.mana) {
     return `not enough mana for ${sp.name}`;
@@ -254,6 +259,9 @@ export function resolvePlan(
     }
     if (m !== mode.choice && !overrides.some((o) => o.startsWith(mode.choice))) {
       overrides.push(`${mode.choice} → ${m}`);
+    }
+    if (key === "retreat") {
+      return { plan: { kind: "retreat" }, why: DEFENSE_CRITERIA.retreat };
     }
     if (key === "teleport") {
       const t = tile ? s.tiles.find((x) => x.id === tile.choice) : s.tiles[0];

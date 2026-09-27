@@ -32,6 +32,8 @@ server falls back to a synthetic flat arena.
 - **Guardrails.** Moves the game would reject or that make no sense (cure while not poisoned,
   not enough mana, poisoning a poisoned target, out of range) fall through to the next most
   probable legal move; each correction is shown on the monitor.
+- **Retreat.** Besides heals and cure, a hurt bot may run out of the opponent's spell range to
+  recover, as duel mages do.
 - **Arena control.** A small C# overlay (`server/overlay`, compiled into ModernUO at image build
   time, upstream untouched) creates the owner account from the environment and adds GM commands
   the orchestrator uses: `[NeoDuel`, `[NeoTemplate`, `[NeoPrep`, `[NeoPlace`, `[NeoMage`, `[NeoClear`.
@@ -54,8 +56,33 @@ in ClassicUO (`human:CharacterName`). Other commands:
 ```bash
 npm run nvm -- eval laya jev            # decision quality on canonical duel moments
 npm run nvm -- bench laya               # decision latency
+npm run nvm -- train Trinity --partner Tank --minutes 30   # level a bot's skills
 npm run nvm -- login Neo                # create/log in a bot and report
 ```
+
+### Laya natively on Apple silicon
+
+Docker on macOS has no GPU, so the Laya container runs on the CPU (1-3 s per decision). Served
+natively on Metal it answers in about 150 ms:
+
+```bash
+scripts/laya-native.sh start            # .laya/ holds the env, weights and log; clean removes it
+# .env: LAYA_URL=http://127.0.0.1:8001
+```
+
+### Teaching Laya to duel
+
+Out of the box Laya does not understand the duel (see Findings). The pipeline to specialise it:
+
+```bash
+npm run nvm -- distill states 1200      # recorded + sampled duel states -> training/data/
+npm run nvm -- distill label            # the teacher's full answer distribution for each (Jev)
+HF_HOME=.laya/hf .laya/venv/bin/python training/finetune.py            # Mac: decision head only
+scripts/laya-native.sh start training/checkpoints/neo-duel             # serve the result
+```
+
+On a GPU, `training/colab_finetune.ipynb` fine-tunes the whole encoder. Teacher labels and
+checkpoints stay local (`training/data`, `training/checkpoints` are git-ignored).
 
 Every match is saved to `runs/` with each decision and the state it was made from.
 
@@ -84,8 +111,8 @@ Live duels against the scripted baseline, which decides in under a millisecond, 
 latency for now: Laya (CPU, 1-5 s per decision) and Jev through the FreeJev proxy (about 3.2 s;
 the demo that inspired this ran at about 0.3 s) both lost 0-3.
 
-Docker on macOS has no GPU access, so Laya runs on the CPU here (about 1-3 s per decision);
-native Apple-silicon inference is much faster.
+Docker on macOS has no GPU access, so Laya runs on the CPU there (about 1-3 s per decision);
+served natively on Metal (`scripts/laya-native.sh`) it takes about 150 ms.
 
 ## Real client files and ClassicUO
 

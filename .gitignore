@@ -17,3 +17,10 @@ coverage/
 /runs/
 
 .DS_Store
+
+# native Laya env, HF cache and fine-tuning output (scripts/laya-native.sh, training/)
+/.laya/
+
+# distillation data (teacher outputs) and checkpoints stay local
+/training/data/
+/training/checkpoints/
