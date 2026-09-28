@@ -2,7 +2,7 @@
 // situations a duel goes through (hurt, poisoned, out of mana, opponent mid-cast, far, close).
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { compositeQuestion, describeDuel, teleportTiles } from "../brain/duel-policy.ts";
+import { FORMAT, compositeQuestion, describeDuel, teleportTiles } from "../brain/duel-policy.ts";
 import type { DuelSnapshot } from "../brain/types.ts";
 import { castDelayMs } from "../game/caster.ts";
 import { spell } from "../uo/spells.ts";
@@ -10,6 +10,8 @@ import { spell } from "../uo/spells.ts";
 export type TrainingState = {
   id: string;
   source: "run" | "sampled";
+  /** The description and question versions the state was written with (see FORMAT). */
+  format: typeof FORMAT;
   state: string;
   questions: ReturnType<typeof compositeQuestion>;
 };
@@ -99,6 +101,7 @@ function sampleSnapshot(r: ReturnType<typeof rng>): DuelSnapshot {
 const toTraining = (id: string, source: TrainingState["source"], s: DuelSnapshot): TrainingState => ({
   id,
   source,
+  format: FORMAT,
   state: describeDuel(s),
   questions: compositeQuestion(s),
 });

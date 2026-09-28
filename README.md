@@ -55,6 +55,8 @@ in ClassicUO (`human:CharacterName`). Other commands:
 
 ```bash
 npm run nvm -- eval laya jev            # decision quality on canonical duel moments
+npm run nvm -- eval laya jev --suite movement   # when to chase, when to stop and heal
+npm run nvm -- duel Neo:laya Morpheus:rules --arena wall   # obstacles: open, pillars, wall
 npm run nvm -- bench laya               # decision latency
 npm run nvm -- train Trinity --partner Tank --minutes 30   # level a bot's skills
 npm run nvm -- login Neo                # create/log in a bot and report

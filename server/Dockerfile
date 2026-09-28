@@ -35,8 +35,15 @@ COPY --from=build /src/Distribution/ ./
 # Synthetic client data for running without EA's files: ModernUO strictly needs only tiledata.mul
 # (a zeroed 7.0.9+ file: every tile passable, no flags) and multi.idx/multi.mul (empty: no
 # multis). Missing map/statics files make it serve flat land at z=0 everywhere.
+# One entry is filled in: item 0x0080, a stone wall block, gets its real flags (Wall 0x10,
+# Impassable 0x40, NoShoot 0x2000) and height 20, so [NeoArena obstacles block walking and line
+# of sight. In the 64-bit format items follow 493,568 bytes of land data, 41 bytes each, with a
+# 4-byte header before every 32; the height is byte 20 of an entry and the name follows it.
 RUN mkdir -p /opt/arena-data \
  && head -c 3188736 /dev/zero > /opt/arena-data/tiledata.mul \
+ && off=$((493568 + (0x80 / 32 + 1) * 4 + 0x80 * 41)) \
+ && printf '\120\040\000\000\000\000\000\000' | dd of=/opt/arena-data/tiledata.mul bs=1 seek=$off conv=notrunc status=none \
+ && printf '\024stone wall' | dd of=/opt/arena-data/tiledata.mul bs=1 seek=$((off + 20)) conv=notrunc status=none \
  && : > /opt/arena-data/multi.idx \
  && : > /opt/arena-data/multi.mul \
  && groupadd --gid 10001 uo \

@@ -1,7 +1,7 @@
 // Decision-quality check without the clock: canonical duel moments whose right answer any
 // duel mage would agree on. Each backend answers the same composite question the bot asks.
 import { compositeQuestion, describeDuel, teleportTiles } from "../brain/duel-policy.ts";
-import type { DuelSnapshot } from "../brain/types.ts";
+import { DAMAGE_SPELLS, type DuelSnapshot } from "../brain/types.ts";
 
 export type Scenario = {
   id: string;
@@ -101,3 +101,46 @@ export const scenarioRequest = (s: Scenario) => ({
   state: describeDuel(s.snapshot),
   questions: compositeQuestion(s.snapshot),
 });
+
+/** Out of spell range any attack means chasing (a teleport or running closer). */
+const CHASE = DAMAGE_SPELLS.map((k) => `damage:${k}`);
+const far = (distance: number): Them => ({ x: 1176 + distance, distance, inRange: distance <= 10 });
+
+/**
+ * Moving: when to chase, when to stop and heal, when to run. Out of range the composite answer is
+ * read as an intent: an attack chases, a defensive move is made where the bot stands.
+ */
+export const MOVEMENT_SCENARIOS: Scenario[] = [
+  {
+    id: "round start, 12 tiles apart, both fresh",
+    accept: CHASE,
+    snapshot: state({}, far(12)),
+  },
+  {
+    id: "opponent nearly dead and running away",
+    accept: CHASE,
+    snapshot: state({ hits: 60 }, { ...far(11), healthPct: 12 }, ["Morpheus took 20 damage", "Morpheus ran 4 tiles away from Neo"]),
+  },
+  {
+    id: "hurt and out of their reach",
+    accept: ["defense:greaterHeal", "defense:heal"],
+    snapshot: state({ hits: 30 }, { ...far(13), healthPct: 70 }, ["Neo took 25 damage", "Neo ran 4 tiles away from Morpheus"]),
+  },
+  {
+    id: "poisoned and out of their reach",
+    accept: ["defense:cure"],
+    snapshot: state({ hits: 50, poisoned: true }, { ...far(12), healthPct: 80 }, ["Neo was poisoned by Morpheus"]),
+  },
+  {
+    id: "nearly dead, no mana to heal, Explosion coming",
+    accept: ["defense:retreat"],
+    snapshot: state({ hits: 12, mana: 8 }, { casting: "explosion", castingForMs: 300, landsInMs: 1700 }, ["Neo took 30 damage", "Morpheus began casting Explosion"]),
+  },
+  {
+    id: "healed up behind distance, opponent waiting",
+    accept: CHASE,
+    snapshot: state({ hits: 90, mana: 70 }, { ...far(12), healthPct: 60 }, ["Neo cast Greater Heal"]),
+  },
+];
+
+export const SUITES: Record<string, Scenario[]> = { duel: SCENARIOS, movement: MOVEMENT_SCENARIOS };

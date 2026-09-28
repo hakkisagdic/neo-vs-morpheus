@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { blocked, resolvePlan, splitComposite } from "../src/brain/duel-policy.ts";
+import { blocked, resolvePlan, splitComposite, teleportTiles } from "../src/brain/duel-policy.ts";
 import type { DuelSnapshot } from "../src/brain/types.ts";
+import { Grid } from "../src/world/grid.ts";
 
 const snapshot = (over: Partial<{ poisoned: boolean; mana: number; casting: string | null; themPoisoned: boolean }> = {}): DuelSnapshot => ({
   now: 0,
@@ -55,5 +56,72 @@ describe("guardrails", () => {
       overrides,
     );
     expect(plan).toEqual({ kind: "cast", spell: "lightning", target: "them" });
+  });
+});
+
+describe("closing in", () => {
+  const at = (distance: number): DuelSnapshot => {
+    const s = snapshot();
+    s.them = { ...s.them, x: distance, distance, inRange: distance <= 10 };
+    s.tiles = teleportTiles(s);
+    return s;
+  };
+  const anything = { choice: "damage", probabilities: { damage: 1, interrupt: 0, defense: 0 } };
+  const spells = { damage: { choice: "magicArrow", probabilities: { magicArrow: 1 } }, interrupt: { choice: "harm", probabilities: { harm: 1 } }, defense: { choice: "heal", probabilities: { heal: 1 } } };
+
+  it("walks when no tile next to the opponent is within teleport range", () => {
+    const s = at(12);
+    expect(s.tiles).toHaveLength(0);
+    expect(blocked("teleport", s)).toMatch(/within 10 tiles/);
+    expect(resolvePlan(s, anything, spells, undefined, []).plan.kind).toBe("approach");
+  });
+
+  it("offers only tiles it can teleport to", () => {
+    const s = at(10);
+    expect(s.tiles.length).toBeGreaterThan(0);
+    for (const t of s.tiles) {
+      expect(Math.max(Math.abs(t.x - s.us.x), Math.abs(t.y - s.us.y))).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it("heals instead of chasing when it wants to defend", () => {
+    const s = at(12);
+    const defend = { choice: "defense", probabilities: { defense: 0.8, damage: 0.2, interrupt: 0 } };
+    const { plan } = resolvePlan(s, defend, { ...spells, defense: { choice: "greaterHeal", probabilities: { greaterHeal: 1 } } }, undefined, []);
+    expect(plan).toMatchObject({ kind: "cast", spell: "greaterHeal", target: "self" });
+  });
+
+  it("chases when there is nothing to heal", () => {
+    const s = at(12);
+    s.us.hits = s.us.hitsMax;
+    const defend = { choice: "defense", probabilities: { defense: 0.8, damage: 0.2, interrupt: 0 } };
+    expect(resolvePlan(s, defend, spells, undefined, []).plan.kind).toBe("approach");
+  });
+});
+
+describe("line of sight", () => {
+  const spells = { damage: { choice: "magicArrow", probabilities: { magicArrow: 1 } }, interrupt: { choice: "harm", probabilities: { harm: 1 } }, defense: { choice: "heal", probabilities: { heal: 1 } } };
+  const attack = { choice: "damage", probabilities: { damage: 1, interrupt: 0, defense: 0 } };
+
+  it("does not cast at an opponent it cannot see, and goes after them instead", () => {
+    const s = snapshot();
+    s.them = { ...s.them, inLineOfSight: false };
+    expect(blocked("magicArrow", s)).toMatch(/out of sight/);
+    expect(blocked("greaterHeal", s)).toBeNull();
+    expect(resolvePlan(s, attack, spells, undefined, []).plan.kind).toBe("approach");
+  });
+
+  it("offers no teleport tile behind a wall", () => {
+    const s = snapshot();
+    s.them = { ...s.them, x: 8, distance: 8 };
+    const wall = new Grid([6, 7, 8, 9, 10].flatMap((y) => [{ x: 7, y: y - 8 }]));
+    const open = teleportTiles(s);
+    const walled = teleportTiles(s, wall);
+    expect(open.some((t) => t.x === 7)).toBe(true);
+    for (const t of walled) {
+      expect(wall.lineOfSight(s.us, t)).toBe(true);
+      expect(wall.isBlocked(t)).toBe(false);
+    }
+    expect(walled.length).toBeLessThan(open.length);
   });
 });

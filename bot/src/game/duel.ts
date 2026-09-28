@@ -6,6 +6,8 @@ import { CLILOC } from "../uo/cliloc.ts";
 import * as out from "../uo/outgoing.ts";
 import { spell } from "../uo/spells.ts";
 import { type CastOutcome, Caster, castDelayMs } from "./caster.ts";
+import { Grid } from "../world/grid.ts";
+import { OBSTACLE_GRAPHICS } from "./arena.ts";
 import { Mover, chebyshev } from "./mover.ts";
 import type { Session } from "./session.ts";
 
@@ -27,6 +29,9 @@ type DuelEvents = {
   log: [text: string];
   end: [end: DuelEnd];
 };
+
+/** After a move that got nowhere (too tired, walled in), wait before deciding again. */
+const BLOCKED_PAUSE_MS = 400;
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -71,8 +76,14 @@ export class DuelController extends EventEmitter<DuelEvents> {
     this.emit("log", text);
   }
 
+  /** The arena's walkable tiles as the client last saw them. */
+  grid(): Grid {
+    return new Grid(this.session.world.blockingTiles(OBSTACLE_GRAPHICS));
+  }
+
   snapshot(): DuelSnapshot {
     const w = this.session.world;
+    const grid = this.grid();
     const now = w.now();
     const p = w.player;
     const t = w.mobile(this.opponent);
@@ -114,11 +125,11 @@ export class DuelController extends EventEmitter<DuelEvents> {
         castingForMs: casting ? now - casting.since : 0,
         landsInMs: casting ? Math.max(0, casting.since + castDelayMs(casting.spell) - now) : 0,
         distance,
-        inLineOfSight: true, // the arena is open ground; real terrain needs the map files
+        inLineOfSight: grid.lineOfSight(p, t),
         inRange: distance <= SPELL_RANGE,
       },
       reagents: w.reagents(),
-      tiles: distance > 2 ? teleportTiles(base as Pick<DuelSnapshot, "us" | "them">) : [],
+      tiles: distance > 2 ? teleportTiles(base as Pick<DuelSnapshot, "us" | "them">, grid) : [],
       recent: [...this.#recent],
     };
   }
@@ -247,15 +258,22 @@ export class DuelController extends EventEmitter<DuelEvents> {
         outcome = await this.caster.cast(spell("teleport"), { kind: "location", ...plan.tile });
         break;
       case "retreat": {
-        const gained = await this.mover.retreat(w.mobile(this.opponent), 4);
+        const gained = await this.mover.retreat(w.mobile(this.opponent), 4, this.grid());
         record.outcome = { result: gained > 0 ? "moved" : "blocked" };
         this.#note(`${this.name} ran ${gained} tiles away from ${this.opponentName}`);
+        if (gained === 0) {
+          await sleep(BLOCKED_PAUSE_MS, signal);
+        }
         break;
       }
-      case "approach":
-        await this.mover.approach(w.mobile(this.opponent), SPELL_RANGE - 2, 3);
-        record.outcome = { result: "moved" };
+      case "approach": {
+        const steps = await this.mover.approach(w.mobile(this.opponent), SPELL_RANGE - 2, 3, this.grid());
+        record.outcome = { result: steps > 0 ? "moved" : "blocked" };
+        if (steps === 0) {
+          await sleep(BLOCKED_PAUSE_MS, signal);
+        }
         break;
+      }
       case "wait":
         await sleep(plan.ms, signal);
         record.outcome = { result: "waited" };

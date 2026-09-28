@@ -37,6 +37,10 @@ export type Item = {
   amount: number;
   container: number;
   hue: number;
+  /** Where it lies, for items on the ground (container 0). */
+  x?: number;
+  y?: number;
+  z?: number;
 };
 
 export type JournalEntry = {
@@ -109,7 +113,7 @@ export class World extends EventEmitter<WorldEvents> {
   mapHeight = 0;
   warMode = false;
   backpack = 0;
-  stats = { str: 0, dex: 0, int: 0, statCap: 0 };
+  stats = { str: 0, dex: 0, int: 0, statCap: 0, weight: 0, maxWeight: 0 };
   readonly mobiles = new Map<number, Mobile>();
   readonly items = new Map<number, Item>();
   readonly skills = new Map<number, Skill>();
@@ -315,9 +319,11 @@ export class World extends EventEmitter<WorldEvents> {
       m.stamMax = r.u16();
       m.mana = r.u16();
       m.manaMax = r.u16();
-      r.skip(4 + 2 + 2); // gold, armor, weight
+      r.skip(4 + 2); // gold, armor
+      this.stats.weight = r.u16();
       if (version >= 5) {
-        r.skip(2 + 1); // max weight, race
+        this.stats.maxWeight = r.u16();
+        r.skip(1); // race
       }
       this.stats.statCap = r.u16();
     }
@@ -509,9 +515,24 @@ export class World extends EventEmitter<WorldEvents> {
     const graphic = r.u16();
     r.skip(1);
     const amount = r.u16();
-    r.skip(2 + 2 + 2 + 1 + 1);
+    r.skip(2);
+    const x = r.u16();
+    const y = r.u16();
+    const z = r.i8();
+    r.skip(1);
     const hue = r.u16();
-    this.items.set(serial, { serial, graphic, amount, container: 0, hue });
+    this.items.set(serial, { serial, graphic, amount, container: 0, hue, x, y, z });
+  }
+
+  /** Ground tiles covered by items with one of the given graphics: the arena's obstacles. */
+  blockingTiles(graphics: ReadonlySet<number>): { x: number; y: number }[] {
+    const tiles: { x: number; y: number }[] = [];
+    for (const item of this.items.values()) {
+      if (item.container === 0 && item.x !== undefined && item.y !== undefined && graphics.has(item.graphic)) {
+        tiles.push({ x: item.x, y: item.y });
+      }
+    }
+    return tiles;
   }
 
   #extended(r: PacketReader): void {

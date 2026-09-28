@@ -1,12 +1,15 @@
 // Match runner: sets up rounds through the GM account, runs the duel controllers, scores them.
+import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelBrain, RuleBrain } from "../brain/brains.ts";
+import { FORMAT } from "../brain/duel-policy.ts";
 import { SCENARIOS } from "../eval/scenarios.ts";
 import type { DuelBrain } from "../brain/types.ts";
 import { config, requireSetting } from "../config.ts";
 import type { MatchInfo, MonitorHub, RoundResult } from "../monitor/hub.ts";
 import { type DecisionRecord, type DuelEnd, DuelController } from "./duel.ts";
+import type { ArenaLayout } from "./arena.ts";
 import { Session } from "./session.ts";
 
 export type BrainKind = "laya" | "jev" | "rules";
@@ -21,6 +24,8 @@ export type MatchOptions = {
   /** Give bots the GM mage template (skill 100) before each round instead of their own skills. */
   template: boolean;
   roundTimeoutMs: number;
+  /** Obstacles to set up before the first round; "open" clears them. */
+  arena: ArenaLayout;
 };
 
 export function makeBrain(kind: BrainKind): DuelBrain {
@@ -102,6 +107,14 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
   };
   const records: DecisionRecord[] = [];
 
+  // Every match states its layout, so obstacles never linger from an earlier one.
+  await gm.command(`[NeoArena ${o.arena}`).catch((err) => {
+    for (const x of sessions) {
+      x.close();
+    }
+    throw err;
+  });
+
   // The first call to a model backend is slow (weights to the GPU, kernels compiled); pay it now.
   for (const brain of [brainA, brainB]) {
     if (brain instanceof ModelBrain) {
@@ -141,6 +154,13 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       }
       log(`round ${round}/${o.rounds}: ${match.title}`);
       await sleep(600); // let both clients see the new positions
+      // An overloaded bot tires after a step or two and then cannot move at all.
+      for (const bot of [botA, botB]) {
+        const { weight, maxWeight } = bot?.world.stats ?? { weight: 0, maxWeight: 0 };
+        if (bot && maxWeight > 0 && weight > maxWeight) {
+          log(`warning: ${bot.name} carries ${weight} of ${maxWeight} stones and will be too tired to move`);
+        }
+      }
 
       const ac = new AbortController();
       const ctrlA = new DuelController(botA, brainA, opponentSerial, opponentName);
@@ -196,9 +216,20 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
 }
 
 /** Keeps every decision with its state: the raw material for evaluating and fine-tuning. */
+/** The commit the bot runs from, marked "+dirty" when the tree has changes; "unknown" outside git. */
+function codeVersion(): string {
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: import.meta.dirname, encoding: "utf8" }).trim();
+  try {
+    return git("rev-parse", "--short", "HEAD") + (git("status", "--porcelain") ? "+dirty" : "");
+  } catch {
+    return "unknown";
+  }
+}
+
 async function saveRun(match: MatchInfo, records: DecisionRecord[]): Promise<void> {
   const dir = join(import.meta.dirname, "..", "..", "..", "runs");
   await mkdir(dir, { recursive: true });
   const stamp = new Date(match.startedAt).toISOString().replace(/[:.]/g, "-");
-  await writeFile(join(dir, `${stamp}.json`), JSON.stringify({ match, records }, null, 1));
+  const versions = { run: 2, code: codeVersion(), ...FORMAT };
+  await writeFile(join(dir, `${stamp}.json`), JSON.stringify({ versions, match, records }, null, 1));
 }

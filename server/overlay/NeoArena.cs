@@ -13,6 +13,7 @@
 //   [NeoTemplate <name> [skill] [stats]     GM mage template (skip leveling for PvP tests)
 //   [NeoMage [type] [distance]              spawn an NPC caster on the east side
 //   [NeoClear [radius]                      delete NPCs and corpses around the arena
+//   [NeoArena <open|pillars|wall>           set the arena's obstacles
 
 using System;
 using System.Collections.Generic;
@@ -108,6 +109,7 @@ public static class ArenaCommands
         CommandSystem.Register("NeoTemplate", AccessLevel.GameMaster, OnTemplate);
         CommandSystem.Register("NeoMage", AccessLevel.GameMaster, OnMage);
         CommandSystem.Register("NeoClear", AccessLevel.GameMaster, OnClear);
+        CommandSystem.Register("NeoArena", AccessLevel.GameMaster, OnArena);
     }
 
     // West and east spots `distance` tiles apart, centered on the arena.
@@ -204,6 +206,58 @@ public static class ArenaCommands
         }
 
         Reply(e.Mobile, $"clear {doomed.Count}");
+    }
+
+    // Obstacles are stone wall blocks. server/Dockerfile gives item 0x0080 its real tiledata
+    // entry (Wall, Impassable, NoShoot, 20 high) in the synthetic data, so the blocks stop
+    // walking and line of sight as walls do on the real map.
+    public const int ObstacleGraphic = 0x0080;
+    private const string ObstacleName = "neo arena obstacle";
+
+    // Offsets from the arena centre. The start spots lie on the centre row, west and east.
+    private static readonly Dictionary<string, (int X, int Y)[]> Layouts = new()
+    {
+        ["open"] = [],
+        // Cover to either side of the line between the start spots.
+        ["pillars"] = [(-3, -2), (3, -2), (-3, 2), (3, 2)],
+        // Across the middle, open at both ends: no straight line from one start to the other.
+        ["wall"] = [(0, -2), (0, -1), (0, 0), (0, 1), (0, 2)],
+    };
+
+    [Usage("NeoArena <open|pillars|wall>")]
+    [Description("Removes the arena's obstacles and places those of the given layout.")]
+    private static void OnArena(CommandEventArgs e)
+    {
+        var name = e.Length > 0 ? e.GetString(0).ToLowerInvariant() : "open";
+        if (!Layouts.TryGetValue(name, out var layout))
+        {
+            Reply(e.Mobile, $"error unknown layout {name}; one of {string.Join(", ", Layouts.Keys)}");
+            return;
+        }
+
+        var map = ArenaSettings.Map;
+        var center = new Point3D(ArenaSettings.Center.X, ArenaSettings.Center.Y, 0);
+        var old = new List<Item>();
+        foreach (var item in map.GetItemsInRange<Static>(center, 30))
+        {
+            if (item.Name == ObstacleName)
+            {
+                old.Add(item);
+            }
+        }
+
+        foreach (var item in old)
+        {
+            item.Delete();
+        }
+
+        foreach (var (dx, dy) in layout)
+        {
+            var block = new Static(ObstacleGraphic) { Name = ObstacleName };
+            block.MoveToWorld(new Point3D(center.X + dx, center.Y + dy, 0), map);
+        }
+
+        Reply(e.Mobile, $"arena {name} {layout.Length}");
     }
 
     [Usage("NeoTemplate <name> [skill=100] [str=90 dex=35 int=100]")]
@@ -314,6 +368,14 @@ public static class ArenaCommands
         foreach (var reagent in pack.FindItemsByType<BaseReagent>())
         {
             stale.Add(reagent);
+        }
+
+        // Every resurrection dresses the player in a new death robe and the old ones pile up in
+        // the pack: after a few hundred rounds, 136 robes (408 stones) left the bots too heavy to
+        // run more than one step.
+        foreach (var robe in pack.FindItemsByType<DeathRobe>())
+        {
+            stale.Add(robe);
         }
 
         foreach (var item in stale)

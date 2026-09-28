@@ -1,6 +1,7 @@
 // Walking: move requests carry a sequence number the server acknowledges in order.
 // A request in a direction we are not facing only turns us.
 import * as out from "../uo/outgoing.ts";
+import type { Grid, Point } from "../world/grid.ts";
 import type { Session } from "./session.ts";
 
 const DX = [0, 1, 1, 1, 0, -1, -1, -1];
@@ -66,8 +67,37 @@ export class Mover {
     });
   }
 
-  /** Runs directly away from a point, sidestepping when blocked; returns tiles gained. */
-  async retreat(from: { x: number; y: number }, maxSteps = 4): Promise<number> {
+  /**
+   * Walks a path tile by tile, at most `maxSteps` steps, stopping early once `done` holds. A step
+   * in a direction we are not facing only turns us, so it is asked again.
+   */
+  async #follow(path: Point[], maxSteps: number, done: () => boolean = () => false): Promise<number> {
+    let steps = 0;
+    for (let i = 0, tries = 0; i < path.length && steps < maxSteps && tries < maxSteps * 3 && !done(); tries++) {
+      const direction = directionTo(this.session.world.player, path[i]);
+      const facing = this.session.world.player.direction === direction;
+      if (!(await this.step(direction))) {
+        break;
+      }
+      if (facing) {
+        steps++;
+        i++;
+      }
+      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
+    }
+    return steps;
+  }
+
+  /**
+   * Runs from a threat. With obstacles around, to the nearest tile it cannot see; otherwise
+   * directly away, sidestepping when blocked. Returns tiles gained.
+   */
+  async retreat(from: { x: number; y: number }, maxSteps = 4, grid?: Grid): Promise<number> {
+    const hide = grid?.cover(this.session.world.player, from, maxSteps);
+    const route = hide && grid ? grid.path(this.session.world.player, hide) : null;
+    if (route) {
+      return this.#follow(route, maxSteps);
+    }
     let steps = 0;
     for (let tries = 0; steps < maxSteps && tries < maxSteps * 3; tries++) {
       const away = (directionTo(this.session.world.player, from) + 4) % 8;
@@ -84,8 +114,17 @@ export class Mover {
     return steps;
   }
 
-  /** Runs towards a point until within `stopAt` tiles, taking at most `maxSteps` steps. */
-  async approach(target: { x: number; y: number }, stopAt: number, maxSteps = 4): Promise<number> {
+  /**
+   * Runs towards a point until within `stopAt` tiles (and, with obstacles around, in its sight),
+   * taking at most `maxSteps` steps; around the obstacles when a grid is given.
+   */
+  async approach(target: { x: number; y: number }, stopAt: number, maxSteps = 4, grid?: Grid): Promise<number> {
+    if (grid) {
+      const player = this.session.world.player;
+      const route = grid.path(player, target);
+      const there = () => chebyshev(player, target) <= stopAt && grid.lineOfSight(player, target);
+      return route ? this.#follow(route.slice(0, -1), maxSteps, there) : 0;
+    }
     let steps = 0;
     while (steps < maxSteps && chebyshev(this.session.world.player, target) > stopAt) {
       const direction = directionTo(this.session.world.player, target);

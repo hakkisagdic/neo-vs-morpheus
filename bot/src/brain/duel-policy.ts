@@ -1,4 +1,5 @@
 // The duel as typed questions, and the guardrails that turn answers into a legal plan.
+import type { Grid } from "../world/grid.ts";
 import { spell } from "../uo/spells.ts";
 import type { ChoiceQuestion } from "./systemone.ts";
 import {
@@ -14,6 +15,13 @@ import {
 
 /** Magery range in ML-era rules. */
 export const SPELL_RANGE = 10;
+
+/**
+ * Versions of the text a model reads and of the options it is offered. Bump one whenever it
+ * changes: every run and every label records them, so data made with different formats never mix
+ * unnoticed.
+ */
+export const FORMAT = { describe: "duel-1", question: "composite-1" } as const;
 
 const REAGENTS: Record<string, string[]> = {
   magicArrow: ["sulfurousAsh"],
@@ -199,10 +207,17 @@ export function blocked(key: string, s: DuelSnapshot): string | null {
     case "poison":
       return s.them.poisoned ? `${s.them.name} is already poisoned` : null;
     case "teleport":
-      return s.tiles.length === 0 || s.them.distance <= 2 ? "already close" : null;
+      return s.them.distance <= 2
+        ? "already close"
+        : s.tiles.length === 0
+          ? `no free tile next to ${s.them.name} within ${SPELL_RANGE} tiles`
+          : null;
   }
   if (sp.harmful && !s.them.inRange) {
     return "out of range";
+  }
+  if (sp.harmful && !s.them.inLineOfSight) {
+    return "out of sight";
   }
   return null;
 }
@@ -237,13 +252,17 @@ export function resolvePlan(
   tile: Distribution | undefined,
   overrides: string[],
 ): { plan: Plan; why: string } {
-  if (!s.them.inRange && !s.them.dead) {
+  // Out of range or out of sight an attack means chasing: teleport next to them if a tile is in
+  // reach, otherwise run closer. Defensive moves still work there, so a hurt bot that ran away
+  // or hid can heal instead of being pulled straight back.
+  const chase = (): { plan: Plan; why: string } => {
     const t = tile ? s.tiles.find((x) => x.id === tile.choice) : s.tiles[0];
     if (t && !blocked("teleport", s)) {
       return { plan: { kind: "teleport", tile: t }, why: `out of range; ${t.label}` };
     }
     return { plan: { kind: "approach" }, why: `${s.them.name} is out of spell range; closing in` };
-  }
+  };
+  const outOfReach = (!s.them.inRange || !s.them.inLineOfSight) && !s.them.dead;
 
   const modes = (Object.entries(mode.probabilities) as [Mode, number][]).sort((a, b) => b[1] - a[1]);
   for (const [m] of modes) {
@@ -252,6 +271,9 @@ export function resolvePlan(
         overrides.push(`interrupt → next mode (${s.them.name} is not casting)`);
       }
       continue;
+    }
+    if (outOfReach && m !== "defense") {
+      return chase();
     }
     const key = pick(byMode[m], s, overrides);
     if (!key) {
@@ -275,11 +297,18 @@ export function resolvePlan(
       m === "defense" ? DEFENSE_CRITERIA[key] : m === "interrupt" ? INTERRUPT_CRITERIA[key] : DAMAGE_CRITERIA[key];
     return { plan: { kind: "cast", spell: key, target }, why };
   }
+  if (outOfReach) {
+    return chase();
+  }
   return { plan: { kind: "wait", ms: 300 }, why: "nothing castable right now; waiting for mana" };
 }
 
-/** Teleport candidates: free tiles next to the opponent, nearest to us first. */
-export function teleportTiles(s: Pick<DuelSnapshot, "us" | "them">): DuelSnapshot["tiles"] {
+/**
+ * Teleport candidates: free tiles next to the opponent, nearest to us first. Teleport targets a
+ * tile like any targeted spell, so only tiles within SPELL_RANGE and in sight count (ModernUO: 10
+ * from T2A on).
+ */
+export function teleportTiles(s: Pick<DuelSnapshot, "us" | "them">, grid?: Grid): DuelSnapshot["tiles"] {
   const { us, them } = s;
   const tiles: DuelSnapshot["tiles"] = [];
   for (let dx = -1; dx <= 1; dx++) {
@@ -290,7 +319,11 @@ export function teleportTiles(s: Pick<DuelSnapshot, "us" | "them">): DuelSnapsho
       const x = them.x + dx;
       const y = them.y + dy;
       const fromUs = Math.max(Math.abs(x - us.x), Math.abs(y - us.y));
-      if (fromUs === 0 || fromUs > 12) {
+      if (fromUs === 0 || fromUs > SPELL_RANGE) {
+        continue;
+      }
+      // The target tile must be free and in our sight, like any spell target.
+      if (grid && (grid.isBlocked({ x, y }) || !grid.lineOfSight(us, { x, y }))) {
         continue;
       }
       tiles.push({ id: "", x, y, z: them.z, label: "" });

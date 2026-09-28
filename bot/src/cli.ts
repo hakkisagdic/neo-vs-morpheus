@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 import { ModelBrain } from "./brain/brains.ts";
 import { systemOne } from "./brain/systemone.ts";
-import { SCENARIOS, scenarioRequest } from "./eval/scenarios.ts";
+import { SUITES, scenarioRequest } from "./eval/scenarios.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type LabeledState, labelStates } from "./distill/label.ts";
@@ -11,6 +11,7 @@ import { describeDuel, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
+import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { Session } from "./game/session.ts";
 import { SkillTrainer } from "./game/train.ts";
 import { MonitorHub } from "./monitor/hub.ts";
@@ -23,6 +24,7 @@ const USAGE = `usage: npm run nvm -- <command>
        --distance N    starting distance in tiles (default 8)
        --timeout S     seconds before a round is scored on health left (default 120)
        --no-template   keep the bots' own skills instead of the GM mage template
+       --arena L       obstacles: open (default), pillars, wall
      e.g.  duel Neo:laya Morpheus:rules
            duel Neo:jev Morpheus:laya --rounds 5
            duel Neo:laya npc:EvilMageLord
@@ -33,7 +35,8 @@ const USAGE = `usage: npm run nvm -- <command>
                       with --partner and --resist they also curse each other for Resisting Spells
   login <Name>        log a bot in (creates account and character) and report
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
-  eval [laya] [jev]   decision quality on canonical duel moments, no clock involved
+  eval [laya] [jev] [--suite duel|movement]
+                      decision quality on canonical moments, no clock involved
 
   distill states [n]        write recorded + n sampled duel states to training/data/states.jsonl
   distill label [limit]     label them with Jev (resumable) into training/data/labeled.jsonl
@@ -74,10 +77,15 @@ async function duel(args: string[]): Promise<void> {
       distance: { type: "string", default: "8" },
       timeout: { type: "string", default: "120" },
       "no-template": { type: "boolean", default: false },
+      arena: { type: "string", default: "open" },
     },
   });
   if (positionals.length !== 2) {
     throw new Error(USAGE);
+  }
+  const arena = values.arena as ArenaLayout;
+  if (!ARENA_LAYOUTS.includes(arena)) {
+    throw new Error(`unknown arena ${values.arena}; one of ${ARENA_LAYOUTS.join(", ")}`);
   }
   const hub = new MonitorHub();
   const url = await hub.start(config.monitorPort);
@@ -91,6 +99,7 @@ async function duel(args: string[]): Promise<void> {
         distance: Number(values.distance),
         template: !values["no-template"],
         roundTimeoutMs: Number(values.timeout) * 1000,
+        arena,
       },
       hub,
       (m) => console.log(m),
@@ -228,7 +237,17 @@ async function bench(kind: string, n: number): Promise<void> {
 
 
 /** Top-1 accuracy and probability mass on acceptable answers, per backend, same questions. */
-async function evaluate(kinds: string[]): Promise<void> {
+async function evaluate(args: string[]): Promise<void> {
+  const suiteAt = args.indexOf("--suite");
+  const suiteName = suiteAt >= 0 ? args[suiteAt + 1] : "duel";
+  const scenarios = SUITES[suiteName];
+  if (!scenarios) {
+    throw new Error(`unknown suite ${suiteName}; one of ${Object.keys(SUITES).join(", ")}`);
+  }
+  const kinds = args.filter((a, i) => a !== "--suite" && i !== suiteAt + 1);
+  if (!kinds.length) {
+    kinds.push("laya");
+  }
   const rows: Record<string, string>[] = [];
   const summary: Record<string, { right: number; mass: number; ms: number }> = {};
   for (const kind of kinds) {
@@ -237,7 +256,7 @@ async function evaluate(kinds: string[]): Promise<void> {
       throw new Error("eval needs laya and/or jev");
     }
     summary[kind] = { right: 0, mass: 0, ms: 0 };
-    for (const [i, sc] of SCENARIOS.entries()) {
+    for (const [i, sc] of scenarios.entries()) {
       const req = scenarioRequest(sc);
       const d = await systemOne(brain.backend, req.state, req.questions);
       const a = d.answers.move;
@@ -255,7 +274,7 @@ async function evaluate(kinds: string[]): Promise<void> {
   }
   console.log("");
   for (const [k, s] of Object.entries(summary)) {
-    const n = SCENARIOS.length;
+    const n = scenarios.length;
     console.log(`${k.padEnd(5)} top-1 ${s.right}/${n} (${Math.round((100 * s.right) / n)}%) · mass on good answers ${Math.round((100 * s.mass) / n)}% · avg ${Math.round(s.ms / n)} ms`);
   }
 }
@@ -289,19 +308,32 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     const text = await readFile(rest[0] ?? join(DATA, "test.jsonl"), "utf8");
     const items = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as LabeledState);
     const top = (p: Record<string, number>) => Object.entries(p).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    // The teacher's most common move is an easy score; agreement on the other states says more.
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      const t = top(it.teacher.probabilities);
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
     let same = 0;
+    let sameRest = 0;
     let mass = 0;
     let ms = 0;
     for (const it of items) {
       const d = await systemOne(brain.backend, it.state, it.questions);
       const pick = top(d.answers.move.probabilities);
-      same += pick === top(it.teacher.probabilities) ? 1 : 0;
+      const teacher = top(it.teacher.probabilities);
+      same += pick === teacher ? 1 : 0;
+      sameRest += pick === teacher && teacher !== common ? 1 : 0;
       mass += it.teacher.probabilities[pick] ?? 0;
       ms += d.latencyMs;
     }
-    const pct = (x: number) => `${((100 * x) / items.length).toFixed(1)}%`;
+    const others = items.length - (counts.get(common) ?? 0);
+    const pct = (x: number, n = items.length) => `${((100 * x) / n).toFixed(1)}%`;
     console.log(`${items.length} held-out states: the teacher's move ${same} times (${pct(same)}), ` +
       `teacher probability of the pick ${pct(mass)}, ${Math.round(ms / items.length)} ms per decision`);
+    console.log(`  where the teacher did not pick its usual ${common}: ${sameRest}/${others} (${pct(sameRest, others)}); ` +
+      `always answering ${common} scores ${pct(items.length - others)}`);
   } else {
     console.log(USAGE);
   }
@@ -326,7 +358,7 @@ try {
       await distill(args[0], args.slice(1));
       break;
     case "eval":
-      await evaluate(args.length ? args : ["laya"]);
+      await evaluate(args);
       break;
     default:
       console.log(USAGE);
