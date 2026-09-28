@@ -15,11 +15,16 @@ Then, from the repo root (standard library only):
     python3 training/colab.py clean     # stop the run and remove everything this script put in the runtime
 
 The runtime clones this repository at the local HEAD, so push before training. Teacher labels
-travel inside a notebook cell (gzip + base64, about 180 KB) and never leave the runtime.
+travel as gzip + base64 in 200 KB pieces through one reused cell, and never leave the runtime.
 
 Each cell runs inside a function and hands directories to its subprocesses, so the kernel's
 names and working directory stay as they were and the runtime can be shared with other
-notebooks. `train` does pip-install Laya into the runtime's Python.
+notebooks. `train` does pip-install Laya into the runtime's Python. On a runtime shared with other
+projects, claim the GPU first (colab-bridge 0.2+) and pass the same --project here:
+
+    colab-bridge --project laya claim --vram 24 --for 30m training
+    python3 training/colab.py all --project laya
+    colab-bridge --project laya release
 """
 import argparse
 import base64
@@ -37,11 +42,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 REPO_URL = "https://github.com/hakkisagdic/neo-vs-morpheus.git"
 REMOTE_HOME = "/content"
 REMOTE_REPO = REMOTE_HOME + "/neo-vs-morpheus"
+CHUNK = 200_000  # base64 characters per upload cell
 
 
 def bridge(args, *command):
     base = ["colab-bridge"] + (["--port", str(args.port)] if args.port else []) + (["--dir", args.dir] if args.dir else [])
-    return base + list(command)
+    return base + (["--project", args.project] if args.project else []) + list(command)
 
 
 def cell(title, body):
@@ -73,13 +79,23 @@ def script():
     return REMOTE_REPO + "/training/finetune.py"
 
 
+def upload(args, payload):
+    """Writes the labels into the runtime piece by piece; the notebook keeps only the last piece."""
+    for i in range(0, len(payload), CHUNK):
+        mode = "w" if i == 0 else "a"
+        run_cell(args, cell("upload", f'''
+with open("{REMOTE_HOME}/{args.name}.labels.b64", "{mode}") as f:
+    f.write("{payload[i:i + CHUNK]}")
+'''))
+
+
 def train(args):
     commit = git("rev-parse", "HEAD")
     if git("branch", "-r", "--contains", commit) == "":
         sys.exit(f"commit {commit[:9]} is not on GitHub yet; push first (the runtime clones it)")
     with open(os.path.join(ROOT, args.data), "rb") as f:
         data = f.read()
-    payload = base64.b64encode(gzip.compress(data, 9)).decode()
+    upload(args, base64.b64encode(gzip.compress(data, 9)).decode())
     setup = cell("setup", f'''
 import base64, gzip, hashlib, os, subprocess
 repo = {REMOTE_REPO!r}
@@ -88,7 +104,9 @@ if not os.path.isdir(repo):
     subprocess.run(["git", "clone", "-q", {REPO_URL!r}, repo], check=True)
 subprocess.run("git fetch -q --depth 1 origin {commit} && git checkout -q FETCH_HEAD", shell=True, check=True, cwd=repo)
 os.makedirs(repo + "/training/data", exist_ok=True)
-data = gzip.decompress(base64.b64decode("{payload}"))
+with open("{REMOTE_HOME}/{args.name}.labels.b64") as f:
+    data = gzip.decompress(base64.b64decode(f.read()))
+os.remove("{REMOTE_HOME}/{args.name}.labels.b64")
 with open(repo + "/training/data/labeled.jsonl", "wb") as f:
     f.write(data)
 ok = hashlib.sha256(data).hexdigest() == "{hashlib.sha256(data).hexdigest()}"
@@ -104,7 +122,8 @@ if subprocess.run(["pgrep", "-f", {script()!r}], capture_output=True).returncode
 with open("{REMOTE_HOME}/{args.name}.log", "w") as log:
     p = subprocess.Popen(["python", "-u", {script()!r}, "--mode", "top",
                           "--train-top-layers", "{args.train_top_layers}", "--epochs", "{args.epochs}",
-                          "--batch", "{args.batch}", "--accum", "1", "--data", "training/data/labeled.jsonl",
+                          "--batch", "{args.batch}", "--accum", "1", "--holdout", "{args.holdout}",
+                          "--data", "training/data/labeled.jsonl",
                           "--out", "training/checkpoints/{args.name}"],
                          cwd={REMOTE_REPO!r}, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
 print("training started, pid", p.pid)
@@ -114,7 +133,7 @@ print("training started, pid", p.pid)
 
 def status(args, quiet=False):
     code = cell("status", f'''
-import os, subprocess
+import os, shutil, subprocess
 path = "{REMOTE_HOME}/{args.name}.log"
 lines = []
 if os.path.exists(path):
@@ -122,7 +141,13 @@ if os.path.exists(path):
         lines = f.read().splitlines()
 keep = [l for l in lines if l.startswith(("device", "trainable", "before", "epoch", "fitted", "saved", "Traceback")) or "Error" in l]
 print("\\n".join(keep[-10:]))
-print("running", subprocess.run(["pgrep", "-f", {script()!r}], capture_output=True).returncode == 0)
+pids = subprocess.run(["pgrep", "-f", {script()!r}], capture_output=True, text=True).stdout.split()
+print("running", bool(pids))
+apps = subprocess.run(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader"],
+                      capture_output=True, text=True).stdout if pids and shutil.which("nvidia-smi") else ""
+for line in apps.splitlines():
+    if line.split(",")[0].strip() in pids:
+        print("gpu memory", line.split(",")[1].strip())
 ''')
     out = run_cell(args, code)
     if not quiet:
@@ -185,7 +210,7 @@ def clean(args):
 import os, shutil, subprocess
 subprocess.run(["pkill", "-f", {script()!r}])
 shutil.rmtree({REMOTE_REPO!r}, ignore_errors=True)
-for path in ("{REMOTE_HOME}/{args.name}.log", "{REMOTE_HOME}/{args.name}.tar"):
+for path in ("{REMOTE_HOME}/{args.name}.log", "{REMOTE_HOME}/{args.name}.tar", "{REMOTE_HOME}/{args.name}.labels.b64"):
     if os.path.exists(path):
         os.remove(path)
 print("removed", {REMOTE_REPO!r}, "and {REMOTE_HOME}/{args.name}.log")
@@ -198,11 +223,13 @@ def main():
     ap.add_argument("command", choices=["train", "status", "wait", "fetch", "all", "clean"])
     ap.add_argument("--port", type=int, help="colab-bridge control port (default: colab-bridge's own)")
     ap.add_argument("--dir", help="colab-bridge state dir, for bridges started with --dir")
+    ap.add_argument("--project", help="colab-bridge 0.2+ project: names our cells and holds our GPU claim on a shared runtime")
     ap.add_argument("--name", default="neo-duel", help="checkpoint name")
     ap.add_argument("--data", default="training/data/labeled.jsonl")
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--train-top-layers", type=int, default=28, help="28 = the whole encoder")
+    ap.add_argument("--holdout", type=float, default=0.1, help="share of the labels kept for fitting the temperature")
     ap.add_argument("--keep-tar", action="store_true", help="keep the downloaded tarball (e.g. for a release)")
     args = ap.parse_args()
     if args.command in ("train", "all"):

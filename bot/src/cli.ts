@@ -3,9 +3,9 @@ import { parseArgs } from "node:util";
 import { ModelBrain } from "./brain/brains.ts";
 import { systemOne } from "./brain/systemone.ts";
 import { SCENARIOS, scenarioRequest } from "./eval/scenarios.ts";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { labelStates } from "./distill/label.ts";
+import { type LabeledState, labelStates } from "./distill/label.ts";
 import { sampledStates, statesFromRuns } from "./distill/states.ts";
 import { describeDuel, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot } from "./brain/types.ts";
@@ -37,6 +37,8 @@ const USAGE = `usage: npm run nvm -- <command>
 
   distill states [n]        write recorded + n sampled duel states to training/data/states.jsonl
   distill label [limit]     label them with Jev (resumable) into training/data/labeled.jsonl
+  distill agree [file]      how often Laya picks the teacher's move on held-out labels
+                            (default training/data/test.jsonl, written by training/split.py)
 `;
 
 const BRAINS = new Set(["laya", "jev", "rules"]);
@@ -274,10 +276,32 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     if (!(brain instanceof ModelBrain)) {
       throw new Error("the teacher must be a model backend");
     }
-    // Generous timeout: a response lost to a timeout cannot be fetched again (FreeJev answers 409).
-    const teacher = { ...brain.backend, timeoutMs: 30_000 };
+    // Generous timeout: a response lost to a timeout cannot be fetched again (FreeJev answers 409),
+    // and a busy FreeJev can take a minute or more.
+    const teacher = { ...brain.backend, timeoutMs: 120_000 };
     const n = await labelStates(teacher, statesPath, join(DATA, "labeled.jsonl"), Number(rest[0] ?? 1e9), (m) => console.log(m));
     console.log(`labeled ${n} states`);
+  } else if (sub === "agree") {
+    const brain = makeBrain("laya");
+    if (!(brain instanceof ModelBrain)) {
+      throw new Error("the student must be a model backend");
+    }
+    const text = await readFile(rest[0] ?? join(DATA, "test.jsonl"), "utf8");
+    const items = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as LabeledState);
+    const top = (p: Record<string, number>) => Object.entries(p).reduce((a, b) => (b[1] > a[1] ? b : a))[0];
+    let same = 0;
+    let mass = 0;
+    let ms = 0;
+    for (const it of items) {
+      const d = await systemOne(brain.backend, it.state, it.questions);
+      const pick = top(d.answers.move.probabilities);
+      same += pick === top(it.teacher.probabilities) ? 1 : 0;
+      mass += it.teacher.probabilities[pick] ?? 0;
+      ms += d.latencyMs;
+    }
+    const pct = (x: number) => `${((100 * x) / items.length).toFixed(1)}%`;
+    console.log(`${items.length} held-out states: the teacher's move ${same} times (${pct(same)}), ` +
+      `teacher probability of the pick ${pct(mass)}, ${Math.round(ms / items.length)} ms per decision`);
   } else {
     console.log(USAGE);
   }
