@@ -77,9 +77,15 @@ Out of the box Laya does not understand the duel (see Findings). The pipeline to
 ```bash
 npm run nvm -- distill states 1200      # recorded + sampled duel states -> training/data/
 npm run nvm -- distill label            # the teacher's full answer distribution for each (Jev)
-HF_HOME=.laya/hf .laya/venv/bin/python training/finetune.py            # Mac: decision head only
+python3 training/split.py               # train.jsonl and a fixed test set no checkpoint trains on
+HF_HOME=.laya/hf .laya/venv/bin/python training/finetune.py --data training/data/train.jsonl  # Mac: head only
 scripts/laya-native.sh start training/checkpoints/neo-duel             # serve the result
+npm run nvm -- distill agree            # how often the served Laya picks Jev's move on the test set
 ```
+
+The best states to label are the ones Laya itself runs into: let the current checkpoint play
+(`duel Neo:laya Morpheus:laya`, or against `rules`), then `distill states` picks up the new runs.
+Keep evaluation matches out of `runs/` so they never become training data.
 
 On a GPU the whole encoder is fine-tuned. With a Colab runtime connected through
 [colab-bridge](https://github.com/hakkisagdic/colab-bridge), one command trains there (about two
@@ -87,13 +93,14 @@ minutes on an RTX PRO 6000) and brings the checkpoint home; `training/colab_fine
 manual route:
 
 ```bash
-python3 training/colab.py all           # the runtime clones the local HEAD, so push first
-python3 training/colab.py clean         # remove the clone and the log from the runtime
+python3 training/colab.py all --data training/data/train.jsonl   # the runtime clones HEAD: push first
+python3 training/colab.py clean                                  # remove our files from the runtime
 ```
 
-`training/data` and `training/checkpoints` are git-ignored. The 1,327 teacher labels and the
-fine-tuned checkpoint are published as the
-[neo-duel-v1 release](https://github.com/hakkisagdic/neo-vs-morpheus/releases/tag/neo-duel-v1).
+`training/data` and `training/checkpoints` are git-ignored. The fine-tuned checkpoint is published
+as the [neo-duel-v1 release](https://github.com/hakkisagdic/neo-vs-morpheus/releases/tag/neo-duel-v1);
+the teacher labels are held back until FreeJev and TypeSafe confirm that redistributing Jev
+outputs is fine.
 
 Every match is saved to `runs/` with each decision and the state it was made from.
 
@@ -124,24 +131,33 @@ a 16 GB Mac can hold) moves it from 0 to 4 of 12. Fine-tuning the whole encoder 
 fine-tuning, 51% with the head only).
 
 **Live duels.** Speed decides a lot: a bot that thinks for seconds stands still while the other
-one casts.
+one casts. Rounds start 8 tiles apart, and each pairing plays from both sides, since the east
+start has an edge in an exchange of Magic Arrows.
 
-| Neo | Morpheus | score |
+| fighter (decision time) | opponent (decision time) | score |
 |---|---|---|
-| Laya not fine-tuned, Docker CPU (1-5 s) | scripted baseline (< 1 ms) | 0-3 |
-| Jev via FreeJev (3.3 s) | scripted baseline | 0-3 |
-| Laya not fine-tuned, Metal (0.15 s) | scripted baseline | 3-5 |
-| Laya distilled head, Metal (0.25 s) | scripted baseline | 4-4 |
-| Jev via FreeJev (3.3 s) | Laya distilled head, Metal (0.25 s) | 1-2 |
-| Laya fine-tuned end to end, Metal (0.27 s) | scripted baseline | 4-4 |
-| Jev via FreeJev (3.2 s) | Laya fine-tuned end to end, Metal (0.26 s) | 5-5 |
+| Laya not fine-tuned, Docker CPU (1-5 s) | scripted baseline (< 1 ms) | 0-3 (west only) |
+| Laya not fine-tuned, Metal (0.28 s) | scripted baseline | 2-6 |
+| Jev via FreeJev (3.2 s) | scripted baseline | 0-6 |
+| Laya fine-tuned end to end, Metal (0.28 s) | scripted baseline | 32-1 |
+| Jev via FreeJev (3.2 s) | Laya fine-tuned end to end, Metal (0.28 s) | 0-20 |
 
-Head to head, the fine-tuned Laya and Jev are level over ten rounds. Laya answers about twelve
-times faster and gets 54 spells off to Jev's 30, but Jev's hits disturb a third of its casts;
-Jev acts half as often and chooses slightly better (9 against 8 of the 12 moments above). So a
-free local model that got none of those moments right out of the box, taught with 1,195 of
-Jev's answers, fights Jev to a draw. The FreeJev proxy adds most of Jev's latency (TypeSafe
-quotes 70-500 ms), and the samples are small.
+Head to head, the fine-tuned Laya wins every round. It decides in 0.28 s to Jev's 3.2 s and
+acts twice as often (344 decisions to 174 over the 20 rounds); Jev's arrows disturb 37% of its
+casts, yet it lands a third more spells (216 to 162), and rounds end on the last arrow. Jev
+chooses slightly better (9 against 8 of the 12 moments above), which does not make up for the
+time. So a free local model that got none of those moments right out of the box, taught with
+1,195 of Jev's answers, beats Jev in the duel. The FreeJev proxy adds most of Jev's latency
+(TypeSafe quotes 70-500 ms).
+
+It is still only a duel of Magic Arrows at medium range. From 4 tiles the scripted bot beats the
+fine-tuned Laya 15-5 (Laya west), and from 12 tiles, out of spell range, neither side closes in
+and every round is drawn: moving, chasing and fleeing come next ([roadmap](docs/ROADMAP.md)).
+
+*Correction, 28 September 2026.* An NPC mage left over from a test on 26 September stood next
+to the west start and fought in every duel after it. The live results above replace the
+earlier ones: all were re-run in an empty arena (the orchestrator now clears the arena before
+every round), and the head-only model's live rows were dropped with that model.
 
 ## Real client files and ClassicUO
 
