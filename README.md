@@ -94,25 +94,36 @@ docker compose down -v --rmi local
 
 ## Findings so far
 
-Canonical duel moments whose right answer any duel mage agrees on (cure when poisoned, break an
-Explosion being cast, heal when low, finish a nearly dead opponent, ...), same question to both:
+**Decision quality.** Twelve canonical duel moments whose right answer any duel mage agrees on
+(cure when poisoned, break an Explosion being cast, heal when low, finish a nearly dead
+opponent, ...), the same composite question to every model; no clock involved:
 
-| model | right move (top-1) | probability on right moves | avg latency |
+| model | right move (top-1) | probability on right moves | latency |
 |---|---|---|---|
 | Jev 1.13 (via FreeJev) | 9 / 12 | 61% | 3.3 s |
-| Laya `typed-decisions`, not fine-tuned (Docker, CPU) | 0 / 12 | 13% | 1.3 s |
+| Laya `typed-decisions`, not fine-tuned | 0 / 12 | 13% | 0.15 s (Metal) |
+| Laya, decision head distilled from 1,195 Jev labels (on a Mac) | 4 / 12 | 30% | 0.25 s (Metal) |
 
 Out of the box Laya matches words rather than situations (a poisoned bot "chooses" Poison; an
-opponent casting Explosion makes it cast Explosion). That matches Laya's own benchmarks, where
-the capability comes from fine-tuning. The next step is fine-tuning Laya on duel decisions
-(distilled from Jev and the recorded runs).
+opponent casting Explosion makes it cast Explosion), in line with Laya's own benchmarks where
+the capability comes from fine-tuning. Training only the decision head (the encoder frozen, all
+a 16 GB Mac can hold) moves it from 0 to 4 of 12; fine-tuning the whole encoder on a GPU
+(`training/colab_finetune.ipynb`) is the next experiment.
 
-Live duels against the scripted baseline, which decides in under a millisecond, are decided by
-latency for now: Laya (CPU, 1-5 s per decision) and Jev through the FreeJev proxy (about 3.2 s;
-the demo that inspired this ran at about 0.3 s) both lost 0-3.
+**Live duels.** Speed decides a lot: a bot that thinks for seconds stands still while the other
+one casts.
 
-Docker on macOS has no GPU access, so Laya runs on the CPU there (about 1-3 s per decision);
-served natively on Metal (`scripts/laya-native.sh`) it takes about 150 ms.
+| Neo | Morpheus | score |
+|---|---|---|
+| Laya not fine-tuned, Docker CPU (1-5 s) | scripted baseline (< 1 ms) | 0-3 |
+| Jev via FreeJev (3.3 s) | scripted baseline | 0-3 |
+| Laya not fine-tuned, Metal (0.15 s) | scripted baseline | 3-5 |
+| Laya distilled head, Metal (0.25 s) | scripted baseline | 4-4 |
+| Jev via FreeJev (3.3 s) | Laya distilled head, Metal (0.25 s) | 1-2 |
+
+So the claim that started this project holds in UO too: local Laya beats cloud Jev by deciding
+about 13 times faster, even though Jev picks better moves. The FreeJev proxy adds most of Jev's
+latency (TypeSafe quotes 70-500 ms), and the samples are small.
 
 ## Real client files and ClassicUO
 

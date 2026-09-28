@@ -139,10 +139,19 @@ def fit_temperature(rows):
     if not math.isfinite(t):
         # LBFGS can diverge (NaN) when the head is still undertrained and the
         # held-out logits are flat; fall back to a coarse grid search.
-        grid = torch.tensor([x / 20 for x in range(10, 101)])  # 0.5 .. 5.0
-        losses = -(t_all * torch.log_softmax(z_all[None] / grid[:, None, None], -1)).sum(-1).mean(-1)
-        t = float(grid[torch.nanargmin(losses)].item())
+        t = grid_temperature(z_all, t_all)
     return max(0.5, min(5.0, t))
+
+
+def grid_temperature(z_all, t_all):
+    """Temperature in 0.5..5.0 (steps of 0.05) with the lowest soft cross-entropy; NaN-safe."""
+    ok = torch.isfinite(z_all).all(-1) & torch.isfinite(t_all).all(-1)
+    if not ok.any():
+        return 1.0
+    z_all, t_all = z_all[ok], t_all[ok]
+    grid = torch.tensor([x / 20 for x in range(10, 101)])
+    losses = -(t_all * torch.log_softmax(z_all[None] / grid[:, None, None], -1)).sum(-1).mean(-1)
+    return float(grid[torch.argmin(torch.nan_to_num(losses, nan=float("inf")))].item())
 
 
 class Head(torch.nn.Module):
