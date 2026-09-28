@@ -81,8 +81,19 @@ HF_HOME=.laya/hf .laya/venv/bin/python training/finetune.py            # Mac: de
 scripts/laya-native.sh start training/checkpoints/neo-duel             # serve the result
 ```
 
-On a GPU, `training/colab_finetune.ipynb` fine-tunes the whole encoder. Teacher labels and
-checkpoints stay local (`training/data`, `training/checkpoints` are git-ignored).
+On a GPU the whole encoder is fine-tuned. With a Colab runtime connected through
+[colab-bridge](https://github.com/hakkisagdic/colab-bridge), one command trains there (about two
+minutes on an RTX PRO 6000) and brings the checkpoint home; `training/colab_finetune.ipynb` is the
+manual route:
+
+```bash
+python3 training/colab.py all           # the runtime clones the local HEAD, so push first
+python3 training/colab.py clean         # remove the clone and the log from the runtime
+```
+
+`training/data` and `training/checkpoints` are git-ignored. The 1,327 teacher labels and the
+fine-tuned checkpoint are published as the
+[neo-duel-v1 release](https://github.com/hakkisagdic/neo-vs-morpheus/releases/tag/neo-duel-v1).
 
 Every match is saved to `runs/` with each decision and the state it was made from.
 
@@ -103,12 +114,14 @@ opponent, ...), the same composite question to every model; no clock involved:
 | Jev 1.13 (via FreeJev) | 9 / 12 | 61% | 3.3 s |
 | Laya `typed-decisions`, not fine-tuned | 0 / 12 | 13% | 0.15 s (Metal) |
 | Laya, decision head distilled from 1,195 Jev labels (on a Mac) | 4 / 12 | 30% | 0.25 s (Metal) |
+| Laya, whole encoder fine-tuned on the same labels (Colab GPU) | 8 / 12 | 51% | 0.36 s (Metal) |
 
 Out of the box Laya matches words rather than situations (a poisoned bot "chooses" Poison; an
 opponent casting Explosion makes it cast Explosion), in line with Laya's own benchmarks where
 the capability comes from fine-tuning. Training only the decision head (the encoder frozen, all
-a 16 GB Mac can hold) moves it from 0 to 4 of 12; fine-tuning the whole encoder on a GPU
-(`training/colab_finetune.ipynb`) is the next experiment.
+a 16 GB Mac can hold) moves it from 0 to 4 of 12. Fine-tuning the whole encoder takes it to 8 of
+12, one short of its teacher, and it picks Jev's move on 74% of held-out states (6% before
+fine-tuning, 51% with the head only).
 
 **Live duels.** Speed decides a lot: a bot that thinks for seconds stands still while the other
 one casts.
@@ -120,10 +133,15 @@ one casts.
 | Laya not fine-tuned, Metal (0.15 s) | scripted baseline | 3-5 |
 | Laya distilled head, Metal (0.25 s) | scripted baseline | 4-4 |
 | Jev via FreeJev (3.3 s) | Laya distilled head, Metal (0.25 s) | 1-2 |
+| Laya fine-tuned end to end, Metal (0.27 s) | scripted baseline | 4-4 |
+| Jev via FreeJev (3.2 s) | Laya fine-tuned end to end, Metal (0.26 s) | 5-5 |
 
-So the claim that started this project holds in UO too: local Laya beats cloud Jev by deciding
-about 13 times faster, even though Jev picks better moves. The FreeJev proxy adds most of Jev's
-latency (TypeSafe quotes 70-500 ms), and the samples are small.
+Head to head, the fine-tuned Laya and Jev are level over ten rounds. Laya answers about twelve
+times faster and gets 54 spells off to Jev's 30, but Jev's hits disturb a third of its casts;
+Jev acts half as often and chooses slightly better (9 against 8 of the 12 moments above). So a
+free local model that got none of those moments right out of the box, taught with 1,195 of
+Jev's answers, fights Jev to a draw. The FreeJev proxy adds most of Jev's latency (TypeSafe
+quotes 70-500 ms), and the samples are small.
 
 ## Real client files and ClassicUO
 
