@@ -63,9 +63,25 @@ function parseDuelReply(reply: string): Map<string, number> {
 }
 
 export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string) => void): Promise<RoundResult[]> {
-  const gm = await Session.gm(log);
-  const botA = await Session.bot(o.a.name, log);
-  const botB = o.b.kind === "bot" ? await Session.bot(o.b.name, log) : null;
+  // Open sessions keep the process alive: close the ones already logged in if a later login fails.
+  const sessions: Session[] = [];
+  const open = async (s: Promise<Session>) => {
+    sessions.push(await s);
+    return sessions[sessions.length - 1];
+  };
+  let gm: Session;
+  let botA: Session;
+  let botB: Session | null;
+  try {
+    gm = await open(Session.gm(log));
+    botA = await open(Session.bot(o.a.name, log));
+    botB = o.b.kind === "bot" ? await open(Session.bot(o.b.name, log)) : null;
+  } catch (err) {
+    for (const s of sessions) {
+      s.close();
+    }
+    throw err;
+  }
   const brainA = makeBrain(o.a.brain);
   const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain) : null;
 
@@ -106,10 +122,13 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
         }
       }
 
+      // Every round starts in an empty arena: an NPC that outlived an earlier match would fight
+      // whoever stands nearest, bots included.
+      await gm.command("[NeoClear");
+
       let opponentSerial: number;
       let opponentName: string;
       if (o.b.kind === "npc") {
-        await gm.command("[NeoClear");
         await gm.command(`[NeoPlace ${o.a.name} west ${o.distance}`);
         const reply = await gm.command(`[NeoMage ${o.b.type} ${o.distance}`); // "mage <name> 0x... x,y,z"
         opponentSerial = Number.parseInt(reply.split(" ").find((p) => p.startsWith("0x")) ?? "0", 16);

@@ -190,6 +190,13 @@ export class DuelController extends EventEmitter<DuelEvents> {
 
   async #turn(signal: AbortSignal, isOver: () => boolean): Promise<void> {
     const w = this.session.world;
+    // The opponent's position arrives a moment after the round starts; until then every distance
+    // would be measured from 0,0.
+    const them = w.mobile(this.opponent);
+    if (them.x === 0 && them.y === 0) {
+      await sleep(100, signal);
+      return;
+    }
     // Decide just in time: late enough to see fresh state, early enough to cast the moment we can.
     const lead = this.caster.readyAt - w.now() - this.#latencyEma;
     if (lead > 0) {

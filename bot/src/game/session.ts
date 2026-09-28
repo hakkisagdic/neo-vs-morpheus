@@ -36,16 +36,30 @@ export class Session {
 
   /** Logs a bot in; accounts and characters are created on first use. */
   static async bot(name: string, log?: (message: string) => void): Promise<Session> {
-    const s = new Session(name, log);
-    await s.#connect(name.toLowerCase(), requireSetting(config.botPassword, "BOT_PASSWORD"));
-    return s;
+    return Session.#open(name, name.toLowerCase(), requireSetting(config.botPassword, "BOT_PASSWORD"), log);
   }
 
   /** Logs the owner (GM) account in with its character "Architect". */
   static async gm(log?: (message: string) => void): Promise<Session> {
-    const s = new Session("Architect", log);
-    await s.#connect(config.ownerAccount, requireSetting(config.ownerPassword, "NEO_OWNER_PASS"));
-    return s;
+    return Session.#open("Architect", config.ownerAccount, requireSetting(config.ownerPassword, "NEO_OWNER_PASS"), log);
+  }
+
+  /** One retry: a game login now and then dies on the relay when several bots log in at once. */
+  static async #open(name: string, account: string, password: string, log?: (message: string) => void): Promise<Session> {
+    for (let attempt = 1; ; attempt++) {
+      const s = new Session(name, log);
+      try {
+        await s.#connect(account, password);
+        return s;
+      } catch (err) {
+        s.close();
+        if (attempt >= 2 || /rejected/.test((err as Error).message)) {
+          throw err;
+        }
+        log?.(`${name}: login failed (${(err as Error).message}); retrying`);
+        await new Promise((r) => setTimeout(r, 2_000));
+      }
+    }
   }
 
   async #connect(account: string, password: string): Promise<void> {
