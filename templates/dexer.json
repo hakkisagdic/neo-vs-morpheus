@@ -1,0 +1,37 @@
+{
+  "id": "dexer",
+  "title": "Swordsman with healing (katana, a hand free for potions): Swords, Tactics, Anatomy, Healing, Resist, Parry",
+  "stats": {
+    "str": 100,
+    "dex": 100,
+    "int": 25
+  },
+  "skills": {
+    "Swords": 100,
+    "Tactics": 100,
+    "Anatomy": 100,
+    "Healing": 100,
+    "MagicResist": 100,
+    "Parry": 100
+  },
+  "wear": [
+    "Katana",
+    "LeatherChest",
+    "LeatherLegs",
+    "LeatherArms",
+    "LeatherGloves",
+    "LeatherGorget",
+    "LeatherCap"
+  ],
+  "pack": {
+    "Bandage": 100,
+    "GreaterHealPotion": 10,
+    "GreaterCurePotion": 10,
+    "TotalRefreshPotion": 10,
+    "GreaterExplosionPotion": 10
+  },
+  "spellbook": false,
+  "modules": [
+    "melee"
+  ]
+}

@@ -4,16 +4,18 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelBrain, RuleBrain } from "../brain/brains.ts";
 import { FORMAT } from "../brain/duel-policy.ts";
+import { MELEE_FORMAT } from "../brain/melee-policy.ts";
 import { SCENARIOS } from "../eval/scenarios.ts";
-import type { DuelBrain } from "../brain/types.ts";
+import type { DuelBrain, ModuleName } from "../brain/types.ts";
 import { config, requireSetting } from "../config.ts";
 import type { MatchInfo, MonitorHub, RoundResult } from "../monitor/hub.ts";
 import { type DecisionRecord, type DuelEnd, DuelController } from "./duel.ts";
 import type { ArenaLayout } from "./arena.ts";
+import { moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
 export type BrainKind = "laya" | "jev" | "rules";
-export type Fighter = { kind: "bot"; name: string; brain: BrainKind };
+export type Fighter = { kind: "bot"; name: string; brain: BrainKind; /** templates/<id>.json */ template: string };
 export type Opponent = Fighter | { kind: "npc"; type: string } | { kind: "human"; name: string };
 
 export type MatchOptions = {
@@ -21,17 +23,17 @@ export type MatchOptions = {
   b: Opponent;
   rounds: number;
   distance: number;
-  /** Give bots the GM mage template (skill 100) before each round instead of their own skills. */
+  /** Apply each bot's character template (templates/<id>.json) instead of keeping its own skills. */
   template: boolean;
   roundTimeoutMs: number;
   /** Obstacles to set up before the first round; "open" clears them. */
   arena: ArenaLayout;
 };
 
-export function makeBrain(kind: BrainKind): DuelBrain {
+export function makeBrain(kind: BrainKind, module: ModuleName = "mage"): DuelBrain {
   switch (kind) {
     case "rules":
-      return new RuleBrain();
+      return new RuleBrain(module);
     case "laya":
       return new ModelBrain({
         name: "laya",
@@ -39,7 +41,7 @@ export function makeBrain(kind: BrainKind): DuelBrain {
         apiKey: config.layaApiKey || undefined,
         model: "typed-decisions",
         timeoutMs: 20_000, // CPU-only in Docker on macOS: seconds, not milliseconds
-      });
+      }, "composite", module);
     case "jev":
       return new ModelBrain({
         name: "jev",
@@ -48,12 +50,13 @@ export function makeBrain(kind: BrainKind): DuelBrain {
         apiKey: requireSetting(config.jevApiKey, "JEV_API_KEY"),
         model: config.jevModel || undefined,
         timeoutMs: 15_000,
-      });
+      }, "composite", module);
   }
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const describe = (o: Opponent) => (o.kind === "bot" ? `${o.name} (${o.brain})` : o.kind === "npc" ? `NPC ${o.type}` : `${o.name} (human)`);
+const label = (f: Fighter) => (f.template === "mage" ? `${f.name} (${f.brain})` : `${f.name} (${f.brain}, ${f.template})`);
+const describe = (o: Opponent) => (o.kind === "bot" ? label(o) : o.kind === "npc" ? `NPC ${o.type}` : `${o.name} (human)`);
 
 /** "duel Neo 0x00000002 1176,3610,0 Morpheus 0x00000003 1184,3610,0 Felucca" */
 function parseDuelReply(reply: string): Map<string, number> {
@@ -87,15 +90,15 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     }
     throw err;
   }
-  const brainA = makeBrain(o.a.brain);
-  const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain) : null;
+  const brainA = makeBrain(o.a.brain, moduleOf(o.a.template));
+  const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain, moduleOf(o.b.template)) : null;
 
   const match: MatchInfo = {
-    title: `${o.a.name} (${o.a.brain}) vs ${describe(o.b)}`,
+    title: `${label(o.a)} vs ${describe(o.b)}`,
     fighters: [
-      { name: o.a.name, brain: o.a.brain },
+      { name: o.a.name, brain: o.a.brain, template: o.a.template },
       o.b.kind === "bot"
-        ? { name: o.b.name, brain: o.b.brain }
+        ? { name: o.b.name, brain: o.b.brain, template: o.b.template }
         : o.b.kind === "npc"
           ? { name: o.b.type, brain: "npc" }
           : { name: o.b.name, brain: "human" },
@@ -129,9 +132,9 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       hub.setMatch(match);
 
       if (o.template) {
-        await gm.command(`[NeoTemplate ${o.a.name}`);
+        await gm.command(`[NeoTemplate ${o.a.name} ${o.a.template}`);
         if (o.b.kind === "bot") {
-          await gm.command(`[NeoTemplate ${o.b.name}`);
+          await gm.command(`[NeoTemplate ${o.b.name} ${o.b.template}`);
         }
       }
 
@@ -230,6 +233,7 @@ async function saveRun(match: MatchInfo, records: DecisionRecord[]): Promise<voi
   const dir = join(import.meta.dirname, "..", "..", "..", "runs");
   await mkdir(dir, { recursive: true });
   const stamp = new Date(match.startedAt).toISOString().replace(/[:.]/g, "-");
-  const versions = { run: 2, code: codeVersion(), ...FORMAT };
+  // run 3: decisions carry `module` and `parts` (per-mode distributions) instead of damage/interrupt/defense.
+  const versions = { run: 3, code: codeVersion(), mage: FORMAT, melee: MELEE_FORMAT };
   await writeFile(join(dir, `${stamp}.json`), JSON.stringify({ versions, match, records }, null, 1));
 }

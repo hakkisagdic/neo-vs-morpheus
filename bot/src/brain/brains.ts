@@ -1,6 +1,7 @@
 // Duel brains: a System One model (Laya or Jev) and a scripted baseline.
 import { spell } from "../uo/spells.ts";
 import { compositeQuestion, describeDuel, duelQuestions, resolvePlan, splitComposite } from "./duel-policy.ts";
+import { describeMelee, meleeBaseline, meleeOptions, meleeQuestion, resolveMeleePlan, splitByMode } from "./melee-policy.ts";
 import { type Backend, systemOne } from "./systemone.ts";
 import {
   DAMAGE_SPELLS,
@@ -11,6 +12,7 @@ import {
   type DuelSnapshot,
   INTERRUPT_SPELLS,
   type Mode,
+  type ModuleName,
 } from "./types.ts";
 
 /**
@@ -24,14 +26,35 @@ export class ModelBrain implements DuelBrain {
   readonly name: string;
   readonly backend: Backend;
   readonly style: QuestionStyle;
+  readonly module: ModuleName;
 
-  constructor(backend: Backend, style: QuestionStyle = "composite") {
+  constructor(backend: Backend, style: QuestionStyle = "composite", module: ModuleName = "mage") {
     this.backend = backend;
     this.name = backend.name;
     this.style = style;
+    this.module = module;
   }
 
   async decide(s: DuelSnapshot): Promise<Decision> {
+    if (this.module === "melee") {
+      const d = await systemOne(this.backend, describeMelee(s), meleeQuestion(s));
+      const { mode, parts } = splitByMode(d.answers.move);
+      const overrides: string[] = [];
+      const { plan, why } = resolveMeleePlan(s, d.answers.move, overrides);
+      return {
+        brain: this.name,
+        model: d.model,
+        latencyMs: d.latencyMs,
+        inputTokens: d.usage.inputTokens,
+        outputTokens: d.usage.outputTokens,
+        module: "melee",
+        mode,
+        parts,
+        plan,
+        why,
+        overrides,
+      };
+    }
     const composite = this.style === "composite";
     const d = await systemOne(this.backend, describeDuel(s), composite ? compositeQuestion(s) : duelQuestions(s));
     const a = d.answers;
@@ -53,10 +76,9 @@ export class ModelBrain implements DuelBrain {
       latencyMs: d.latencyMs,
       inputTokens: d.usage.inputTokens,
       outputTokens: d.usage.outputTokens,
+      module: "mage",
       mode: parts.mode,
-      damage: byMode.damage,
-      interrupt: byMode.interrupt,
-      defense: byMode.defense,
+      parts: byMode,
       tile: tile && tileAnswer ? { ...tileAnswer, x: tile.x, y: tile.y, label: tile.label } : undefined,
       plan,
       why,
@@ -76,9 +98,33 @@ const oneHot = (options: readonly string[], choice: string): Distribution => ({
  */
 export class RuleBrain implements DuelBrain {
   readonly name = "rules";
+  readonly module: ModuleName;
+
+  constructor(module: ModuleName = "mage") {
+    this.module = module;
+  }
 
   async decide(s: DuelSnapshot): Promise<Decision> {
     const started = performance.now();
+    if (this.module === "melee") {
+      const answer = oneHot(Object.keys(meleeOptions(s)), meleeBaseline(s));
+      const { mode, parts } = splitByMode(answer);
+      const overrides: string[] = [];
+      const { plan, why } = resolveMeleePlan(s, answer, overrides);
+      return {
+        brain: this.name,
+        model: "rules",
+        latencyMs: performance.now() - started,
+        inputTokens: 0,
+        outputTokens: 0,
+        module: "melee",
+        mode,
+        parts,
+        plan,
+        why,
+        overrides,
+      };
+    }
     const { us, them } = s;
     const hp = us.hitsMax > 0 ? us.hits / us.hitsMax : 1;
     const can = (key: string) => us.mana >= spell(key).mana;
@@ -132,7 +178,9 @@ export class RuleBrain implements DuelBrain {
       latencyMs: performance.now() - started,
       inputTokens: 0,
       outputTokens: 0,
-      ...decision,
+      module: "mage",
+      mode: decision.mode,
+      parts: { damage: decision.damage, interrupt: decision.interrupt, defense: decision.defense },
       plan,
       why,
       overrides,

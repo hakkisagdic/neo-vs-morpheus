@@ -3,15 +3,18 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { FORMAT, compositeQuestion, describeDuel, teleportTiles } from "../brain/duel-policy.ts";
-import type { DuelSnapshot } from "../brain/types.ts";
+import { MELEE_FORMAT, describeMelee, meleeQuestion } from "../brain/melee-policy.ts";
+import type { DuelSnapshot, ModuleName } from "../brain/types.ts";
 import { castDelayMs } from "../game/caster.ts";
 import { spell } from "../uo/spells.ts";
 
 export type TrainingState = {
   id: string;
   source: "run" | "sampled";
+  /** The decision module whose question the state is asked with. */
+  module: ModuleName;
   /** The description and question versions the state was written with (see FORMAT). */
-  format: typeof FORMAT;
+  format: { describe: string; question: string };
   state: string;
   questions: ReturnType<typeof compositeQuestion>;
 };
@@ -98,16 +101,16 @@ function sampleSnapshot(r: ReturnType<typeof rng>): DuelSnapshot {
   return s;
 }
 
-const toTraining = (id: string, source: TrainingState["source"], s: DuelSnapshot): TrainingState => ({
-  id,
-  source,
-  format: FORMAT,
-  state: describeDuel(s),
-  questions: compositeQuestion(s),
-});
+const toTraining = (id: string, source: TrainingState["source"], s: DuelSnapshot, module: ModuleName = "mage"): TrainingState =>
+  module === "melee"
+    ? { id, source, module, format: MELEE_FORMAT, state: describeMelee(s), questions: meleeQuestion(s) }
+    : { id, source, module, format: FORMAT, state: describeDuel(s), questions: compositeQuestion(s) };
 
-/** Every snapshot recorded in runs/*.json, deduplicated by rendered state. */
-export async function statesFromRuns(runsDir: string): Promise<TrainingState[]> {
+/**
+ * Every snapshot recorded in runs/*.json by a fighter of the given module, deduplicated by
+ * rendered state. Runs from before modules existed are the mage's.
+ */
+export async function statesFromRuns(runsDir: string, module: ModuleName = "mage"): Promise<TrainingState[]> {
   const out: TrainingState[] = [];
   const seen = new Set<string>();
   let files: string[] = [];
@@ -117,9 +120,14 @@ export async function statesFromRuns(runsDir: string): Promise<TrainingState[]> 
     return out;
   }
   for (const file of files) {
-    const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as { records?: { snapshot: DuelSnapshot }[] };
+    const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as {
+      records?: { snapshot: DuelSnapshot; decision?: { module?: ModuleName } }[];
+    };
     for (const [i, rec] of (run.records ?? []).entries()) {
-      const t = toTraining(`run:${file}:${i}`, "run", rec.snapshot);
+      if ((rec.decision?.module ?? "mage") !== module) {
+        continue;
+      }
+      const t = toTraining(`run:${file}:${i}`, "run", rec.snapshot, module);
       if (!seen.has(t.state)) {
         seen.add(t.state);
         out.push(t);
@@ -132,4 +140,91 @@ export async function statesFromRuns(runsDir: string): Promise<TrainingState[]> 
 export function sampledStates(n: number, seed = 20260927): TrainingState[] {
   const r = rng(seed);
   return Array.from({ length: n }, (_, i) => toTraining(`sampled:${seed}:${i}`, "sampled", sampleSnapshot(r)));
+}
+
+// Fighters ------------------------------------------------------------------------------------
+
+type Build = { weapon: NonNullable<DuelSnapshot["us"]["weapon"]>; freeHand: boolean; manaMax: number; potions: boolean };
+
+/** The templates' fighters: a katana swordsman with a free hand, and an archer whose bow takes both. */
+const BUILDS: Build[] = [
+  {
+    weapon: { name: "katana", ranged: false, range: 1, primary: "doubleStrike", primaryMana: 25, secondary: "armorIgnore", secondaryMana: 25 },
+    freeHand: true,
+    manaMax: 25,
+    potions: true,
+  },
+  {
+    weapon: { name: "bow", ranged: true, range: 10, primary: "paralyzingBlow", primaryMana: 30, secondary: "mortalStrike", secondaryMana: 30 },
+    freeHand: false,
+    manaMax: 35,
+    potions: false,
+  },
+];
+
+const THEIR_WEAPONS = [null, null, "katana", "bow", "halberd"] as const;
+
+function sampleFighter(r: ReturnType<typeof rng>): DuelSnapshot {
+  const us = r.pick(NAMES);
+  let them = r.pick(NAMES);
+  while (them === us) {
+    them = r.pick(NAMES);
+  }
+  const build = r.pick(BUILDS);
+  const theirWeapon = r.pick(THEIR_WEAPONS);
+  const hitsMax = r.chance(0.8) ? 100 : r.int(80, 110);
+  const hits = Math.max(1, Math.round(hitsMax * (r.chance(0.3) ? r.next() * 0.45 : 0.3 + r.next() * 0.7)));
+  const stamMax = 100;
+  const stam = r.chance(0.15) ? r.int(0, 25) : r.int(40, stamMax);
+  const mana = r.int(0, build.manaMax);
+  const distance = r.chance(0.4) ? r.int(1, 2) : r.chance(0.85) ? r.int(3, 10) : r.int(11, 14);
+  const casting = theirWeapon === null && r.chance(0.4) ? r.pick(THEIR_SPELLS) : null;
+  const castTotal = casting ? castDelayMs(spell(casting)) : 0;
+  const castingForMs = casting ? r.int(0, Math.max(0, castTotal - 100)) : 0;
+
+  const events = [
+    `${us} took ${r.int(4, 30)} damage`,
+    `${them} took ${r.int(4, 30)} damage`,
+    `${us} began bandaging`,
+    ...(build.potions ? [`${us} drank a heal potion`] : []),
+    ...(theirWeapon === null ? [`${them} began casting ${spell(r.pick(THEIR_SPELLS)).name}`, `${us} was poisoned by ${them}`] : []),
+  ];
+  const recent = Array.from({ length: r.int(0, 4) }, () => r.pick(events));
+
+  const s: DuelSnapshot = {
+    now: 0,
+    us: {
+      name: us, serial: 2, hits, hitsMax, mana, manaMax: build.manaMax, stam, stamMax,
+      poisoned: r.chance(0.3), x: 1176, y: 3610, z: 0, readyInMs: 0, lastSpell: null, lastSpellAgoMs: 0,
+      weapon: build.weapon,
+      freeHand: build.freeHand,
+      bandagingForMs: r.chance(0.3) ? r.int(300, 6_000) : 0,
+      healPotionReadyInMs: build.potions && r.chance(0.3) ? r.int(300, 10_000) : 0,
+      lastAbilityAgoMs: r.chance(0.2) ? r.int(200, 3_000) : Number.POSITIVE_INFINITY,
+    },
+    them: {
+      name: them, serial: 3, healthPct: r.chance(0.25) ? r.int(3, 30) : r.int(20, 100), poisoned: r.chance(0.25),
+      x: 1176 + distance, y: 3610, z: 0, dead: false, casting, castingForMs,
+      landsInMs: casting ? castTotal - castingForMs : 0, distance, inLineOfSight: r.chance(0.9), inRange: distance <= 10,
+      weapon: theirWeapon,
+    },
+    supplies: {
+      bandages: r.chance(0.1) ? 0 : r.int(1, 100),
+      healPotions: build.potions ? r.int(0, 10) : 0,
+      curePotions: build.potions ? r.int(0, 10) : 0,
+      refreshPotions: build.potions ? r.int(0, 10) : 0,
+      explosionPotions: build.potions ? r.int(0, 10) : 0,
+      arrows: build.weapon.ranged ? r.int(0, 300) : 0,
+    },
+    reagents: {},
+    tiles: [],
+    recent,
+  };
+  return s;
+}
+
+/** Sampled fighter states (dexer and archer builds against casters and fighters). */
+export function sampledMeleeStates(n: number, seed = 20260930): TrainingState[] {
+  const r = rng(seed);
+  return Array.from({ length: n }, (_, i) => toTraining(`melee:${seed}:${i}`, "sampled", sampleFighter(r), "melee"));
 }

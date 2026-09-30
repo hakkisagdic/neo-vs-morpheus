@@ -1,0 +1,34 @@
+{
+  "id": "archer",
+  "title": "Archer with healing (a bow takes both hands: bandages, no potions): Archery, Tactics, Anatomy, Healing, Resist, Focus",
+  "stats": {
+    "str": 90,
+    "dex": 100,
+    "int": 35
+  },
+  "skills": {
+    "Archery": 100,
+    "Tactics": 100,
+    "Anatomy": 100,
+    "Healing": 100,
+    "MagicResist": 100,
+    "Focus": 100
+  },
+  "wear": [
+    "Bow",
+    "LeatherChest",
+    "LeatherLegs",
+    "LeatherArms",
+    "LeatherGloves",
+    "LeatherGorget",
+    "LeatherCap"
+  ],
+  "pack": {
+    "Arrow": 300,
+    "Bandage": 100
+  },
+  "spellbook": false,
+  "modules": [
+    "melee"
+  ]
+}

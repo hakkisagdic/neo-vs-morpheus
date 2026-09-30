@@ -111,6 +111,13 @@ export const warMode = (on: boolean) => new PacketWriter(5).u8(0x72).bool(on).u8
 /** 0x05: attack. */
 export const attack = (serial: number) => new PacketWriter(5).u8(0x05).u32(serial).finish();
 
+/**
+ * 0xD7 0x0019: arm a weapon ability for the next swing. The index is ModernUO's
+ * WeaponAbility.Abilities index (0 clears); the value travels as an encoded int (type byte 0).
+ */
+export const setAbility = (player: number, index: number) =>
+  new PacketWriter(14).u8(0xd7).u16(0).u32(player).u16(0x19).u8(0).u32(index).finish(true);
+
 /** 0x06: double click (use) an object. */
 export const doubleClick = (serial: number) => new PacketWriter(5).u8(0x06).u32(serial).finish();
 

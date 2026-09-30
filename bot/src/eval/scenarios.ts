@@ -1,13 +1,16 @@
 // Decision-quality check without the clock: canonical duel moments whose right answer any
 // duel mage would agree on. Each backend answers the same composite question the bot asks.
 import { compositeQuestion, describeDuel, teleportTiles } from "../brain/duel-policy.ts";
-import { DAMAGE_SPELLS, type DuelSnapshot } from "../brain/types.ts";
+import { describeMelee, meleeQuestion } from "../brain/melee-policy.ts";
+import { DAMAGE_SPELLS, type DuelSnapshot, type ModuleName } from "../brain/types.ts";
 
 export type Scenario = {
   id: string;
   /** What a good duel mage does, as "mode:spell" options; any of them counts as right. */
   accept: string[];
   snapshot: DuelSnapshot;
+  /** Which question the moment is asked with (default the mage's). */
+  module?: ModuleName;
 };
 
 type Us = Partial<DuelSnapshot["us"]>;
@@ -97,10 +100,10 @@ export const SCENARIOS: Scenario[] = [
   },
 ];
 
-export const scenarioRequest = (s: Scenario) => ({
-  state: describeDuel(s.snapshot),
-  questions: compositeQuestion(s.snapshot),
-});
+export const scenarioRequest = (s: Scenario) =>
+  s.module === "melee"
+    ? { state: describeMelee(s.snapshot), questions: meleeQuestion(s.snapshot) }
+    : { state: describeDuel(s.snapshot), questions: compositeQuestion(s.snapshot) };
 
 /** Out of spell range any attack means chasing (a teleport or running closer). */
 const CHASE = DAMAGE_SPELLS.map((k) => `damage:${k}`);
@@ -143,4 +146,42 @@ export const MOVEMENT_SCENARIOS: Scenario[] = [
   },
 ];
 
-export const SUITES: Record<string, Scenario[]> = { duel: SCENARIOS, movement: MOVEMENT_SCENARIOS };
+type Fighter = Us & { bandagingForMs?: number; healPotionReadyInMs?: number };
+
+/** A katana swordsman (the dexer template) against a mage. */
+function fighter(us: Fighter, them: Them, recent: string[] = []): DuelSnapshot {
+  const s = state({ hitsMax: 100, stamMax: 100, stam: 100, mana: 25, manaMax: 25, ...us }, { distance: 1, x: 1177, ...them }, recent);
+  s.us.weapon = { name: "katana", ranged: false, range: 1, primary: "doubleStrike", primaryMana: 25, secondary: "armorIgnore", secondaryMana: 25 };
+  s.us.bandagingForMs = us.bandagingForMs ?? 0;
+  s.us.healPotionReadyInMs = us.healPotionReadyInMs ?? 0;
+  s.us.lastAbilityAgoMs = Number.POSITIVE_INFINITY;
+  s.them.weapon = null;
+  s.supplies = { bandages: 80, healPotions: 8, curePotions: 8, refreshPotions: 8, explosionPotions: 8, arrows: 0 };
+  s.reagents = {};
+  s.tiles = [];
+  return s;
+}
+
+const ATTACKS = ["attack:swing", "attack:primary", "attack:secondary"];
+
+/** A swordsman's moments: when to drink, bandage, open with a special move, close in. */
+export const MELEE_SCENARIOS: Scenario[] = [
+  { id: "poisoned, cure potions left", accept: ["cure:potion"], module: "melee",
+    snapshot: fighter({ hits: 70, poisoned: true }, { healthPct: 80 }, ["Neo was poisoned by Morpheus"]) },
+  { id: "at 30% health, heal potion ready", accept: ["heal:potion"], module: "melee",
+    snapshot: fighter({ hits: 30 }, { healthPct: 70 }, ["Neo took 35 damage"]) },
+  { id: "at 70% health, not bandaging", accept: ["heal:bandage"], module: "melee",
+    snapshot: fighter({ hits: 70 }, { healthPct: 90 }, ["Neo took 15 damage"]) },
+  { id: "fresh, mage next to you, mana for a special", accept: ["attack:primary", "attack:secondary"], module: "melee",
+    snapshot: fighter({}, { healthPct: 100 }) },
+  { id: "fresh, mage 6 tiles away", accept: ["attack:swing", "throw:explosion"], module: "melee",
+    snapshot: fighter({}, { healthPct: 100, distance: 6, x: 1182 }) },
+  { id: "out of stamina next to the mage", accept: ["refresh:potion"], module: "melee",
+    snapshot: fighter({ stam: 8 }, { healthPct: 70 }) },
+  { id: "mage casting Explosion next to you", accept: ATTACKS, module: "melee",
+    snapshot: fighter({}, { healthPct: 80, casting: "explosion", castingForMs: 300, landsInMs: 1700 }, ["Morpheus began casting Explosion"]) },
+  { id: "already bandaging, heal potion not ready", accept: ATTACKS, module: "melee",
+    snapshot: fighter({ hits: 60, bandagingForMs: 3_000, healPotionReadyInMs: 6_000 }, { healthPct: 75 }) },
+];
+
+export const SUITES: Record<string, Scenario[]> = { duel: SCENARIOS, movement: MOVEMENT_SCENARIOS, melee: MELEE_SCENARIOS };

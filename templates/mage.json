@@ -1,0 +1,13 @@
+{
+  "id": "mage",
+  "title": "PvP mage: Magery, Eval Int, Meditation, Resist, Wrestling, Inscription, Poisoning",
+  "stats": { "str": 90, "dex": 35, "int": 100 },
+  "skills": { "Magery": 100, "EvalInt": 100, "Meditation": 100, "MagicResist": 100, "Wrestling": 100, "Inscribe": 100, "Poisoning": 100 },
+  "wear": [],
+  "pack": {
+    "BlackPearl": 200, "Bloodmoss": 200, "Garlic": 200, "Ginseng": 200,
+    "MandrakeRoot": 200, "Nightshade": 200, "SpidersSilk": 200, "SulfurousAsh": 200
+  },
+  "spellbook": true,
+  "modules": ["mage"]
+}

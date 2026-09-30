@@ -34,6 +34,8 @@ services:
       - uo-world:/app/World
       # Real Ultima Online client files, read-only. Empty folder = synthetic flat arena.
       - "${UO_DATA_DIR:-./server/client-files}:/uodata:ro"
+      # Character templates for [NeoTemplate (stats, skills, gear, consumables), read-only.
+      - ./templates:/app/NeoTemplates:ro
     init: true
     restart: unless-stopped
 

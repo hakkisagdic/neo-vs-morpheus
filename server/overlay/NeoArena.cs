@@ -10,7 +10,7 @@
 //   [NeoPrep <name>                         resurrect, heal, cure, restock one player
 //   [NeoDuel <nameA> <nameB> [distance]     prep both and face them off in the arena
 //   [NeoPlace <name> <west|east> [distance] prep one player and put them on one side
-//   [NeoTemplate <name> [skill] [stats]     GM mage template (skip leveling for PvP tests)
+//   [NeoTemplate <name> [template]          apply templates/<template>.json (default mage)
 //   [NeoMage [type] [distance]              spawn an NPC caster on the east side
 //   [NeoClear [radius]                      delete NPCs and corpses around the arena
 //   [NeoArena <open|pillars|wall>           set the arena's obstacles
@@ -90,17 +90,6 @@ public static class ArenaBootstrap
 
 public static class ArenaCommands
 {
-    private static readonly SkillName[] MageSkills =
-    [
-        SkillName.Magery,
-        SkillName.EvalInt,
-        SkillName.Meditation,
-        SkillName.MagicResist,
-        SkillName.Wrestling,
-        SkillName.Inscribe,
-        SkillName.Poisoning
-    ];
-
     public static void Configure()
     {
         CommandSystem.Register("NeoPrep", AccessLevel.GameMaster, OnPrep);
@@ -260,8 +249,8 @@ public static class ArenaCommands
         Reply(e.Mobile, $"arena {name} {layout.Length}");
     }
 
-    [Usage("NeoTemplate <name> [skill=100] [str=90 dex=35 int=100]")]
-    [Description("Sets a PvP mage template: Magery, Eval Int, Meditation, Resist, Wrestling, Inscription, Poisoning.")]
+    [Usage("NeoTemplate <name> [template=mage | skill [str dex int]]")]
+    [Description("Applies a character template (templates/<name>.json): stats, skills, gear and consumables.")]
     private static void OnTemplate(CommandEventArgs e)
     {
         var target = FindOnline(e.Mobile, e.GetString(0));
@@ -270,27 +259,47 @@ public static class ArenaCommands
             return;
         }
 
-        var skill = Math.Clamp(e.Length > 1 ? e.GetInt32(1) : 100, 0, 120);
-        foreach (var name in MageSkills)
+        // The older form, "[NeoTemplate <name> [skill] [str dex int]", still means the mage.
+        var id = "mage";
+        int? skill = null;
+        if (e.Length > 1)
         {
-            target.Skills[name].Base = skill;
+            if (int.TryParse(e.GetString(1), out var level))
+            {
+                skill = level;
+            }
+            else
+            {
+                id = e.GetString(1).ToLowerInvariant();
+            }
+        }
+
+        var template = NeoTemplates.Load(id, out var error);
+        if (template == null)
+        {
+            Reply(e.Mobile, $"error {error}");
+            return;
+        }
+
+        if (skill is { } level2)
+        {
+            foreach (var name in new List<string>(template.Skills.Keys))
+            {
+                template.Skills[name] = Math.Clamp(level2, 0, 120);
+            }
         }
 
         if (e.Length > 4)
         {
-            target.RawStr = Math.Clamp(e.GetInt32(2), 10, 125);
-            target.RawDex = Math.Clamp(e.GetInt32(3), 10, 125);
-            target.RawInt = Math.Clamp(e.GetInt32(4), 10, 125);
-        }
-        else
-        {
-            target.RawStr = 90;
-            target.RawDex = 35;
-            target.RawInt = 100;
+            template.Stats["str"] = e.GetInt32(2);
+            template.Stats["dex"] = e.GetInt32(3);
+            template.Stats["int"] = e.GetInt32(4);
         }
 
+        var problems = NeoTemplates.Apply(target, template);
         Prep(target);
-        Reply(e.Mobile, $"template {target.Name} skill {skill} stats {target.RawStr}/{target.RawDex}/{target.RawInt}");
+        var note = problems.Count > 0 ? $" problems {string.Join("; ", problems)}" : "";
+        Reply(e.Mobile, $"template {target.Name} {template.Id} stats {target.RawStr}/{target.RawDex}/{target.RawInt}{note}");
     }
 
     [Usage("NeoMage [type=EvilMageLord] [distance=8]")]
@@ -352,56 +361,7 @@ public static class ArenaCommands
         m.Combatant = null;
         m.Warmode = false;
 
-        Restock(m);
-    }
-
-    private static void Restock(Mobile m)
-    {
-        var pack = m.Backpack;
-        if (pack == null)
-        {
-            pack = new Backpack { Movable = false };
-            m.AddItem(pack);
-        }
-
-        var stale = new List<Item>();
-        foreach (var reagent in pack.FindItemsByType<BaseReagent>())
-        {
-            stale.Add(reagent);
-        }
-
-        // Every resurrection dresses the player in a new death robe and the old ones pile up in
-        // the pack: after a few hundred rounds, 136 robes (408 stones) left the bots too heavy to
-        // run more than one step.
-        foreach (var robe in pack.FindItemsByType<DeathRobe>())
-        {
-            stale.Add(robe);
-        }
-
-        foreach (var item in stale)
-        {
-            item.Delete();
-        }
-
-        var amount = ArenaSettings.ReagentAmount;
-        pack.DropItem(new BlackPearl(amount));
-        pack.DropItem(new Bloodmoss(amount));
-        pack.DropItem(new Garlic(amount));
-        pack.DropItem(new Ginseng(amount));
-        pack.DropItem(new MandrakeRoot(amount));
-        pack.DropItem(new Nightshade(amount));
-        pack.DropItem(new SpidersSilk(amount));
-        pack.DropItem(new SulfurousAsh(amount));
-
-        var book = Spellbook.FindRegular(m);
-        if (book == null)
-        {
-            pack.DropItem(new Spellbook(ulong.MaxValue));
-        }
-        else
-        {
-            book.Content = ulong.MaxValue;
-        }
+        NeoTemplates.Restock(m);
     }
 
     private static void Place(Mobile m, int x, int y)

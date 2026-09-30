@@ -6,20 +6,21 @@ import { SUITES, scenarioRequest } from "./eval/scenarios.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type LabeledState, labelStates } from "./distill/label.ts";
-import { sampledStates, statesFromRuns } from "./distill/states.ts";
+import { sampledMeleeStates, sampledStates, statesFromRuns } from "./distill/states.ts";
 import { describeDuel, teleportTiles } from "./brain/duel-policy.ts";
-import type { DuelSnapshot } from "./brain/types.ts";
+import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
+import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { SkillTrainer } from "./game/train.ts";
 import { MonitorHub } from "./monitor/hub.ts";
 
 const USAGE = `usage: npm run nvm -- <command>
 
-  duel <Name:brain> <Name:brain | npc:Type | human:Name> [options]
-       brains: laya, jev, rules
+  duel <Name:brain[:template]> <Name:brain[:template] | npc:Type | human:Name> [options]
+       brains: laya, jev, rules; templates: templates/*.json (mage, dexer, archer; default mage)
        --rounds N      rounds to play (default 3)
        --distance N    starting distance in tiles (default 8)
        --timeout S     seconds before a round is scored on health left (default 120)
@@ -38,8 +39,8 @@ const USAGE = `usage: npm run nvm -- <command>
   eval [laya] [jev] [--suite duel|movement]
                       decision quality on canonical moments, no clock involved
 
-  distill states [n]        write recorded + n sampled duel states to training/data/states.jsonl
-  distill label [limit]     label them with Jev (resumable) into training/data/labeled.jsonl
+  distill states [n] [--module melee]   recorded + n sampled states to training/data/states[-melee].jsonl
+  distill label [limit] [--module melee] label them with Jev (resumable) into training/data/labeled[-melee].jsonl
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
                             (default training/data/test.jsonl, written by training/split.py)
 `;
@@ -47,11 +48,12 @@ const USAGE = `usage: npm run nvm -- <command>
 const BRAINS = new Set(["laya", "jev", "rules"]);
 
 function fighter(spec: string): Fighter {
-  const [name, brain = "rules"] = spec.split(":");
+  const [name, brain = "rules", template = "mage"] = spec.split(":");
   if (!name || !BRAINS.has(brain)) {
-    throw new Error(`bad fighter "${spec}"; expected Name:laya|jev|rules`);
+    throw new Error(`bad fighter "${spec}"; expected Name:laya|jev|rules[:template]`);
   }
-  return { kind: "bot", name, brain: brain as BrainKind };
+  loadTemplate(template); // fail early on a template that does not exist
+  return { kind: "bot", name, brain: brain as BrainKind, template };
 }
 
 function opponent(spec: string): Opponent {
@@ -227,7 +229,7 @@ async function bench(kind: string, n: number): Promise<void> {
   const q = (p: number) => latencies[Math.min(latencies.length - 1, Math.floor(p * latencies.length))].toFixed(1);
   console.log(`${last?.model} (${brain.style}): ${n} calls, p50 ${q(0.5)} ms, p95 ${q(0.95)} ms; ${last?.inputTokens} input tokens`);
   if (last) {
-    for (const [label, d] of [["mode", last.mode], ["damage", last.damage], ["interrupt", last.interrupt], ["defense", last.defense]] as const) {
+    for (const [label, d] of [["mode", last.mode] as const, ...Object.entries(last.parts)]) {
       const top = Object.entries(d.probabilities).sort((x, y) => y[1] - x[1]).slice(0, 3);
       console.log(`  ${label.padEnd(10)} ${top.map(([k, p]) => `${k} ${(p * 100).toFixed(0)}%`).join("  ")}`);
     }
@@ -283,13 +285,25 @@ const DATA = join(import.meta.dirname, "..", "..", "training", "data");
 
 async function distill(sub: string | undefined, rest: string[]): Promise<void> {
   await mkdir(DATA, { recursive: true });
-  const statesPath = join(DATA, "states.jsonl");
+  // --module melee keeps the fighters' states and labels apart from the mage's.
+  const moduleAt = rest.indexOf("--module");
+  const module = (moduleAt >= 0 ? rest[moduleAt + 1] : "mage") as ModuleName;
+  if (moduleAt >= 0) {
+    rest.splice(moduleAt, 2);
+  }
+  if (module !== "mage" && module !== "melee") {
+    throw new Error(`unknown module ${module}; mage or melee`);
+  }
+  const suffix = module === "mage" ? "" : `-${module}`;
+  const statesPath = join(DATA, `states${suffix}.jsonl`);
+  const labeledPath = join(DATA, `labeled${suffix}.jsonl`);
   if (sub === "states") {
-    const fromRuns = await statesFromRuns(join(import.meta.dirname, "..", "..", "runs"));
-    const sampled = sampledStates(Number(rest[0] ?? 1200));
+    const fromRuns = await statesFromRuns(join(import.meta.dirname, "..", "..", "runs"), module);
+    const n = Number(rest[0] ?? 1200);
+    const sampled = module === "melee" ? sampledMeleeStates(n) : sampledStates(n);
     const all = [...fromRuns, ...sampled];
     await writeFile(statesPath, all.map((s) => JSON.stringify(s)).join("\n") + "\n");
-    console.log(`${all.length} states (${fromRuns.length} from runs, ${sampled.length} sampled) -> ${statesPath}`);
+    console.log(`${all.length} ${module} states (${fromRuns.length} from runs, ${sampled.length} sampled) -> ${statesPath}`);
   } else if (sub === "label") {
     const brain = makeBrain("jev");
     if (!(brain instanceof ModelBrain)) {
@@ -298,7 +312,7 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     // Generous timeout: a response lost to a timeout cannot be fetched again (FreeJev answers 409),
     // and a busy FreeJev can take a minute or more.
     const teacher = { ...brain.backend, timeoutMs: 120_000 };
-    const n = await labelStates(teacher, statesPath, join(DATA, "labeled.jsonl"), Number(rest[0] ?? 1e9), (m) => console.log(m));
+    const n = await labelStates(teacher, statesPath, labeledPath, Number(rest[0] ?? 1e9), (m) => console.log(m));
     console.log(`labeled ${n} states`);
   } else if (sub === "agree") {
     const brain = makeBrain("laya");

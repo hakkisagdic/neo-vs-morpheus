@@ -7,6 +7,18 @@ import * as out from "../uo/outgoing.ts";
 import { spell } from "../uo/spells.ts";
 import { type CastOutcome, Caster, castDelayMs } from "./caster.ts";
 import { Grid } from "../world/grid.ts";
+import type { Supplies, WeaponView } from "../brain/types.ts";
+import {
+  GRAPHIC,
+  HEAL_POTION_DELAY_MS,
+  abilityMana,
+  freeHand,
+  packCount,
+  selfBandageSeconds,
+  setAbility,
+  useItem,
+  wielded,
+} from "./items.ts";
 import { OBSTACLE_GRAPHICS } from "./arena.ts";
 import { Mover, chebyshev } from "./mover.ts";
 import type { Session } from "./session.ts";
@@ -33,6 +45,9 @@ type DuelEvents = {
 /** After a move that got nowhere (too tired, walled in), wait before deciding again. */
 const BLOCKED_PAUSE_MS = 400;
 
+/** A fighter's decisions come no faster than this: swings, bandages and potions take time to show. */
+const SWING_PAUSE_MS = 350;
+
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
     const t = setTimeout(resolve, ms);
@@ -53,6 +68,10 @@ export class DuelController extends EventEmitter<DuelEvents> {
   #recent: string[] = [];
   #latencyEma = 250;
   #lastSpell: { key: string; at: number } | null = null;
+  #bandageUntil = 0;
+  #healPotionReadyAt = 0;
+  #lastAbilityAt = Number.NEGATIVE_INFINITY;
+  #lastAttackAt = 0;
 
   constructor(session: Session, brain: DuelBrain, opponent: number, opponentName: string) {
     super();
@@ -74,6 +93,39 @@ export class DuelController extends EventEmitter<DuelEvents> {
       this.#recent.shift();
     }
     this.emit("log", text);
+  }
+
+  /** Skills that make weapon abilities cheaper (ModernUO WeaponAbility.CalculateMana), by 0-based id. */
+  static readonly #COMBAT_SKILLS = [5, 30, 31, 40, 41, 42, 44, 47, 52, 53];
+
+  #weaponView(): WeaponView | null {
+    const w = wielded(this.session);
+    if (!w) {
+      return null;
+    }
+    const skills = this.session.world.skills;
+    const total = DuelController.#COMBAT_SKILLS.reduce((sum, id) => sum + (skills.get(id)?.value ?? 0), 0);
+    return {
+      name: w.name,
+      ranged: w.ranged,
+      range: w.range,
+      primary: w.primary,
+      primaryMana: abilityMana(w.primary, total),
+      secondary: w.secondary,
+      secondaryMana: abilityMana(w.secondary, total),
+    };
+  }
+
+  #supplies(): Supplies {
+    const count = (g: number) => packCount(this.session, g);
+    return {
+      bandages: count(GRAPHIC.bandage),
+      healPotions: count(GRAPHIC.healPotion),
+      curePotions: count(GRAPHIC.curePotion),
+      refreshPotions: count(GRAPHIC.refreshPotion),
+      explosionPotions: count(GRAPHIC.explosionPotion),
+      arrows: count(GRAPHIC.arrow),
+    };
   }
 
   /** The arena's walkable tiles as the client last saw them. */
@@ -111,6 +163,11 @@ export class DuelController extends EventEmitter<DuelEvents> {
         readyInMs: Math.max(0, this.caster.readyAt - now),
         lastSpell: this.#lastSpell ? spell(this.#lastSpell.key).name : null,
         lastSpellAgoMs: this.#lastSpell ? now - this.#lastSpell.at : 0,
+        weapon: this.#weaponView(),
+        bandagingForMs: Math.max(0, this.#bandageUntil - now),
+        healPotionReadyInMs: Math.max(0, this.#healPotionReadyAt - now),
+        lastAbilityAgoMs: now - this.#lastAbilityAt,
+        freeHand: freeHand(this.session),
       },
       them: {
         name: this.opponentName,
@@ -127,7 +184,9 @@ export class DuelController extends EventEmitter<DuelEvents> {
         distance,
         inLineOfSight: grid.lineOfSight(p, t),
         inRange: distance <= SPELL_RANGE,
+        weapon: wielded(this.session, t.serial)?.name ?? null,
       },
+      supplies: this.#supplies(),
       reagents: w.reagents(),
       tiles: distance > 2 ? teleportTiles(base as Pick<DuelSnapshot, "us" | "them">, grid) : [],
       recent: [...this.#recent],
@@ -278,6 +337,63 @@ export class DuelController extends EventEmitter<DuelEvents> {
         await sleep(plan.ms, signal);
         record.outcome = { result: "waited" };
         break;
+      case "attack": {
+        const client = this.session.client;
+        if (plan.ability) {
+          const weapon = wielded(this.session);
+          if (weapon) {
+            setAbility(this.session, plan.ability === "primary" ? weapon.primary : weapon.secondary);
+            this.#lastAbilityAt = w.now();
+          }
+        }
+        // The server swings on its own clock once we attack; asking again now and then keeps it on target.
+        if (plan.ability || w.now() - this.#lastAttackAt > 2_000) {
+          client.send(out.attack(this.opponent));
+          this.#lastAttackAt = w.now();
+        }
+        const reach = wielded(this.session)?.range ?? 1;
+        const grid = this.grid();
+        const them = w.mobile(this.opponent);
+        if (chebyshev(w.player, them) > reach || !grid.lineOfSight(w.player, them)) {
+          const steps = await this.mover.approach(them, reach, 3, grid);
+          record.outcome = { result: steps > 0 ? "closing" : "blocked" };
+          if (steps === 0) {
+            await sleep(BLOCKED_PAUSE_MS, signal);
+          }
+        } else {
+          await sleep(SWING_PAUSE_MS, signal);
+          record.outcome = { result: "swinging" };
+        }
+        break;
+      }
+      case "bandage": {
+        const used = await useItem(this.session, GRAPHIC.bandage, { kind: "self" });
+        if (used === "used") {
+          this.#bandageUntil = w.now() + selfBandageSeconds(this.session.world.stats.dex || 100) * 1000;
+        }
+        record.outcome = { result: used };
+        this.#note(`${this.name} ${used === "used" ? "began bandaging" : `could not bandage (${used})`}`);
+        await sleep(SWING_PAUSE_MS, signal);
+        break;
+      }
+      case "drink": {
+        const graphic = { heal: GRAPHIC.healPotion, cure: GRAPHIC.curePotion, refresh: GRAPHIC.refreshPotion }[plan.potion];
+        const used = await useItem(this.session, graphic, null);
+        if (used === "used" && plan.potion === "heal") {
+          this.#healPotionReadyAt = w.now() + HEAL_POTION_DELAY_MS;
+        }
+        record.outcome = { result: used };
+        this.#note(`${this.name} ${used === "used" ? `drank a ${plan.potion} potion` : `could not drink (${used})`}`);
+        await sleep(SWING_PAUSE_MS, signal);
+        break;
+      }
+      case "throw": {
+        const used = await useItem(this.session, GRAPHIC.explosionPotion, { kind: "mobile", serial: this.opponent });
+        record.outcome = { result: used };
+        this.#note(`${this.name} ${used === "used" ? "threw an explosion potion" : `could not throw (${used})`}`);
+        await sleep(SWING_PAUSE_MS, signal);
+        break;
+      }
     }
 
     if (outcome) {

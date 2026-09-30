@@ -340,4 +340,4 @@ export function teleportTiles(s: Pick<DuelSnapshot, "us" | "them">, grid?: Grid)
 const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
-export type RawAnswers = Pick<Decision, "mode" | "damage" | "interrupt" | "defense"> & { tile?: Distribution };
+export type RawAnswers = { mode: Distribution; damage: Distribution; interrupt: Distribution; defense: Distribution; tile?: Distribution };

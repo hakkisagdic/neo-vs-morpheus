@@ -31,14 +31,17 @@ const castMs = (name) => (2 + (SPELL_CIRCLE[name] ?? 3)) * 250;
 const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
 const hex = (n) => `0x${(n >>> 0).toString(16).toUpperCase().padStart(8, "0")}`;
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const spellOf = (d) => (d.plan.kind === "cast" ? d.plan.spell : d.plan.kind === "teleport" ? "teleport" : d.plan.kind);
+// Fighters' plans named as their options ("attack:secondary", "heal:bandage", ...).
+const MELEE_OPTION = { attack: (p) => p.ability ?? "swing", bandage: () => "bandage", drink: () => "potion", throw: () => "explosion", retreat: () => "retreat" };
+const spellOf = (d) =>
+  d.module === "melee"
+    ? (MELEE_OPTION[d.plan.kind]?.(d.plan) ?? d.plan.kind)
+    : d.plan.kind === "cast" ? d.plan.spell : d.plan.kind === "teleport" ? "teleport" : d.plan.kind;
 const modeOf = (d) =>
-  d.plan.kind === "cast" || d.plan.kind === "teleport" ? d.mode.choice : d.plan.kind === "retreat" ? "defense" : "wait";
-const probOf = (d) => {
-  const dist = { damage: d.damage, interrupt: d.interrupt, defense: d.defense }[d.mode.choice];
-  const s = spellOf(d);
-  return dist?.probabilities?.[s];
-};
+  d.module === "melee"
+    ? d.mode.choice
+    : d.plan.kind === "cast" || d.plan.kind === "teleport" ? d.mode.choice : d.plan.kind === "retreat" ? "defense" : "wait";
+const probOf = (d) => d.parts?.[d.mode.choice]?.probabilities?.[spellOf(d)];
 
 // ---------------------------------------------------------------- connection
 
@@ -169,9 +172,18 @@ function renderDecision() {
     `<div class="headline"><span class="m-${modeOf(d)}">${modeOf(d)}</span> / ${esc(spellOf(d))}${p !== undefined ? `<span class="p">${p.toFixed(2)}</span>` : ""}</div>` +
     `<dl class="kv">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
   bars("mode", d.mode);
-  bars("damage", d.damage);
-  bars("interrupt", d.interrupt);
-  bars("defense", d.defense);
+  // Mages show their three spell lists; fighters their three most likely modes.
+  const TITLES = { damage: "Damage spell", interrupt: "Interrupt spell", defense: "Defense spell" };
+  const order =
+    d.module === "melee"
+      ? Object.entries(d.mode.probabilities).sort((a, b) => b[1] - a[1]).map(([m]) => m)
+      : ["damage", "interrupt", "defense"];
+  ["damage", "interrupt", "defense"].forEach((box, i) => {
+    const m = order[i];
+    $(`h-${box}`).textContent = TITLES[m] ?? (m ? m[0].toUpperCase() + m.slice(1) : "");
+    if (m) bars(box, d.parts?.[m]);
+    else $(box).innerHTML = "";
+  });
 }
 
 function bars(id, dist) {

@@ -16,7 +16,7 @@ export type RoundResult = {
 
 export type MatchInfo = {
   title: string;
-  fighters: { name: string; brain: string }[];
+  fighters: { name: string; brain: string; template?: string }[];
   round: number;
   rounds: number;
   results: RoundResult[];
@@ -44,10 +44,9 @@ function slim(r: DecisionRecord) {
     latencyMs: Math.round(d.latencyMs * 10) / 10,
     inputTokens: d.inputTokens,
     outputTokens: d.outputTokens,
+    module: d.module,
     mode: d.mode,
-    damage: d.damage,
-    interrupt: d.interrupt,
-    defense: d.defense,
+    parts: d.parts,
     tile: d.tile,
     plan: d.plan,
     why: d.why,

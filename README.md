@@ -51,16 +51,38 @@ npm run nvm -- duel Neo:laya Morpheus:rules
 ```
 
 Opponents: another bot (`Name:laya|jev|rules`), an NPC (`npc:EvilMageLord`), or a person playing
-in ClassicUO (`human:CharacterName`). Other commands:
+in ClassicUO (`human:CharacterName`). A bot can take a character template as a third part,
+`Name:brain:template`: `mage` (the default), `dexer` (katana, bandages, potions) or `archer` (bow,
+bandages); see [Templates](#templates). Other commands:
 
 ```bash
 npm run nvm -- eval laya jev            # decision quality on canonical duel moments
 npm run nvm -- eval laya jev --suite movement   # when to chase, when to stop and heal
+npm run nvm -- eval laya jev --suite melee      # a swordsman's potions, bandages, special moves
+npm run nvm -- duel Neo:laya:dexer Morpheus:rules:mage     # a fighter against a mage
 npm run nvm -- duel Neo:laya Morpheus:rules --arena wall   # obstacles: open, pillars, wall
 npm run nvm -- bench laya               # decision latency
 npm run nvm -- train Trinity --partner Tank --minutes 30   # level a bot's skills
 npm run nvm -- login Neo                # create/log in a bot and report
 ```
+
+### Templates
+
+A template in `templates/<id>.json` is a character build as data: stats, skills, the gear worn and
+the consumables carried, and the decision module it plays with (`mage`, or `melee` for fighters).
+The server applies one with `[NeoTemplate <name> <id>` and restocks its consumables every round; the
+bot reads the module. A new build is a new JSON file; a new kind of action is a new module.
+
+| template | module | plays with |
+|---|---|---|
+| `mage` | mage | spells: Magery, Eval Int, Meditation, Resist, Wrestling, Inscription, Poisoning |
+| `dexer` | melee | a katana with a hand free: bandages, heal, cure, refresh and explosion potions, Double Strike and Armor Ignore |
+| `archer` | melee | a bow (both hands, so no potions): bandages, Paralyzing Blow and Mortal Strike |
+
+Fighters are asked one question over their legal moves (`attack:swing|primary|secondary`,
+`heal:bandage|potion`, `cure:potion`, `refresh:potion`, `throw:explosion`, `move:retreat`); moves
+the game would refuse right now (no free hand, bandage already running, not enough mana) are not
+offered at all.
 
 ### Laya natively on Apple silicon
 
