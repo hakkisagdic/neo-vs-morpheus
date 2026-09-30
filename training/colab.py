@@ -14,6 +14,9 @@ Then, from the repo root (standard library only):
     python3 training/colab.py fetch     # package the checkpoint in the runtime and copy it to training/checkpoints/
     python3 training/colab.py clean     # stop the run and remove everything this script put in the runtime
 
+Keep the Colab tab visible while fetching (in front, or in a window of its own): Chrome throttles
+background tabs, and the fetch then crawls at a few KB/s.
+
 The runtime clones this repository at the local HEAD, so push before training. Teacher labels
 travel as gzip + base64 in 200 KB pieces through one reused cell, and never leave the runtime.
 
