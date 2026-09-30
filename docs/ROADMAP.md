@@ -22,6 +22,10 @@ data and models published on Hugging Face.
   before training, and results carry confidence intervals.
 - **Everything versioned.** Code commit, state-description version, question version, teacher
   model and date travel with every label, run and checkpoint.
+- **Three kinds of change, three places.** Game and shard facts (versions, cast times, ranges,
+  scripts) live in profiles that the state text and the legal options are built from; a person's
+  preferences live in tactics; only the judgement between legal options is learnt. A shard that
+  changes a cast time changes a profile, not the model.
 
 ## Architecture
 
@@ -44,6 +48,13 @@ every step ─► episode log (state, options, distribution, choice, plan, outco
   spellbook, and the modules it uses. `[NeoTemplate` applies a template file on the server.
   Adding a template the user asks for is a JSON file plus, if it brings a new kind of action, a
   module.
+- **Tactics** (`tactics/*.json`, `Name:brain:template:tactics`). A person's settings on top of the
+  model, also adjustable live in the monitor: health bands on heals, retreats, bandages and heal
+  potions (under the floor the move is required, above the ceiling it is not offered, in between
+  the model decides), aggression (shifts the answer between attacking and moves on yourself),
+  chase limits (tiles, seconds, teleport) and the explosion-potion range. Every decision records
+  the values it was made with. Next, the model learns styles too: Jev labels the same states as
+  cautious, balanced and aggressive, and the state text says which.
 - **Modules** (`bot/src/modules/*`). One capability each, behind one interface:
 
   ```ts
@@ -89,6 +100,57 @@ every step ─► episode log (state, options, distribution, choice, plan, outco
 - Live: round-robin tournaments between rules, Jev and each Laya version, per template matchup,
   sides alternated, Bradley-Terry ratings with confidence intervals, Jev rounds budgeted.
 - Regression: executor and guardrail unit tests in CI; a fixed smoke tournament before releases.
+
+## Learning from play
+
+Every game the bot or the user plays becomes training data, and mistakes weigh the most. The
+source is the packet stream, not screenshots: the headless client already sees every packet, the
+protocol is known, and reading the screen would be slower and less exact.
+
+- **Flight recorder (the bot).** Every session, not only duels, writes the episode log: snapshot,
+  state text with its versions, options, the brain's distribution and choice, guardrail
+  overrides, the executed plan, and what followed (damage dealt and taken, fizzles and
+  disturbs, refusals such as "You must wait", deaths and kills).
+- **Demonstrations (the user).** The user plays with ClassicUO through a local recording proxy
+  (client, proxy, server) that logs both directions without changing them. The proxy rewrites
+  the relay packet (0x8C) so the client reconnects through it, and decodes the server's
+  compression with our Huffman decoder. The same parser rebuilds the bot's snapshots, and the
+  user's action (a cast, a target, a bandage, a step) is the chosen option: expert labels at no
+  cost.
+- **Mistake mining.** After each episode, rules find bad outcomes (a death, a burst of damage, a
+  refused or wasted move, an interrupt that could not land in time, chasing out of range while
+  hurt) and flag the decisions in the seconds before them.
+- **Relabel and retrain.** Flagged states are labelled by Jev (a weekly credit budget) or by the
+  user in the monitor (accept, or pick another option); every label records its source. They
+  join the training set with extra weight. The fixed test sets and scenario suites decide
+  whether a new checkpoint replaces the old one. Where Jev is systematically wrong, a rule from
+  the game's mechanics corrects its labels, and the correction is recorded too.
+- **Privacy and permission.** Other players' names and serials become stable pseudonyms before
+  anything leaves the machine. Recording the user's own play needs no one's permission, but a
+  shard may forbid proxies and third-party tools, so its rules are checked first and recorded
+  in the shard profile. The bot itself plays only where "Playing on other shards" allows.
+
+Order: the flight recorder, mistake rules and review queue on the local server first; then the
+recording proxy against the local server; then an AOS shard (RunUO or ServUO family, like our
+ModernUO) that allows it; a Sphere profile after that. Outcome-based training (M5) reads the
+same logs.
+
+## Training lifecycle
+
+The game, the shards and what people want keep changing, so training is a routine with gates, not
+a one-off:
+
+1. **Change arrives** (a profile, a question format, a new template or tactic). First run the
+   gates on the current model: fixed held-out agreement, the scenario suites, a live series
+   against the scripted bot with decision time recorded. No gate fails, no training.
+2. **Question format changed.** Carry the labels over (`distill convert`: drop what the new
+   question no longer offers, renormalise, check a small fresh sample with the teacher); never
+   serve a model with a question it was not trained on (v3 with the new mage question lost 0-40).
+3. **Environment changed.** Relabel only the states whose text or options changed.
+4. **From play.** Flight recorder, mistake mining, relabelling queue (above).
+5. **Train** incrementally on everything kept (old data replayed against forgetting), a checkpoint
+   per run, tagged on Hugging Face; promote only if every gate holds, keep the previous one to
+   roll back to. Per-shard differences go into small adapters on one base model.
 
 ## Milestones
 

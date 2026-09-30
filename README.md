@@ -121,10 +121,10 @@ python3 training/colab.py all --data training/data/train.jsonl   # the runtime c
 python3 training/colab.py clean                                  # remove our files from the runtime
 ```
 
-`training/data` and `training/checkpoints` are git-ignored. The fine-tuned checkpoint is published
-as the [neo-duel-v1 release](https://github.com/hakkisagdic/neo-vs-morpheus/releases/tag/neo-duel-v1);
-the teacher labels are held back until FreeJev and TypeSafe confirm that redistributing Jev
-outputs is fine.
+`training/data` and `training/checkpoints` are git-ignored. v1 is published as the
+[neo-duel-v1 release](https://github.com/hakkisagdic/neo-vs-morpheus/releases/tag/neo-duel-v1);
+later checkpoints and the labels are in private Hugging Face repos (`training/publish_hf.py`)
+until FreeJev and TypeSafe confirm that redistributing Jev outputs is fine.
 
 Every match is saved to `runs/` with each decision and the state it was made from.
 
@@ -146,6 +146,8 @@ opponent, ...), the same composite question to every model; no clock involved:
 | Laya `typed-decisions`, not fine-tuned | 0 / 12 | 13% | 0.15 s (Metal) |
 | Laya, decision head distilled from 1,195 Jev labels (on a Mac) | 4 / 12 | 30% | 0.25 s (Metal) |
 | Laya, whole encoder fine-tuned on the same labels (Colab GPU) | 8 / 12 | 51% | 0.36 s (Metal) |
+| Laya v2, whole encoder, 6,131 Jev labels | 11 / 12 | 60% | 0.4-0.6 s (Metal) |
+| Laya v3, v2's labels plus 1,437 fighter labels | 11 / 12 | 59% | 0.4-0.6 s (Metal) |
 
 Out of the box Laya matches words rather than situations (a poisoned bot "chooses" Poison; an
 opponent casting Explosion makes it cast Explosion), in line with Laya's own benchmarks where
@@ -153,6 +155,23 @@ the capability comes from fine-tuning. Training only the decision head (the enco
 a 16 GB Mac can hold) moves it from 0 to 4 of 12. Fine-tuning the whole encoder takes it to 8 of
 12, one short of its teacher, and it picks Jev's move on 74% of held-out states (6% before
 fine-tuning, 51% with the head only).
+
+**More labels, closer imitation, and the teacher's mistake.** With 5,000 more labels (duels
+and a sampler) v2 picks Jev's move on 94.3% of the fixed held-out states (v1: 85.0%; 80% against
+43% where Jev did not pick its usual Magic Arrow), and gets 11 of the 12 moments, two more than
+its teacher. The one it misses is one Jev misses too: Jev interrupts spells that land before any
+interrupt could. A spell breaks only while it is being cast, and Magic Arrow or Weaken take
+0.75 s to land, yet in 2,081 of the 6,324 mage labels the opponent's spell lands sooner, and
+Jev's first choice is an interrupt in 2,034 of them. Laya learnt it: live, v3 answers "Magic
+Arrow interrupt" in three decisions out of four. The mage question was the cause, since it
+offered every move, legal or not. It now offers only legal ones (question `composite-2`):
+an interrupt only while it would land first, one "chase" move when the opponent is out of range
+or out of sight, Cure only when poisoned. The existing labels were carried over rather than
+bought again: the teacher's probabilities on moves the new question drops were removed and the
+rest renormalised. On 50 of the most affected states, asked again with the new question, Jev
+picks the same kind of move (attack, interrupt or a move on yourself) as the carried-over label
+in 95% of cases, and the same move in 70%. With the new question alone, v3 goes from 3 to 5 of
+the 6 movement moments (Jev: 5).
 
 **Live duels.** Speed decides a lot: a bot that thinks for seconds stands still while the other
 one casts. Rounds start 8 tiles apart, and each pairing plays from both sides, since the east
@@ -174,9 +193,21 @@ time. So a free local model that got none of those moments right out of the box,
 1,195 of Jev's answers, beats Jev in the duel. The FreeJev proxy adds most of Jev's latency
 (TypeSafe quotes 70-500 ms).
 
-It is still only a duel of Magic Arrows at medium range. From 4 tiles the scripted bot beats the
-fine-tuned Laya 15-5 (Laya west), and from 12 tiles, out of spell range, neither side closes in
-and every round is drawn: moving, chasing and fleeing come next ([roadmap](docs/ROADMAP.md)).
+v3 against the scripted bot, both sides, 30 September (decision time is the median per match; the
+Mac's GPU is shared, and when another program used it Laya slowed to 1-1.7 s and lost those
+matches, so those are not comparable):
+
+| start | Laya v3 | scripted bot | Laya's decision time |
+|---|---|---|---|
+| 8 tiles | 14 | 6 | 0.3-0.4 s |
+| 12 tiles (out of range) | 3 | 7 | 0.45-0.55 s |
+| pillars | 4 | 6 | 0.4 s and 1.2 s |
+| dexer against dexer | 5 | 5 | 0.6 s; the first side won all 10 |
+
+The v1 results were a duel of Magic Arrows at medium range: from 4 tiles the scripted bot beat v1
+15-5 (Laya west), and from 12 tiles neither side closed in. The bots now chase, heal out of reach
+and walk around pillars and walls (the table above); next is v4, trained on the new question with
+a batch of out-of-range and out-of-sight moments ([roadmap](docs/ROADMAP.md)).
 
 *Correction, 28 September 2026.* An NPC mage left over from a test on 26 September stood next
 to the west start and fought in every duel after it. The live results above replace the
