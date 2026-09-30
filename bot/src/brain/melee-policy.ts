@@ -4,6 +4,7 @@
 import { ABILITIES, type AbilityName } from "../game/items.ts";
 import type { ChoiceQuestion } from "./systemone.ts";
 import type { Distribution, DuelSnapshot, Plan } from "./types.ts";
+import { NEUTRAL, type Tactics, applyBands } from "./tactics.ts";
 
 /** Versions of the text and options (see FORMAT in duel-policy.ts). */
 export const MELEE_FORMAT = { describe: "melee-2", question: "melee-2" } as const;
@@ -109,20 +110,28 @@ export function meleeOptions(s: DuelSnapshot): Record<string, string> {
   return o;
 }
 
-/** Only the moves the game would accept now: a model cannot pick what it is not offered. */
-export function legalMeleeOptions(s: DuelSnapshot): Record<string, string> {
-  const legal = Object.entries(meleeOptions(s)).filter(([key]) => !blockedMelee(key, s));
-  return legal.length ? Object.fromEntries(legal) : { "attack:swing": meleeOptions(s)["attack:swing"] };
+/**
+ * Only the moves the game would accept now, narrowed by a person's tactics (health bands on
+ * bandages, heal potions and retreating): a model cannot pick what it is not offered.
+ */
+export function legalMeleeOptions(s: DuelSnapshot, t: Tactics = NEUTRAL): Record<string, string> {
+  const all = meleeOptions(s);
+  const legal = Object.keys(all).filter((key) => !blockedMelee(key, s, t));
+  if (!legal.length) {
+    return { "attack:swing": all["attack:swing"] };
+  }
+  const health = s.us.hitsMax > 0 ? (100 * s.us.hits) / s.us.hitsMax : 100;
+  return Object.fromEntries(applyBands(legal, health, t).options.map((key) => [key, all[key]]));
 }
 
-export function meleeQuestion(s: DuelSnapshot): Record<string, ChoiceQuestion> {
+export function meleeQuestion(s: DuelSnapshot, t: Tactics = NEUTRAL): Record<string, ChoiceQuestion> {
   return {
-    move: { type: "choice", instructions: `What should ${s.us.name} do next?`, criteria: legalMeleeOptions(s) },
+    move: { type: "choice", instructions: `What should ${s.us.name} do next?`, criteria: legalMeleeOptions(s, t) },
   };
 }
 
 /** Why an option cannot be used right now, or null if it can. */
-export function blockedMelee(key: string, s: DuelSnapshot): string | null {
+export function blockedMelee(key: string, s: DuelSnapshot, t: Tactics = NEUTRAL): string | null {
   const { us, them } = s;
   const sup = s.supplies;
   if (key.startsWith("attack:")) {
@@ -160,9 +169,9 @@ export function blockedMelee(key: string, s: DuelSnapshot): string | null {
     case "throw:explosion":
       return !sup?.explosionPotions
         ? "no explosion potions"
-        : them.distance > 10 || !them.inLineOfSight
+        : them.distance > t.explosionRange[1] || !them.inLineOfSight
           ? "out of throwing range"
-          : them.distance < 2
+          : them.distance < t.explosionRange[0]
             ? "too close: it would burst on you too"
             : null;
     case "move:retreat": {
@@ -186,16 +195,21 @@ const PLANS: Record<string, Plan> = {
 };
 
 /** The most probable usable option as a plan; notes when that differs from the raw choice. */
-export function resolveMeleePlan(s: DuelSnapshot, d: Distribution, overrides: string[]): { plan: Plan; why: string } {
+export function resolveMeleePlan(
+  s: DuelSnapshot,
+  d: Distribution,
+  overrides: string[],
+  t: Tactics = NEUTRAL,
+): { plan: Plan; why: string } {
   const options = meleeOptions(s);
   const ranked = Object.entries(d.probabilities)
     .filter(([k]) => k in options)
     .sort((a, b) => b[1] - a[1]);
   for (const [key] of ranked) {
-    const reason = blockedMelee(key, s);
+    const reason = blockedMelee(key, s, t);
     if (!reason) {
       if (key !== d.choice) {
-        overrides.push(`${d.choice} → ${key} (${blockedMelee(d.choice, s) ?? "not offered"})`);
+        overrides.push(`${d.choice} → ${key} (${blockedMelee(d.choice, s, t) ?? "not offered"})`);
       }
       return { plan: PLANS[key], why: options[key] };
     }

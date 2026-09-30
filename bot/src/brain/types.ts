@@ -1,4 +1,5 @@
 // What a duel brain sees and what it decides.
+import type { Tactics } from "./tactics.ts";
 
 export type Mode = "damage" | "interrupt" | "defense";
 
@@ -49,6 +50,8 @@ export type DuelSnapshot = {
     lastAbilityAgoMs?: number;
     /** A hand free for potions (no two-handed weapon, no shield). */
     freeHand?: boolean;
+    /** How long the opponent has been out of range or sight (tactics give up a chase after a while). */
+    outOfReachForMs?: number;
   };
   them: {
     name: string;
@@ -127,11 +130,13 @@ export type Decision = {
   plan: Plan;
   /** Short reason shown on the monitor. */
   why: string;
-  /** Guardrail corrections applied to the model's raw choice. */
+  /** Guardrail corrections applied to the model's raw choice, and what the tactics changed. */
   overrides: string[];
+  /** The tactics the decision was made with (none: the model's own answer). */
+  tactics?: Tactics;
 };
 
 export interface DuelBrain {
   readonly name: string;
-  decide(snapshot: DuelSnapshot): Promise<Decision>;
+  decide(snapshot: DuelSnapshot, tactics?: Tactics): Promise<Decision>;
 }

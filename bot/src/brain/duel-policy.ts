@@ -1,7 +1,9 @@
 // The duel as typed questions, and the guardrails that turn answers into a legal plan.
+import { castDelayMs } from "../game/caster.ts";
 import type { Grid } from "../world/grid.ts";
 import { spell } from "../uo/spells.ts";
 import type { ChoiceQuestion } from "./systemone.ts";
+import { NEUTRAL, type Tactics, applyBands } from "./tactics.ts";
 import {
   DAMAGE_SPELLS,
   DEFENSE_SPELLS,
@@ -21,7 +23,22 @@ export const SPELL_RANGE = 10;
  * changes: every run and every label records them, so data made with different formats never mix
  * unnoticed.
  */
-export const FORMAT = { describe: "duel-1", question: "composite-1" } as const;
+export const FORMAT = { describe: "duel-1", question: "composite-2" } as const;
+
+/** Out of range or out of sight no spell reaches them, so an attack means getting there. */
+export const isOutOfReach = (s: DuelSnapshot) => (!s.them.inRange || !s.them.inLineOfSight) && !s.them.dead;
+
+/** After our cast the bot answers the target cursor at once; this covers the round trip. */
+const TARGET_MS = 100;
+
+/**
+ * Whether our spell would hit while theirs is still being cast. Damage and curses break a spell
+ * only then (ModernUO's Spell.OnCasterHurt checks IsCasting); after that it is on its way.
+ */
+export const landsFirst = (key: string, s: DuelSnapshot) =>
+  s.them.casting !== null && s.them.landsInMs >= s.us.readyInMs + castDelayMs(spell(key)) + TARGET_MS;
+
+const CHASE_TEXT = "walk towards them (or Teleport next to them when a tile is in reach) until they are in range and in sight";
 
 const REAGENTS: Record<string, string[]> = {
   magicArrow: ["sulfurousAsh"],
@@ -144,25 +161,52 @@ const MODE_LABEL: Record<Mode, string> = {
  * instead of four, which matters on a CPU-only backend. `splitComposite` recovers the per-mode
  * distributions the monitor shows.
  */
-export function compositeQuestion(s: DuelSnapshot): Record<string, ChoiceQuestion> {
-  const criteria: Record<string, string> = {};
-  const add = (mode: Mode, keys: readonly string[], text: Record<string, string>) => {
-    for (const k of keys) {
-      criteria[`${mode}:${k}`] = `${MODE_LABEL[mode]}: ${text[k]}`;
+/**
+ * The legal options narrowed by a person's tactics: no chase past the chase limits, and the
+ * health bands on heals and retreats. With neutral tactics these are the legal options.
+ */
+export function tacticalOptions(s: DuelSnapshot, t: Tactics = NEUTRAL): { options: string[]; notes: string[] } {
+  let options = legalOptions(s);
+  const notes: string[] = [];
+  if (options.includes("damage:chase")) {
+    const tooFar = s.them.distance > t.chase.maxTiles;
+    const tooLong = (s.us.outOfReachForMs ?? 0) > t.chase.giveUpSeconds * 1000;
+    if (tooFar || tooLong) {
+      options = options.filter((k) => k !== "damage:chase");
+      notes.push(tooFar ? `no chase past ${t.chase.maxTiles} tiles` : `chase given up after ${t.chase.giveUpSeconds} s`);
     }
-  };
-  add("damage", DAMAGE_SPELLS, DAMAGE_CRITERIA);
-  add("interrupt", INTERRUPT_SPELLS, INTERRUPT_CRITERIA);
-  add("defense", DEFENSE_SPELLS, DEFENSE_CRITERIA);
+  }
+  const banded = applyBands(options, pct(s.us.hits, s.us.hitsMax), t);
+  if (banded.note) {
+    notes.push(banded.note);
+  }
+  return { options: banded.options, notes };
+}
+
+export function compositeQuestion(s: DuelSnapshot, t: Tactics = NEUTRAL): Record<string, ChoiceQuestion> {
+  const text = (mode: Mode, key: string) =>
+    key === "chase"
+      ? CHASE_TEXT
+      : mode === "damage"
+        ? DAMAGE_CRITERIA[key]
+        : mode === "interrupt"
+          ? INTERRUPT_CRITERIA[key]
+          : DEFENSE_CRITERIA[key];
+  const criteria: Record<string, string> = {};
+  for (const option of tacticalOptions(s, t).options) {
+    const [mode, key] = option.split(":") as [Mode, string];
+    criteria[option] = `${MODE_LABEL[mode]}: ${text(mode, key)}`;
+  }
   return {
-    move: { type: "choice", instructions: `Which spell should ${s.us.name} cast next?`, criteria },
+    move: { type: "choice", instructions: `What should ${s.us.name} do next?`, criteria },
   };
 }
 
 const normalize = (p: Record<string, number>): Distribution => {
   const total = Object.values(p).reduce((a, b) => a + b, 0) || 1;
   const probabilities = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v / total]));
-  const choice = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0][0];
+  // A mode can be empty now that questions offer only legal options.
+  const choice = Object.entries(probabilities).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
   return { choice, probabilities };
 };
 
@@ -186,6 +230,9 @@ export function splitComposite(d: Distribution): Record<Mode | "mode", Distribut
 
 /** Why an option cannot be used right now, or null if it can. */
 export function blocked(key: string, s: DuelSnapshot): string | null {
+  if (key === "chase") {
+    return isOutOfReach(s) ? null : `${s.them.name} is already in range and in sight`;
+  }
   if (key === "retreat") {
     const hurt = s.us.hits < s.us.hitsMax * 0.8 || s.us.poisoned;
     return !hurt ? "healthy enough to stand and fight" : s.them.distance > SPELL_RANGE + 2 ? "already out of reach" : null;
@@ -222,19 +269,49 @@ export function blocked(key: string, s: DuelSnapshot): string | null {
   return null;
 }
 
+/** blocked, plus what the mode asks of the move: an interrupt has to land before their spell. */
+export function blockedAs(mode: Mode, key: string, s: DuelSnapshot): string | null {
+  const reason = blocked(key, s);
+  if (reason || mode !== "interrupt") {
+    return reason;
+  }
+  if (!s.them.casting) {
+    return `${s.them.name} is not casting`;
+  }
+  return landsFirst(key, s)
+    ? null
+    : `${spell(s.them.casting).name} lands in ${seconds(s.them.landsInMs)}, before ${spell(key).name} could`;
+}
+
+/**
+ * The moves the question offers (composite-2), only those the bot can make now: out of reach,
+ * chasing or a move on yourself; an interrupt only while it would land first.
+ */
+export function legalOptions(s: DuelSnapshot): string[] {
+  const keys: string[] = [];
+  if (isOutOfReach(s)) {
+    keys.push("damage:chase");
+  } else {
+    keys.push(...DAMAGE_SPELLS.filter((k) => !blocked(k, s)).map((k) => `damage:${k}`));
+    keys.push(...INTERRUPT_SPELLS.filter((k) => !blockedAs("interrupt", k, s)).map((k) => `interrupt:${k}`));
+  }
+  keys.push(...DEFENSE_SPELLS.filter((k) => !blocked(k, s)).map((k) => `defense:${k}`));
+  return keys;
+}
+
 /** Highest-probability usable option; notes when that differs from the raw choice. */
-export function pick(d: Distribution, s: DuelSnapshot, overrides: string[]): string | null {
+export function pick(d: Distribution, s: DuelSnapshot, overrides: string[], mode: Mode = "damage"): string | null {
   const ranked = Object.entries(d.probabilities).sort((a, b) => b[1] - a[1]);
   for (const [key] of ranked) {
-    const reason = blocked(key, s);
+    const reason = blockedAs(mode, key, s);
     if (!reason) {
       if (key !== d.choice) {
-        overrides.push(`${d.choice} → ${key} (${blocked(d.choice, s)})`);
+        overrides.push(`${d.choice} → ${key} (${blockedAs(mode, d.choice, s)})`);
       }
       return key;
     }
   }
-  overrides.push(`no usable option (${blocked(d.choice, s)})`);
+  overrides.push(`no usable option (${d.choice ? blockedAs(mode, d.choice, s) : "none offered"})`);
   return null;
 }
 
@@ -251,18 +328,21 @@ export function resolvePlan(
   byMode: Record<Mode, Distribution>,
   tile: Distribution | undefined,
   overrides: string[],
+  t: Tactics = NEUTRAL,
 ): { plan: Plan; why: string } {
   // Out of range or out of sight an attack means chasing: teleport next to them if a tile is in
   // reach, otherwise run closer. Defensive moves still work there, so a hurt bot that ran away
   // or hid can heal instead of being pulled straight back.
   const chase = (): { plan: Plan; why: string } => {
-    const t = tile ? s.tiles.find((x) => x.id === tile.choice) : s.tiles[0];
-    if (t && !blocked("teleport", s)) {
-      return { plan: { kind: "teleport", tile: t }, why: `out of range; ${t.label}` };
+    const target = tile ? s.tiles.find((x) => x.id === tile.choice) : s.tiles[0];
+    if (target && t.chase.teleport && !blocked("teleport", s)) {
+      return { plan: { kind: "teleport", tile: target }, why: `out of range; ${target.label}` };
     }
     return { plan: { kind: "approach" }, why: `${s.them.name} is out of spell range; closing in` };
   };
-  const outOfReach = (!s.them.inRange || !s.them.inLineOfSight) && !s.them.dead;
+  const outOfReach = isOutOfReach(s);
+  // The tactics may rule the chase out (too far, or given up): then only moves on yourself remain.
+  const mayChase = outOfReach && tacticalOptions(s, t).options.includes("damage:chase");
 
   const modes = (Object.entries(mode.probabilities) as [Mode, number][]).sort((a, b) => b[1] - a[1]);
   for (const [m] of modes) {
@@ -273,9 +353,12 @@ export function resolvePlan(
       continue;
     }
     if (outOfReach && m !== "defense") {
-      return chase();
+      if (mayChase) {
+        return chase();
+      }
+      continue;
     }
-    const key = pick(byMode[m], s, overrides);
+    const key = pick(byMode[m], s, overrides, m);
     if (!key) {
       continue;
     }
@@ -284,6 +367,9 @@ export function resolvePlan(
     }
     if (key === "retreat") {
       return { plan: { kind: "retreat" }, why: DEFENSE_CRITERIA.retreat };
+    }
+    if (key === "chase") {
+      return chase();
     }
     if (key === "teleport") {
       const t = tile ? s.tiles.find((x) => x.id === tile.choice) : s.tiles[0];
@@ -297,8 +383,11 @@ export function resolvePlan(
       m === "defense" ? DEFENSE_CRITERIA[key] : m === "interrupt" ? INTERRUPT_CRITERIA[key] : DAMAGE_CRITERIA[key];
     return { plan: { kind: "cast", spell: key, target }, why };
   }
-  if (outOfReach) {
+  if (mayChase) {
     return chase();
+  }
+  if (outOfReach) {
+    return { plan: { kind: "wait", ms: 300 }, why: `${s.them.name} is out of reach and the tactics say not to chase` };
   }
   return { plan: { kind: "wait", ms: 300 }, why: "nothing castable right now; waiting for mana" };
 }

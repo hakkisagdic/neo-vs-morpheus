@@ -101,16 +101,48 @@ function sampleSnapshot(r: ReturnType<typeof rng>): DuelSnapshot {
   return s;
 }
 
+/**
+ * Mage states around moving: the opponent out of sight (behind a pillar or a wall) or out of spell
+ * range, with health, poison and mana spread as in sampledStates. Duels rarely go there, and the
+ * movement suite shows it: the model chases when it should stop and heal.
+ */
+export function sampledMovementStates(n: number, seed = 20261001): TrainingState[] {
+  return movementSnapshots(n, seed).map((s, i) => toTraining(`movement:${seed}:${i}`, "sampled", s));
+}
+
+/** The movement sampler's draws as snapshots (the states are rendered from these). */
+export function movementSnapshots(n: number, seed = 20261001): DuelSnapshot[] {
+  const r = rng(seed);
+  return Array.from({ length: n }, () => {
+    const s = sampleSnapshot(r);
+    const hidden = r.chance(0.5);
+    const distance = hidden ? r.int(3, 12) : r.int(11, 16);
+    s.them = { ...s.them, distance, x: s.us.x + distance, inLineOfSight: !hidden, inRange: distance <= 10 };
+    if (r.chance(0.3)) {
+      s.recent = [...s.recent, `${s.us.name} ran ${r.int(2, 5)} tiles away from ${s.them.name}`].slice(-4);
+    }
+    s.tiles = distance > 2 ? teleportTiles(s) : [];
+    return s;
+  });
+}
+
+/** Out of sight or out of spell range: where the mage has to decide whether to move. */
+export const isMovementState = (s: DuelSnapshot) => !s.them.inLineOfSight || !s.them.inRange;
+
 const toTraining = (id: string, source: TrainingState["source"], s: DuelSnapshot, module: ModuleName = "mage"): TrainingState =>
   module === "melee"
     ? { id, source, module, format: MELEE_FORMAT, state: describeMelee(s), questions: meleeQuestion(s) }
     : { id, source, module, format: FORMAT, state: describeDuel(s), questions: compositeQuestion(s) };
 
 /**
- * Every snapshot recorded in runs/*.json by a fighter of the given module, deduplicated by
- * rendered state. Runs from before modules existed are the mage's.
+ * Every snapshot recorded in runs/*.json by a fighter of the given module (and passing keep, if
+ * given), deduplicated by rendered state. Runs from before modules existed are the mage's.
  */
-export async function statesFromRuns(runsDir: string, module: ModuleName = "mage"): Promise<TrainingState[]> {
+export async function statesFromRuns(
+  runsDir: string,
+  module: ModuleName = "mage",
+  keep: (s: DuelSnapshot) => boolean = () => true,
+): Promise<TrainingState[]> {
   const out: TrainingState[] = [];
   const seen = new Set<string>();
   let files: string[] = [];
@@ -124,7 +156,7 @@ export async function statesFromRuns(runsDir: string, module: ModuleName = "mage
       records?: { snapshot: DuelSnapshot; decision?: { module?: ModuleName } }[];
     };
     for (const [i, rec] of (run.records ?? []).entries()) {
-      if ((rec.decision?.module ?? "mage") !== module) {
+      if ((rec.decision?.module ?? "mage") !== module || !keep(rec.snapshot)) {
         continue;
       }
       const t = toTraining(`run:${file}:${i}`, "run", rec.snapshot, module);
@@ -138,8 +170,13 @@ export async function statesFromRuns(runsDir: string, module: ModuleName = "mage
 }
 
 export function sampledStates(n: number, seed = 20260927): TrainingState[] {
+  return sampledSnapshots(n, seed).map((s, i) => toTraining(`sampled:${seed}:${i}`, "sampled", s));
+}
+
+/** The sampler's draws as snapshots, in the same order (labels are rebuilt from these). */
+export function sampledSnapshots(n: number, seed = 20260927): DuelSnapshot[] {
   const r = rng(seed);
-  return Array.from({ length: n }, (_, i) => toTraining(`sampled:${seed}:${i}`, "sampled", sampleSnapshot(r)));
+  return Array.from({ length: n }, () => sampleSnapshot(r));
 }
 
 // Fighters ------------------------------------------------------------------------------------

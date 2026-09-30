@@ -3,11 +3,20 @@ import { parseArgs } from "node:util";
 import { ModelBrain } from "./brain/brains.ts";
 import { systemOne } from "./brain/systemone.ts";
 import { SUITES, scenarioRequest } from "./eval/scenarios.ts";
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type LabeledState, labelStates } from "./distill/label.ts";
-import { sampledMeleeStates, sampledStates, statesFromRuns } from "./distill/states.ts";
-import { describeDuel, teleportTiles } from "./brain/duel-policy.ts";
+import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from "./distill/convert.ts";
+import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
+import {
+  type TrainingState,
+  isMovementState,
+  sampledMeleeStates,
+  sampledMovementStates,
+  sampledStates,
+  statesFromRuns,
+} from "./distill/states.ts";
+import { FORMAT, compositeQuestion, describeDuel, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
@@ -19,8 +28,10 @@ import { MonitorHub } from "./monitor/hub.ts";
 
 const USAGE = `usage: npm run nvm -- <command>
 
-  duel <Name:brain[:template]> <Name:brain[:template] | npc:Type | human:Name> [options]
+  duel <Name:brain[:template[:tactics]]> <Name:brain[:template[:tactics]] | npc:Type | human:Name> [options]
        brains: laya, jev, rules; templates: templates/*.json (mage, dexer, archer; default mage)
+       tactics: tactics/*.json (balanced, aggressive, cautious; default neutral, the model's own
+                answers); the monitor can change them during the match. The scripted bot ignores them.
        --rounds N      rounds to play (default 3)
        --distance N    starting distance in tiles (default 8)
        --timeout S     seconds before a round is scored on health left (default 120)
@@ -36,11 +47,15 @@ const USAGE = `usage: npm run nvm -- <command>
                       with --partner and --resist they also curse each other for Resisting Spells
   login <Name>        log a bot in (creates account and character) and report
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
-  eval [laya] [jev] [--suite duel|movement]
+  eval [laya] [jev] [--suite duel|movement|sight|melee]
                       decision quality on canonical moments, no clock involved
 
   distill states [n] [--module melee]   recorded + n sampled states to training/data/states[-melee].jsonl
   distill label [limit] [--module melee] label them with Jev (resumable) into training/data/labeled[-melee].jsonl
+      --set movement  a mage batch about moving instead: recorded states out of sight or out of
+                      range that labeled.jsonl lacks, plus n sampled ones (states-movement.jsonl)
+  distill convert           carry every mage label over to the current question
+                            (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
                             (default training/data/test.jsonl, written by training/split.py)
 `;
@@ -48,12 +63,15 @@ const USAGE = `usage: npm run nvm -- <command>
 const BRAINS = new Set(["laya", "jev", "rules"]);
 
 function fighter(spec: string): Fighter {
-  const [name, brain = "rules", template = "mage"] = spec.split(":");
+  const [name, brain = "rules", template = "mage", tactics = "neutral"] = spec.split(":");
   if (!name || !BRAINS.has(brain)) {
-    throw new Error(`bad fighter "${spec}"; expected Name:laya|jev|rules[:template]`);
+    throw new Error(`bad fighter "${spec}"; expected Name:laya|jev|rules[:template[:tactics]]`);
   }
   loadTemplate(template); // fail early on a template that does not exist
-  return { kind: "bot", name, brain: brain as BrainKind, template };
+  if (tactics !== "neutral" && !existsSync(join(import.meta.dirname, "..", "..", "tactics", `${tactics}.json`))) {
+    throw new Error(`no tactics/${tactics}.json`);
+  }
+  return { kind: "bot", name, brain: brain as BrainKind, template, tactics };
 }
 
 function opponent(spec: string): Opponent {
@@ -294,16 +312,82 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
   if (module !== "mage" && module !== "melee") {
     throw new Error(`unknown module ${module}; mage or melee`);
   }
-  const suffix = module === "mage" ? "" : `-${module}`;
+  // --set movement: a separate batch of mage states about moving, in its own files.
+  const setAt = rest.indexOf("--set");
+  const set = setAt >= 0 ? rest[setAt + 1] : null;
+  if (setAt >= 0) {
+    rest.splice(setAt, 2);
+  }
+  if (set !== null && ((set !== "movement" && set !== "relabel") || module !== "mage")) {
+    throw new Error(`unknown set ${set} for the ${module}; the mage has movement and relabel sets`);
+  }
+  const suffix = set ? `-${set}` : module === "mage" ? "" : `-${module}`;
   const statesPath = join(DATA, `states${suffix}.jsonl`);
-  const labeledPath = join(DATA, `labeled${suffix}.jsonl`);
+  // Fresh answers for labels that could not be carried over go where `distill convert` prefers them.
+  const labeledPath = join(DATA, set === "relabel" ? "relabeled-mage.jsonl" : `labeled${suffix}.jsonl`);
   if (sub === "states") {
-    const fromRuns = await statesFromRuns(join(import.meta.dirname, "..", "..", "runs"), module);
+    const runs = join(import.meta.dirname, "..", "..", "runs");
     const n = Number(rest[0] ?? 1200);
-    const sampled = module === "melee" ? sampledMeleeStates(n) : sampledStates(n);
+    let fromRuns;
+    let sampled;
+    if (set === "movement") {
+      // States the main mage batch already paid for are not asked again.
+      const paid = new Set((await readJsonl<LabeledState>(join(DATA, "labeled.jsonl"))).map((s) => s.state));
+      fromRuns = (await statesFromRuns(runs, module, isMovementState)).filter((s) => !paid.has(s.state));
+      sampled = sampledMovementStates(n);
+    } else {
+      fromRuns = await statesFromRuns(runs, module);
+      sampled = module === "melee" ? sampledMeleeStates(n) : sampledStates(n);
+    }
     const all = [...fromRuns, ...sampled];
     await writeFile(statesPath, all.map((s) => JSON.stringify(s)).join("\n") + "\n");
-    console.log(`${all.length} ${module} states (${fromRuns.length} from runs, ${sampled.length} sampled) -> ${statesPath}`);
+    console.log(`${all.length} ${set ?? module} states (${fromRuns.length} from runs, ${sampled.length} sampled) -> ${statesPath}`);
+  } else if (sub === "convert") {
+    // Every mage label, whatever question it was asked with, carried over to the current one. A
+    // state the teacher answered again with the current question (relabeled-mage.jsonl) keeps
+    // that fresh answer instead of a converted one.
+    const all = [
+      ...(await readJsonl<LabeledState>(join(DATA, "labeled.jsonl"))),
+      ...(await readJsonl<LabeledState>(join(DATA, "labeled-movement.jsonl"))),
+      ...(await readJsonl<LabeledState>(join(DATA, "relabeled-mage.jsonl"))),
+    ];
+    const current = new Map(all.filter((r) => r.format?.question === FORMAT.question).map((r) => [r.id, r]));
+    const rows = [
+      ...new Map(all.map((r) => [r.id, current.get(r.id) ?? r])).values(),
+    ];
+    const snapshots = await snapshotsFor(
+      rows.map((r) => r.id),
+      join(import.meta.dirname, "..", "..", "runs"),
+    );
+    const out: ConvertedLabel[] = [];
+    const relabel: TrainingState[] = [];
+    const dropped = new Map<string, number>();
+    for (const row of rows) {
+      const s = snapshots.get(row.id);
+      if (s && needsRelabel(row, s)) {
+        relabel.push({ id: row.id, source: row.source, module: "mage", format: FORMAT, state: row.state, questions: compositeQuestion(s) });
+        continue;
+      }
+      const converted = s ? convertLabel(row, s) : "no snapshot for this id";
+      if (typeof converted === "string") {
+        dropped.set(converted, (dropped.get(converted) ?? 0) + 1);
+      } else {
+        out.push(converted);
+      }
+    }
+    const path = join(DATA, "labeled-mage.jsonl");
+    await writeFile(path, out.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    // Asked again with `distill label --set relabel`; the fresh answers land in relabeled-mage.jsonl.
+    await writeFile(join(DATA, "states-relabel.jsonl"), relabel.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const kept = out.map((r) => r.teacher.converted?.kept ?? 1);
+    const mean = kept.reduce((a, b) => a + b, 0) / Math.max(kept.length, 1);
+    console.log(`${out.length} of ${rows.length} mage labels in ${FORMAT.question} -> ${path}`);
+    console.log(`  ${relabel.length} to ask again (distill label --set relabel)`);
+    console.log(`  the teacher's probability on options still offered: mean ${(mean * 100).toFixed(0)}%, ` +
+      `under 20% in ${kept.filter((k) => k < 0.2).length}`);
+    for (const [why, n] of dropped) {
+      console.log(`  dropped ${n}: ${why}`);
+    }
   } else if (sub === "label") {
     const brain = makeBrain("jev");
     if (!(brain instanceof ModelBrain)) {

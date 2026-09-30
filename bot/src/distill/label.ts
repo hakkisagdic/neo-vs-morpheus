@@ -13,7 +13,7 @@ export type LabeledState = TrainingState & {
 const MIN_GAP_MS = 2_100;
 const MAX_FAILURES = 8;
 
-async function readJsonl<T>(path: string): Promise<T[]> {
+export async function readJsonl<T>(path: string): Promise<T[]> {
   try {
     const text = await readFile(path, "utf8");
     return text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as T);
@@ -33,7 +33,9 @@ export async function labelStates(
   // A state is done if its id or its text was labeled: the same state can reappear under a new id.
   const previous = await readJsonl<LabeledState>(outPath);
   const done = new Set(previous.flatMap((s) => [s.id, s.state]));
-  const todo = states.filter((s) => !done.has(s.id) && !done.has(s.state)).slice(0, limit);
+  // A question with one legal option has one answer: nothing to learn, nothing to pay for.
+  const choices = (s: TrainingState) => Math.max(...Object.values(s.questions).map((q) => Object.keys(q.criteria).length));
+  const todo = states.filter((s) => !done.has(s.id) && !done.has(s.state) && choices(s) > 1).slice(0, limit);
   log(`${states.length} states, ${previous.length} already labeled, labeling ${todo.length} with ${teacher.name}`);
 
   // Ctrl-C or SIGTERM stops after the call in flight: a call cut off mid-request stays "running"

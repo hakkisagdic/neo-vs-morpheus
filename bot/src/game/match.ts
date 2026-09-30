@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ModelBrain, RuleBrain } from "../brain/brains.ts";
+import { type Tactics, loadTactics } from "../brain/tactics.ts";
 import { FORMAT } from "../brain/duel-policy.ts";
 import { MELEE_FORMAT } from "../brain/melee-policy.ts";
 import { SCENARIOS } from "../eval/scenarios.ts";
@@ -15,7 +16,15 @@ import { moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
 export type BrainKind = "laya" | "jev" | "rules";
-export type Fighter = { kind: "bot"; name: string; brain: BrainKind; /** templates/<id>.json */ template: string };
+export type Fighter = {
+  kind: "bot";
+  name: string;
+  brain: BrainKind;
+  /** templates/<id>.json */
+  template: string;
+  /** tactics/<id>.json, or "neutral": the model's own answers */
+  tactics: string;
+};
 export type Opponent = Fighter | { kind: "npc"; type: string } | { kind: "human"; name: string };
 
 export type MatchOptions = {
@@ -92,13 +101,15 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
   }
   const brainA = makeBrain(o.a.brain, moduleOf(o.a.template));
   const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain, moduleOf(o.b.template)) : null;
+  let tacticsA = await loadTactics(o.a.tactics);
+  let tacticsB = o.b.kind === "bot" ? await loadTactics(o.b.tactics) : null;
 
   const match: MatchInfo = {
     title: `${label(o.a)} vs ${describe(o.b)}`,
     fighters: [
-      { name: o.a.name, brain: o.a.brain, template: o.a.template },
+      { name: o.a.name, brain: o.a.brain, template: o.a.template, tactics: o.a.tactics },
       o.b.kind === "bot"
-        ? { name: o.b.name, brain: o.b.brain, template: o.b.template }
+        ? { name: o.b.name, brain: o.b.brain, template: o.b.template, tactics: o.b.tactics }
         : o.b.kind === "npc"
           ? { name: o.b.type, brain: "npc" }
           : { name: o.b.name, brain: "human" },
@@ -168,6 +179,13 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       const ac = new AbortController();
       const ctrlA = new DuelController(botA, brainA, opponentSerial, opponentName);
       const ctrlB = botB && brainB ? new DuelController(botB, brainB, botA.world.playerSerial, o.a.name) : null;
+      // Tactics carry over between rounds: a change made in the monitor stays until the match ends.
+      ctrlA.tactics = tacticsA;
+      if (ctrlB && tacticsB) {
+        ctrlB.tactics = tacticsB;
+      }
+      ctrlA.on("tactics", (t: Tactics) => (tacticsA = t));
+      ctrlB?.on("tactics", (t: Tactics) => (tacticsB = t));
       for (const c of [ctrlA, ctrlB]) {
         if (c) {
           hub.attach(c);

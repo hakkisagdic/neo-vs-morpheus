@@ -105,8 +105,11 @@ export const scenarioRequest = (s: Scenario) =>
     ? { state: describeMelee(s.snapshot), questions: meleeQuestion(s.snapshot) }
     : { state: describeDuel(s.snapshot), questions: compositeQuestion(s.snapshot) };
 
-/** Out of spell range any attack means chasing (a teleport or running closer). */
-const CHASE = DAMAGE_SPELLS.map((k) => `damage:${k}`);
+/**
+ * Out of reach the question offers one attack, chasing (composite-2); with composite-1 every attack
+ * option meant chasing there (a teleport or running closer).
+ */
+const CHASE = ["damage:chase", ...DAMAGE_SPELLS.map((k) => `damage:${k}`)];
 const far = (distance: number): Them => ({ x: 1176 + distance, distance, inRange: distance <= 10 });
 
 /**
@@ -143,6 +146,30 @@ export const MOVEMENT_SCENARIOS: Scenario[] = [
     id: "healed up behind distance, opponent waiting",
     accept: CHASE,
     snapshot: state({ hits: 90, mana: 70 }, { ...far(12), healthPct: 60 }, ["Neo cast Greater Heal"]),
+  },
+];
+
+/**
+ * Line of sight, as in the pillar and wall arenas: an opponent out of sight cannot be targeted,
+ * and cannot target us either. An attack then means walking to where they are in sight again.
+ */
+const hidden = (distance: number): Them => ({ x: 1176 + distance, distance, inLineOfSight: false });
+
+export const SIGHT_SCENARIOS: Scenario[] = [
+  {
+    id: "opponent behind a pillar, both fresh",
+    accept: CHASE,
+    snapshot: state({}, hidden(5)),
+  },
+  {
+    id: "hurt, opponent out of sight",
+    accept: ["defense:greaterHeal", "defense:heal"],
+    snapshot: state({ hits: 35 }, { ...hidden(6), healthPct: 80 }, ["Neo took 25 damage"]),
+  },
+  {
+    id: "poisoned, opponent out of sight",
+    accept: ["defense:cure"],
+    snapshot: state({ hits: 60, poisoned: true }, { ...hidden(6), healthPct: 85 }, ["Neo was poisoned by Morpheus"]),
   },
 ];
 
@@ -184,4 +211,9 @@ export const MELEE_SCENARIOS: Scenario[] = [
     snapshot: fighter({ hits: 60, bandagingForMs: 3_000, healPotionReadyInMs: 6_000 }, { healthPct: 75 }) },
 ];
 
-export const SUITES: Record<string, Scenario[]> = { duel: SCENARIOS, movement: MOVEMENT_SCENARIOS, melee: MELEE_SCENARIOS };
+export const SUITES: Record<string, Scenario[]> = {
+  duel: SCENARIOS,
+  movement: MOVEMENT_SCENARIOS,
+  sight: SIGHT_SCENARIOS,
+  melee: MELEE_SCENARIOS,
+};

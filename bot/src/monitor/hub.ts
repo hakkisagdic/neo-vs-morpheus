@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { extname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
+import { parseTactics } from "../brain/tactics.ts";
 import type { DecisionRecord, DuelController } from "../game/duel.ts";
 
 export type RoundResult = {
@@ -16,7 +17,7 @@ export type RoundResult = {
 
 export type MatchInfo = {
   title: string;
-  fighters: { name: string; brain: string; template?: string }[];
+  fighters: { name: string; brain: string; template?: string; tactics?: string }[];
   round: number;
   rounds: number;
   results: RoundResult[];
@@ -82,9 +83,17 @@ export class MonitorHub {
       throw new Error(`no free port for the monitor in ${port}..${port + 9}`);
     }
     const wss = new WebSocketServer({ server, path: "/ws" });
-    wss.on("connection", (ws) => {
+    wss.on("connection", (ws, req) => {
+      // The page can change a bot's tactics over this socket, so only the monitor's own page may
+      // connect: a browser lets any site open a WebSocket to localhost, but it sends the site's origin.
+      const origin = req.headers.origin;
+      if (origin && origin !== `http://localhost:${bound}` && origin !== `http://127.0.0.1:${bound}`) {
+        ws.close(1008, "origin not allowed");
+        return;
+      }
       this.#clients.add(ws);
       ws.on("close", () => this.#clients.delete(ws));
+      ws.on("message", (data) => this.#receive(String(data)));
       ws.send(JSON.stringify({ type: "hello", match: this.#match, decisions: this.#decisions, log: this.#log }));
     });
     this.#server = server;
@@ -150,6 +159,23 @@ export class MonitorHub {
     this.#broadcast({ type, record });
   }
 
+  /** A tactics change from the page: {type: "tactics", bot, tactics: {...}}. */
+  #receive(text: string): void {
+    let message: { type?: string; bot?: string; tactics?: Record<string, unknown> };
+    try {
+      message = JSON.parse(text);
+    } catch {
+      return;
+    }
+    const controller = message.bot ? this.#controllers.get(message.bot) : undefined;
+    if (message.type !== "tactics" || !controller || typeof message.tactics !== "object" || !message.tactics) {
+      return;
+    }
+    // A profile changed by hand keeps its name with a star: "balanced*".
+    const base = String(message.tactics.id ?? "custom").replace(/\*$/, "");
+    controller.setTactics(parseTactics(message.tactics, `${/^[\w-]+$/.test(base) ? base : "custom"}*`));
+  }
+
   #broadcastLive(): void {
     if (this.#clients.size === 0 || this.#controllers.size === 0) {
       return;
@@ -162,6 +188,8 @@ export class MonitorHub {
         them: s.them,
         casting: c.caster.current ? { spell: c.caster.current.spell.name, since: c.caster.current.since } : null,
         readyAt: c.caster.readyAt,
+        tactics: c.tactics,
+        module: (c.brain as { module?: string }).module ?? "mage",
       };
     }
     this.#broadcast({ type: "live", at: Date.now(), bots });

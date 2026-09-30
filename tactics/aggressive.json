@@ -1,0 +1,10 @@
+{
+  "description": "Presses the attack: attacks weigh about twice as much, heals only under 15% health are forced, chases further and longer, retreats only when nearly dead.",
+  "aggression": 0.6,
+  "heal": [15, 80],
+  "retreat": [0, 20],
+  "chase": { "maxTiles": 30, "giveUpSeconds": 15, "teleport": true },
+  "bandage": [0, 90],
+  "healPotion": [15, 60],
+  "explosionRange": [2, 7]
+}

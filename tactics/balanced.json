@@ -1,0 +1,10 @@
+{
+  "description": "Plays as the model decides, with safety limits: heal under 25% health, no heals above 95%, no retreat above 40%.",
+  "aggression": 0,
+  "heal": [25, 95],
+  "retreat": [0, 40],
+  "chase": { "maxTiles": 20, "giveUpSeconds": 10, "teleport": true },
+  "bandage": [0, 95],
+  "healPotion": [20, 70],
+  "explosionRange": [3, 6]
+}

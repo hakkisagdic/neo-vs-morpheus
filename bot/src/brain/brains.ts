@@ -1,8 +1,9 @@
 // Duel brains: a System One model (Laya or Jev) and a scripted baseline.
 import { spell } from "../uo/spells.ts";
-import { compositeQuestion, describeDuel, duelQuestions, resolvePlan, splitComposite } from "./duel-policy.ts";
+import { compositeQuestion, describeDuel, duelQuestions, resolvePlan, splitComposite, tacticalOptions } from "./duel-policy.ts";
 import { describeMelee, meleeBaseline, meleeOptions, meleeQuestion, resolveMeleePlan, splitByMode } from "./melee-policy.ts";
-import { type Backend, systemOne } from "./systemone.ts";
+import { type Backend, type Decision as SystemOneDecision, systemOne } from "./systemone.ts";
+import { NEUTRAL, type Tactics, shapeAnswer } from "./tactics.ts";
 import {
   DAMAGE_SPELLS,
   DEFENSE_SPELLS,
@@ -35,12 +36,13 @@ export class ModelBrain implements DuelBrain {
     this.module = module;
   }
 
-  async decide(s: DuelSnapshot): Promise<Decision> {
+  async decide(s: DuelSnapshot, tactics: Tactics = NEUTRAL): Promise<Decision> {
     if (this.module === "melee") {
-      const d = await systemOne(this.backend, describeMelee(s), meleeQuestion(s));
-      const { mode, parts } = splitByMode(d.answers.move);
+      const d = await systemOne(this.backend, describeMelee(s), meleeQuestion(s, tactics));
+      const answer = shapeAnswer(d.answers.move, tactics.aggression);
+      const { mode, parts } = splitByMode(answer);
       const overrides: string[] = [];
-      const { plan, why } = resolveMeleePlan(s, d.answers.move, overrides);
+      const { plan, why } = resolveMeleePlan(s, answer, overrides, tactics);
       return {
         brain: this.name,
         model: d.model,
@@ -53,22 +55,29 @@ export class ModelBrain implements DuelBrain {
         plan,
         why,
         overrides,
+        tactics,
       };
     }
     const composite = this.style === "composite";
-    const d = await systemOne(this.backend, describeDuel(s), composite ? compositeQuestion(s) : duelQuestions(s));
+    const questions = composite ? compositeQuestion(s, tactics) : duelQuestions(s);
+    const options = composite ? Object.keys(questions.move.criteria) : [];
+    // One legal move or none (out of mana at full health): nothing to ask the model.
+    const d =
+      composite && options.length <= 1
+        ? forced(options[0])
+        : await systemOne(this.backend, describeDuel(s), questions);
     const a = d.answers;
     const parts = composite
-      ? splitComposite(a.move)
+      ? splitComposite(shapeAnswer(a.move, tactics.aggression))
       : { mode: a.nextAction, damage: a.damageSpell, interrupt: a.interruptSpell, defense: a.defenseSpell };
     const byMode: Record<Mode, Distribution> = {
       damage: parts.damage,
       interrupt: parts.interrupt,
       defense: parts.defense,
     };
-    const overrides: string[] = [];
+    const overrides: string[] = composite ? tacticalOptions(s, tactics).notes.map((n) => `tactics: ${n}`) : [];
     const tileAnswer = composite ? undefined : a.teleportTile;
-    const { plan, why } = resolvePlan(s, parts.mode, byMode, tileAnswer, overrides);
+    const { plan, why } = resolvePlan(s, parts.mode, byMode, tileAnswer, overrides, tactics);
     const tile = tileAnswer ? s.tiles.find((t) => t.id === tileAnswer.choice) : undefined;
     return {
       brain: this.name,
@@ -83,9 +92,18 @@ export class ModelBrain implements DuelBrain {
       plan,
       why,
       overrides,
+      tactics,
     };
   }
 }
+
+/** The answer when the question has a single legal option, or none. */
+const forced = (option: string | undefined): SystemOneDecision => ({
+  model: "forced",
+  answers: { move: { choice: option ?? "", probabilities: option ? { [option]: 1 } : {}, confidence: 1 } },
+  usage: { inputTokens: 0, outputTokens: 0 },
+  latencyMs: 0,
+});
 
 const oneHot = (options: readonly string[], choice: string): Distribution => ({
   choice,
@@ -94,7 +112,7 @@ const oneHot = (options: readonly string[], choice: string): Distribution => ({
 
 /**
  * The scripted baseline: a textbook duel mage. Deterministic, so a model's win rate against it
- * is a repeatable number.
+ * is a repeatable number; for the same reason it ignores tactics.
  */
 export class RuleBrain implements DuelBrain {
   readonly name = "rules";

@@ -402,3 +402,26 @@ h2.sub {
     grid-column: span 1;
   }
 }
+
+.tactics .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.tactics input[type="number"] {
+  width: 4.5em;
+}
+
+.tactics input[type="range"] {
+  width: 10em;
+  vertical-align: middle;
+}
+
+.tactics output {
+  display: inline-block;
+  min-width: 2.5em;
+  text-align: right;
+}

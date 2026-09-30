@@ -1,6 +1,7 @@
 // One bot's side of a duel: observe, ask the brain, act, repeat until someone dies.
 import { EventEmitter } from "node:events";
 import { SPELL_RANGE, teleportTiles } from "../brain/duel-policy.ts";
+import { NEUTRAL, type Tactics } from "../brain/tactics.ts";
 import type { Decision, DuelBrain, DuelSnapshot } from "../brain/types.ts";
 import { CLILOC } from "../uo/cliloc.ts";
 import * as out from "../uo/outgoing.ts";
@@ -65,6 +66,9 @@ export class DuelController extends EventEmitter<DuelEvents> {
   readonly caster: Caster;
   readonly mover: Mover;
   readonly records: DecisionRecord[] = [];
+  /** A person's settings for this bot; the monitor can change them during a match (setTactics). */
+  tactics: Tactics = NEUTRAL;
+  #outOfReachSince: number | null = null;
   #recent: string[] = [];
   #latencyEma = 250;
   #lastSpell: { key: string; at: number } | null = null;
@@ -141,6 +145,9 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const t = w.mobile(this.opponent);
     const casting = t.casting && now - t.casting.since < castDelayMs(t.casting.spell) + 300 ? t.casting : null;
     const distance = chebyshev(p, t);
+    const inLineOfSight = grid.lineOfSight(p, t);
+    const outOfReach = (distance > SPELL_RANGE || !inLineOfSight) && !t.dead;
+    this.#outOfReachSince = outOfReach ? (this.#outOfReachSince ?? now) : null;
     const base = {
       us: { x: p.x, y: p.y },
       them: { x: t.x, y: t.y, z: t.z, name: this.opponentName },
@@ -168,6 +175,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
         healPotionReadyInMs: Math.max(0, this.#healPotionReadyAt - now),
         lastAbilityAgoMs: now - this.#lastAbilityAt,
         freeHand: freeHand(this.session),
+        outOfReachForMs: this.#outOfReachSince === null ? 0 : now - this.#outOfReachSince,
       },
       them: {
         name: this.opponentName,
@@ -182,7 +190,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
         castingForMs: casting ? now - casting.since : 0,
         landsInMs: casting ? Math.max(0, casting.since + castDelayMs(casting.spell) - now) : 0,
         distance,
-        inLineOfSight: grid.lineOfSight(p, t),
+        inLineOfSight,
         inRange: distance <= SPELL_RANGE,
         weapon: wielded(this.session, t.serial)?.name ?? null,
       },
@@ -191,6 +199,14 @@ export class DuelController extends EventEmitter<DuelEvents> {
       tiles: distance > 2 ? teleportTiles(base as Pick<DuelSnapshot, "us" | "them">, grid) : [],
       recent: [...this.#recent],
     };
+  }
+
+  /** New tactics from the next decision on; the match keeps them for the rounds that follow. */
+  setTactics(tactics: Tactics): void {
+    this.tactics = tactics;
+    this.emit("tactics", tactics);
+    this.emit("log", `tactics now ${tactics.id}: aggression ${tactics.aggression}, heal ${tactics.heal.join("-")}%, ` +
+      `retreat ${tactics.retreat.join("-")}%, chase up to ${tactics.chase.maxTiles} tiles for ${tactics.chase.giveUpSeconds} s`);
   }
 
   /** Fights until one side dies or `signal` aborts. */
@@ -277,7 +293,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const snapshot = this.snapshot();
     let decision: Decision;
     try {
-      decision = await this.brain.decide(snapshot);
+      decision = await this.brain.decide(snapshot, this.tactics);
     } catch (err) {
       this.emit("log", `${this.brain.name} failed: ${(err as Error).message}`);
       await sleep(500, signal);

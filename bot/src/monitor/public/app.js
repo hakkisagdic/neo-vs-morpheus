@@ -45,8 +45,11 @@ const probOf = (d) => d.parts?.[d.mode.choice]?.probabilities?.[spellOf(d)];
 
 // ---------------------------------------------------------------- connection
 
+let socket = null;
+
 function connect() {
   const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  socket = ws;
   ws.onopen = () => setConnected(true);
   ws.onclose = () => {
     setConnected(false);
@@ -92,6 +95,7 @@ function handle(msg) {
       state.follow ??= Object.keys(msg.bots)[0] ?? null;
       renderTabs();
       renderStatus();
+      renderTactics();
       break;
     case "match":
       state.match = msg.match;
@@ -228,6 +232,77 @@ function renderStatus() {
     ["LOS", String(them.inLineOfSight)],
     ["in range", String(them.inRange)],
   ].map(([k, v]) => `<div class="row"><span class="label">${k}</span><span>${v}</span></div>`).join("");
+}
+
+// ---------------------------------------------------------------- tactics
+
+// The followed bot's tactics as editable fields. Bands are health percentages: under the floor
+// that move is required, above the ceiling it is not offered, in between the model decides.
+const TACTIC_FIELDS = [
+  { key: "aggression", label: "aggression", kind: "range", min: -1, max: 1, step: 0.1, hint: "-1 cautious · +1 aggressive" },
+  { key: "heal", label: "heal band %", kind: "band", hint: "heal under the floor · no heals above the ceiling" },
+  { key: "retreat", label: "retreat band %", kind: "band" },
+  { key: "chase.maxTiles", label: "chase up to (tiles)", kind: "number", min: 0, max: 60 },
+  { key: "chase.giveUpSeconds", label: "give up a chase after (s)", kind: "number", min: 0, max: 600 },
+  { key: "chase.teleport", label: "teleport when chasing", kind: "check" },
+  { key: "bandage", label: "bandage band %", kind: "band", module: "melee" },
+  { key: "healPotion", label: "heal potion band %", kind: "band", module: "melee" },
+  { key: "explosionRange", label: "throw explosions from (tiles)", kind: "band", module: "melee" },
+];
+const getPath = (o, path) => path.split(".").reduce((x, k) => x?.[k], o);
+let shownTactics = "";
+
+function renderTactics() {
+  const b = state.live.bots?.[state.follow];
+  if (!b?.tactics) return;
+  const shown = `${state.follow}|${JSON.stringify(b.tactics)}`;
+  // Re-render only when the values changed elsewhere, and never under the user's cursor.
+  if (shown === shownTactics || $("tactics").contains(document.activeElement)) return;
+  shownTactics = shown;
+  const t = b.tactics;
+  $("tactics-name").textContent = `${state.follow} · ${t.id}`;
+  const field = (f) => {
+    const v = getPath(t, f.key);
+    const id = `t-${f.key.replace(".", "-")}`;
+    const input =
+      f.kind === "range"
+        ? `<input id="${id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${v}"><output>${v}</output>`
+        : f.kind === "band"
+          ? `<input id="${id}-lo" type="number" min="0" max="100" value="${v[0]}"> – <input id="${id}-hi" type="number" min="0" max="100" value="${v[1]}">`
+          : f.kind === "check"
+            ? `<input id="${id}" type="checkbox" ${v ? "checked" : ""}>`
+            : `<input id="${id}" type="number" min="${f.min}" max="${f.max}" value="${v}">`;
+    return `<div class="row"><span class="label" title="${esc(f.hint ?? "")}">${esc(f.label)}</span><span>${input}</span></div>`;
+  };
+  $("tactics").innerHTML = TACTIC_FIELDS.filter((f) => !f.module || f.module === b.module).map(field).join("");
+  for (const el of $("tactics").querySelectorAll("input")) {
+    el.addEventListener("change", sendTactics);
+    if (el.type === "range") el.addEventListener("input", () => (el.nextElementSibling.textContent = el.value));
+  }
+}
+
+function sendTactics() {
+  const b = state.live.bots?.[state.follow];
+  if (!b?.tactics || socket?.readyState !== WebSocket.OPEN) return;
+  const t = structuredClone(b.tactics);
+  for (const f of TACTIC_FIELDS) {
+    const id = `t-${f.key.replace(".", "-")}`;
+    let v;
+    if (f.kind === "band") {
+      const lo = $(`${id}-lo`);
+      const hi = $(`${id}-hi`);
+      if (!lo || !hi) continue;
+      v = [Number(lo.value), Number(hi.value)];
+    } else {
+      const el = $(id);
+      if (!el) continue;
+      v = f.kind === "check" ? el.checked : Number(el.value);
+    }
+    const [head, tail] = f.key.split(".");
+    if (tail) t[head][tail] = v;
+    else t[head] = v;
+  }
+  socket.send(JSON.stringify({ type: "tactics", bot: state.follow, tactics: t }));
 }
 
 function percentile(values, q) {
