@@ -11,11 +11,14 @@ Then, from the repo root (standard library only):
     python3 training/colab.py all       # train, wait for it, fetch the checkpoint
     python3 training/colab.py train     # upload the labels, install Laya, clone this commit, train in the background
     python3 training/colab.py status    # tail of the training log
-    python3 training/colab.py fetch     # package the checkpoint in the runtime and copy it to training/checkpoints/
+    python3 training/colab.py fetch     # bring the checkpoint to training/checkpoints/ (through a private HF repo)
     python3 training/colab.py clean     # stop the run and remove everything this script put in the runtime
 
-Keep the Colab tab visible while fetching (in front, or in a window of its own): Chrome throttles
-background tabs, and the fetch then crawls at a few KB/s.
+`fetch` has the runtime upload the checkpoint to a private Hugging Face model repo (--repo,
+tagged with --name) using the HF_TOKEN Colab secret, then downloads it with this machine's
+`hf auth login`. `fetch --via tab` copies it through the Colab tab instead, in 4 MB parts of
+notebook output: the tab must stay in front (Chrome throttles background tabs to a few KB/s), and
+846 MB of output can freeze the page.
 
 The runtime clones this repository at the local HEAD, so push before training. Teacher labels
 travel as gzip + base64 in 200 KB pieces through one reused cell, and never leave the runtime.
@@ -34,6 +37,7 @@ import base64
 import gzip
 import hashlib
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -126,6 +130,7 @@ with open("{REMOTE_HOME}/{args.name}.log", "w") as log:
     p = subprocess.Popen(["python", "-u", {script()!r}, "--mode", "top",
                           "--train-top-layers", "{args.train_top_layers}", "--epochs", "{args.epochs}",
                           "--batch", "{args.batch}", "--accum", "1", "--holdout", "{args.holdout}",
+                          "--precision", "{args.precision}",{' "--no-checkpointing",' if args.no_checkpointing else ''}
                           "--data", "training/data/labeled.jsonl",
                           "--out", "training/checkpoints/{args.name}"],
                          cwd={REMOTE_REPO!r}, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -173,7 +178,61 @@ def wait(args):
         time.sleep(30)
 
 
+def hf_cli():
+    for path in (shutil.which("hf"), os.path.join(ROOT, ".laya", "venv", "bin", "hf")):
+        if path and os.path.exists(path):
+            return path
+    sys.exit("no hf CLI: `pip install huggingface_hub` and `hf auth login`, or fetch with --via tab")
+
+
+def fetch_via_hub(args):
+    """The runtime uploads the checkpoint to a private Hugging Face repo (with the HF_TOKEN Colab
+    secret) and this machine downloads it from there: 846 MB through notebook output freezes the
+    Colab page, and the Hub checks every file on the way."""
+    ckpt = f"{REMOTE_REPO}/training/checkpoints/{args.name}"
+    upload = cell("upload to hub", f'''
+import hashlib, os
+from google.colab import userdata
+from huggingface_hub import HfApi
+api = HfApi(token=userdata.get("HF_TOKEN"))
+api.create_repo("{args.repo}", private=True, exist_ok=True)
+if not api.repo_info("{args.repo}").private:
+    raise SystemExit("{args.repo} is public; checkpoints go to a private repo")
+commit = api.upload_folder(repo_id="{args.repo}", folder_path="{ckpt}", commit_message="Upload {args.name}")
+api.create_tag("{args.repo}", tag="{args.name}", revision=commit.oid, exist_ok=True)
+for root, _, files in os.walk("{ckpt}"):
+    for name in sorted(files):
+        path = os.path.join(root, name)
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 24), b""):
+                h.update(chunk)
+        print("sha256", h.hexdigest(), os.path.relpath(path, "{ckpt}"))
+print("commit", commit.oid)
+''')
+    out = run_cell(args, upload)
+    digests = {rel: digest for _, digest, rel in (line.split(" ", 2) for line in out.splitlines()
+                                                  if line.startswith("sha256 "))}
+    if not digests or "commit " not in out:
+        sys.exit(f"upload failed:\n{out.strip()[-2000:]}")
+    print(f"uploaded {len(digests)} files to https://huggingface.co/{args.repo} (private), tag {args.name}")
+    local = os.path.join(ROOT, "training", "checkpoints", args.name)
+    subprocess.run([hf_cli(), "download", args.repo, "--revision", args.name, "--local-dir", local], check=True,
+                   stdout=subprocess.DEVNULL)
+    for rel, digest in digests.items():
+        h = hashlib.sha256()
+        with open(os.path.join(local, rel), "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 24), b""):
+                h.update(chunk)
+        if h.hexdigest() != digest:
+            sys.exit(f"checksum mismatch for {rel}: {h.hexdigest()} != {digest}")
+    print(f"checkpoint ready: training/checkpoints/{args.name}, {len(digests)} files checked "
+          f"(serve it with scripts/laya-native.sh start training/checkpoints/{args.name})")
+
+
 def fetch(args):
+    if args.via == "hub":
+        return fetch_via_hub(args)
     tar_path = f"{REMOTE_HOME}/{args.name}.tar"
     package = cell("package", f'''
 import hashlib, os, tarfile
@@ -233,7 +292,12 @@ def main():
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--train-top-layers", type=int, default=28, help="28 = the whole encoder")
     ap.add_argument("--holdout", type=float, default=0.1, help="share of the labels kept for fitting the temperature")
-    ap.add_argument("--keep-tar", action="store_true", help="keep the downloaded tarball (e.g. for a release)")
+    ap.add_argument("--precision", choices=["fp32", "bf16", "fp16"], default="fp32", help="bf16 on the G4/A100/L4, fp16 on a T4")
+    ap.add_argument("--no-checkpointing", action="store_true", help="keep activations: faster when the GPU has memory to spare")
+    ap.add_argument("--via", choices=["hub", "tab"], default="hub",
+                    help="fetch through a private Hugging Face repo (default), or in parts through the Colab tab")
+    ap.add_argument("--repo", default="hakkisagdic/laya-neo-duel", help="the private model repo --via hub uses")
+    ap.add_argument("--keep-tar", action="store_true", help="--via tab: keep the downloaded tarball")
     args = ap.parse_args()
     if args.command in ("train", "all"):
         train(args)

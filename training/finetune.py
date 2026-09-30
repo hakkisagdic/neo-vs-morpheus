@@ -105,7 +105,8 @@ def evaluate(run, items, make_batch, batch_size=16):
     for i in range(0, len(items), batch_size):
         chunk = items[i:i + batch_size]
         b = make_batch(chunk)
-        logits = run(b, train=False)
+        with torch.no_grad():
+            logits = run(b, train=False)
         mask = b["marker_mask"].to(logits.device)
         logp = torch.log_softmax(logits.masked_fill(~mask, -1e4), -1)
         ce += float(-(b["target"].to(logits.device) * logp).sum(-1).sum())
@@ -210,12 +211,23 @@ def main():
     ap.add_argument("--lr-head", type=float, default=1e-4)
     ap.add_argument("--holdout", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=20260927)
+    ap.add_argument("--precision", choices=["fp32", "bf16", "fp16"], default="fp32",
+                    help="CUDA only: run the model in bf16 (Ampere and newer) or fp16 with loss scaling (T4, P100)")
+    ap.add_argument("--no-checkpointing", action="store_true",
+                    help="--mode top: keep activations instead of recomputing them (faster, needs more memory)")
     args = ap.parse_args()
     args.epochs = args.epochs or (8 if args.mode == "head" else 3)
 
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = pick_device()
+    if args.precision != "fp32" and device.type != "cuda":
+        print(f"--precision {args.precision} needs CUDA; training in fp32 on {device.type}")
+        args.precision = "fp32"
+    dtype = {"bf16": torch.bfloat16, "fp16": torch.float16}.get(args.precision)
+
+    def autocast():
+        return torch.autocast(device_type=device.type, dtype=dtype, enabled=dtype is not None)
 
     base = os.path.join(snapshot_download(BASE_REPO, allow_patterns=[f"{BASE_SUBFOLDER}/*"]), BASE_SUBFOLDER)
     _fix_tokenizer_config(base)
@@ -230,7 +242,7 @@ def main():
     hold = [items[i] for i in order[:n_hold]]
     train = [items[i] for i in order[n_hold:]]
     lengths = sorted(len(it["ids"]) for it in items)
-    print(f"device {device} | mode {args.mode} | {len(items)} items ({skipped} skipped: options did not fit) | "
+    print(f"device {device} | {args.precision} | mode {args.mode} | {len(items)} items ({skipped} skipped: options did not fit) | "
           f"train {len(train)} / held out {len(hold)} | tokens p50 {lengths[len(lengths) // 2]} max {lengths[-1]}")
 
     base_weights = load_file(os.path.join(base, "model.safetensors"))
@@ -247,9 +259,10 @@ def main():
 
         def run(b, train):
             net.train(train)
-            logits, _ = net(b["h"].to(device), b["attention_mask"].to(device), b["marker_pos"].to(device),
-                            b["marker_mask"].to(device), b["qtype"].to(device))
-            return logits
+            with autocast():
+                logits, _ = net(b["h"].to(device), b["attention_mask"].to(device), b["marker_pos"].to(device),
+                                b["marker_mask"].to(device), b["qtype"].to(device))
+            return logits.float()
 
         trainable = list(net.named_parameters())
         groups = [{"params": [p for _, p in trainable], "lr": args.lr_head}]
@@ -262,15 +275,17 @@ def main():
                 layer = int(parts[2]) if parts[1] == "layers" and parts[2].isdigit() else None
                 p.requires_grad = (layer is not None and layer >= first) or name.startswith("encoder.final_norm")
         model.float()
-        model.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
-        model.head_checkpointing = True
+        if not args.no_checkpointing:
+            model.encoder.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+            model.head_checkpointing = True
         net = model.to(device)
         make_batch = lambda chunk: collate(chunk, pad)  # noqa: E731
 
         def run(b, train):
             net.train(train)
-            logits, _ = forward(net, b, device)
-            return logits
+            with autocast():
+                logits, _ = forward(net, b, device)
+            return logits.float()
 
         trainable = [(n, p) for n, p in net.named_parameters() if p.requires_grad]
         groups = [
@@ -286,6 +301,8 @@ def main():
     steps = max(1, math.ceil(len(train) / args.batch / args.accum) * args.epochs)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=steps, eta_min=1e-6)
     params = [p for _, p in trainable]
+    # fp16 needs loss scaling against underflow; with bf16 or fp32 the scaler passes everything through.
+    scaler = torch.amp.GradScaler(device.type, enabled=args.precision == "fp16")
 
     group, sigma_start, sigma_end = 4, 0.4, 0.1
     t0 = time.time()
@@ -313,11 +330,13 @@ def main():
             logp = -(((z - logits.unsqueeze(0)) ** 2) * mask).sum(-1) / (2 * sigma ** 2)
             loss_rl = -(adv * logp).mean()
             loss_ce = -(target * torch.log_softmax(logits.masked_fill(~mask, -1e4), -1)).sum(-1).mean()
-            ((loss_rl + loss_ce) / args.accum).backward()
+            scaler.scale((loss_rl + loss_ce) / args.accum).backward()
 
             if (step + 1) % args.accum == 0 or i + args.batch >= len(train):
+                scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(params, 1.0)
-                optimizer.step()
+                scaler.step(optimizer)
+                scaler.update()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
             total += float(loss_ce)
