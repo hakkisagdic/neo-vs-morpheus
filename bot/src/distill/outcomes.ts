@@ -9,9 +9,10 @@ import { join } from "node:path";
 import { FORMAT, compositeQuestion, describeDuel, isOutOfReach } from "../brain/duel-policy.ts";
 import { MELEE_FORMAT, describeMelee, meleeQuestion } from "../brain/melee-policy.ts";
 import { type Decision, type DuelSnapshot, INTERRUPT_SPELLS, type ModuleName } from "../brain/types.ts";
+import { checkRun } from "../eval/run-checks.ts";
 import type { LabeledState } from "./label.ts";
 
-export type RunRecord = { at: number; bot: string; decision: Decision; snapshot: DuelSnapshot };
+export type RunRecord = { at: number; bot: string; decision: Decision; snapshot: DuelSnapshot; outcome?: { result: string; castMs?: number } };
 export type Run = { match: { results: { winner: string | null }[] }; records: RunRecord[] };
 
 /** How long after a decision its damage balance is measured. */
@@ -106,11 +107,19 @@ export function scoreRun(file: string, run: Run): Scored[] {
   return out;
 }
 
-export async function scoreRuns(runsDir: string, since = ""): Promise<Scored[]> {
+/** Scored decisions of every run since a file name, leaving out runs that fail the run checks. */
+export async function scoreRuns(runsDir: string, since = "", log: (m: string) => void = () => {}): Promise<Scored[]> {
   const files = (await readdir(runsDir)).filter((f) => f.endsWith(".json") && f >= since).sort();
   const out: Scored[] = [];
   for (const file of files) {
-    out.push(...scoreRun(file, JSON.parse(await readFile(join(runsDir, file), "utf8")) as Run));
+    const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as Run;
+    // Checked again rather than read from the file, so that runs from before the checks count too.
+    const problems = checkRun(run.records).flatMap((c) => c.problems);
+    if (problems.length) {
+      log(`skipping ${file}: ${problems.join("; ")}`);
+      continue;
+    }
+    out.push(...scoreRun(file, run));
   }
   return out;
 }

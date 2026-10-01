@@ -7,7 +7,7 @@
 // Everything here is driven by environment variables (see docker-compose.yml) and by
 // GM commands that the bot's orchestrator sends as speech:
 //
-//   [NeoPrep <name>                         resurrect, heal, cure, restock one player
+//   [NeoPrep <name>                         resurrect, heal, cure, end lasting spells, restock one player
 //   [NeoDuel <nameA> <nameB> [distance]     prep both and face them off in the arena
 //   [NeoPlace <name> <west|east> [distance] prep one player and put them on one side
 //   [NeoTemplate <name> [template]          apply templates/<template>.json (default mage)
@@ -24,6 +24,10 @@ using Server.Logging;
 using Server.Misc;
 using Server.Mobiles;
 using Server.Network;
+using Server.Spells.Fifth;
+using Server.Spells.First;
+using Server.Spells.Fourth;
+using Server.Spells.Second;
 
 namespace Server.NeoArena;
 
@@ -112,7 +116,7 @@ public static class ArenaCommands
         Math.Clamp(e.Length > index ? e.GetInt32(index) : 8, 1, 18);
 
     [Usage("NeoPrep <name>")]
-    [Description("Resurrects, heals, cures and restocks an online player (full spellbook, reagents).")]
+    [Description("Resurrects, heals, cures, ends lasting spells and restocks an online player (full spellbook, reagents).")]
     private static void OnPrep(CommandEventArgs e)
     {
         var target = FindOnline(e.Mobile, e.GetString(0));
@@ -345,6 +349,17 @@ public static class ArenaCommands
         m.Poison = null;
         m.Paralyzed = false;
         m.Frozen = false;
+
+        // Under AOS rules Protection, Magic Reflection and Reactive Armor stay on through death until
+        // they are cast again, and Protection's buff icon goes at death while the effect stays: left
+        // alone, one cast would carry into every later round (no disruption, slower casts). Curse,
+        // a Mortal Strike wound and bleeding run on their own timers past the round's end.
+        ProtectionSpell.EndProtection(m);
+        MagicReflectSpell.EndReflect(m);
+        ReactiveArmorSpell.EndArmor(m);
+        CurseSpell.RemoveEffect(m);
+        MortalStrike.EndWound(m);
+        BleedAttack.EndBleed(m, false);
 
         // StatMods is null until the mobile has had one
         if (m.StatMods is { Count: > 0 } mods)

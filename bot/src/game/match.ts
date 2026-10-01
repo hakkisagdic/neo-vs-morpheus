@@ -6,6 +6,7 @@ import { ModelBrain, RuleBrain } from "../brain/brains.ts";
 import { type Tactics, loadTactics } from "../brain/tactics.ts";
 import { FORMAT } from "../brain/duel-policy.ts";
 import { MELEE_FORMAT } from "../brain/melee-policy.ts";
+import { checkRun } from "../eval/run-checks.ts";
 import { SCENARIOS } from "../eval/scenarios.ts";
 import type { DuelBrain, ModuleName } from "../brain/types.ts";
 import { config, requireSetting } from "../config.ts";
@@ -232,6 +233,10 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       await sleep(3_000);
     }
   } finally {
+    match.checks = checkRun(records);
+    for (const problem of match.checks.flatMap((c) => c.problems)) {
+      log(`warning: ${problem}; this run is not comparable`);
+    }
     await saveRun(match, records).catch((err) => log(`could not save the run: ${err.message}`));
     for (const s of [gm, botA, botB]) {
       s?.close();

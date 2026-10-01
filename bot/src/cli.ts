@@ -419,7 +419,7 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
   } else if (sub === "outcomes") {
     // What happened after every recorded decision, as training rows (see distill/outcomes.ts).
     const since = rest[0] ?? "";
-    const scored = await scoreRuns(join(import.meta.dirname, "..", "..", "runs"), since);
+    const scored = await scoreRuns(join(import.meta.dirname, "..", "..", "runs"), since, (m) => console.log(m));
     const rows = outcomeLabels(scored);
     const path = join(DATA, "labeled-outcome.jsonl");
     await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");

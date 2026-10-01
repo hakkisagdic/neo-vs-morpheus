@@ -4,6 +4,7 @@ import http from "node:http";
 import { extname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { parseTactics } from "../brain/tactics.ts";
+import type { RunCheck } from "../eval/run-checks.ts";
 import type { DecisionRecord, DuelController } from "../game/duel.ts";
 
 export type RoundResult = {
@@ -22,6 +23,8 @@ export type MatchInfo = {
   rounds: number;
   results: RoundResult[];
   startedAt: number;
+  /** Sanity checks on the recorded decisions (cast times, decision times), set when the match ends. */
+  checks?: RunCheck[];
 };
 
 const PUBLIC = join(import.meta.dirname, "public");
