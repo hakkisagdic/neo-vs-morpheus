@@ -1,6 +1,6 @@
 // One bot's side of a duel: observe, ask the brain, act, repeat until someone dies.
 import { EventEmitter } from "node:events";
-import { SPELL_RANGE, teleportTiles } from "../brain/duel-policy.ts";
+import { SPELL_RANGE, breaksCasts, teleportTiles } from "../brain/duel-policy.ts";
 import { NEUTRAL, type Tactics } from "../brain/tactics.ts";
 import type { Decision, DuelBrain, DuelSnapshot } from "../brain/types.ts";
 import { CLILOC } from "../uo/cliloc.ts";
@@ -68,6 +68,10 @@ export class DuelController extends EventEmitter<DuelEvents> {
   readonly records: DecisionRecord[] = [];
   /** A person's settings for this bot; the monitor can change them during a match (setTactics). */
   tactics: Tactics = NEUTRAL;
+  /** The spells in the bot's book, from its template; none: the whole book. */
+  spells: readonly string[] | undefined;
+  /** The spells its profile offers in a fight; none: the default list. */
+  offer: readonly string[] | undefined;
   #outOfReachSince: number | null = null;
   #recent: string[] = [];
   #latencyEma = 250;
@@ -148,6 +152,15 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const inLineOfSight = grid.lineOfSight(p, t);
     const outOfReach = (distance > SPELL_RANGE || !inLineOfSight) && !t.dead;
     this.#outOfReachSince = outOfReach ? (this.#outOfReachSince ?? now) : null;
+    // While a spell of theirs is coming: how many steps to a tile where it cannot be aimed at us.
+    let coverSteps: number | undefined;
+    if (casting && breaksCasts(casting.spell.key) && !outOfReach) {
+      const hide = grid.cover(p, t, 3);
+      const hideSteps = hide ? (grid.path(p, hide)?.length ?? Number.POSITIVE_INFINITY) : Number.POSITIVE_INFINITY;
+      const edge = SPELL_RANGE + 1 - distance;
+      const steps = Math.min(hideSteps, edge <= 3 ? edge : Number.POSITIVE_INFINITY);
+      coverSteps = Number.isFinite(steps) ? steps : undefined;
+    }
     const base = {
       us: { x: p.x, y: p.y },
       them: { x: t.x, y: t.y, z: t.z, name: this.opponentName },
@@ -176,6 +189,12 @@ export class DuelController extends EventEmitter<DuelEvents> {
         lastAbilityAgoMs: now - this.#lastAbilityAt,
         freeHand: freeHand(this.session),
         outOfReachForMs: this.#outOfReachSince === null ? 0 : now - this.#outOfReachSince,
+        coverSteps,
+        // ModernUO's buff icons: Protection 1029, Magic Reflection 1031.
+        protection: w.buffs.has(1029),
+        magicReflection: w.buffs.has(1031),
+        spells: this.spells,
+        offer: this.offer,
       },
       them: {
         name: this.opponentName,

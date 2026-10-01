@@ -54,8 +54,9 @@ describe("interrupt timing", () => {
 
   it("does not interrupt too late even when the answer asks for it", () => {
     const overrides: string[] = [];
+    // A heal of theirs breaks nothing of ours, so the Explosion is fine; only the interrupt is late.
     const { plan } = resolvePlan(
-      snapshot({ casting: "magicArrow", landsInMs: 250 }),
+      snapshot({ casting: "greaterHeal", landsInMs: 250 }),
       { choice: "interrupt", probabilities: { interrupt: 0.8, damage: 0.2, defense: 0 } },
       {
         damage: { choice: "explosion", probabilities: { explosion: 1 } },
@@ -66,7 +67,7 @@ describe("interrupt timing", () => {
       overrides,
     );
     expect(plan).toEqual({ kind: "cast", spell: "explosion", target: "them" });
-    expect(overrides.join(" ")).toMatch(/before Magic Arrow could/);
+    expect(overrides.join(" ")).toMatch(/before (Magic Arrow|Harm|Weaken) could/);
   });
 });
 
@@ -101,13 +102,13 @@ describe("carrying labels over to the new question", () => {
 
   it("drops an interrupt that could not land and renormalises the rest", async () => {
     const { describeDuel } = await import("../src/brain/duel-policy.ts");
-    const s = snapshot({ casting: "magicArrow", landsInMs: 250 });
+    const s = snapshot({ casting: "greaterHeal", landsInMs: 250 });
     const out = convertLabel(label(s, { "interrupt:magicArrow": 0.6, "damage:explosion": 0.3, "defense:heal": 0.1 }, describeDuel(s)), s);
     if (typeof out === "string") throw new Error(out);
     expect(out.teacher.probabilities["interrupt:magicArrow"]).toBeUndefined();
     expect(out.teacher.probabilities["damage:explosion"]).toBeCloseTo(0.75);
     expect(out.teacher.converted).toEqual({ from: "composite-1", kept: 0.4 });
-    expect(out.format.question).toBe("composite-2");
+    expect(out.format.question).toBe("composite-3");
   });
 
   it("turns attacks out of reach into chasing, and drops interrupts that could not reach", async () => {
@@ -122,5 +123,44 @@ describe("carrying labels over to the new question", () => {
   it("refuses a label whose snapshot no longer renders to its text", () => {
     const s = snapshot();
     expect(convertLabel(label(s, { "damage:explosion": 1 }, "something else"), s)).toMatch(/no longer renders/);
+  });
+});
+
+describe("casts their spell would break (composite-3)", () => {
+  it("drops casts that would still be going when their damage lands", () => {
+    // Flamestrike lands in 1.9 s: Explosion (2.0 s) would be broken, Lightning (1.5 s) would not.
+    const options = legalOptions(snapshot({ casting: "flamestrike", landsInMs: 1_900 }));
+    expect(options).not.toContain("damage:explosion");
+    expect(options).toContain("damage:lightning");
+    expect(options).toContain("defense:hold");
+  });
+
+  it("counts Explosion's three seconds before its damage lands", () => {
+    const options = legalOptions(snapshot({ casting: "explosion", landsInMs: 500 }));
+    expect(options).toContain("damage:flamestrike");
+    expect(options).toContain("defense:greaterHeal");
+    expect(options).not.toContain("defense:hold");
+  });
+
+  it("offers only waiting (or dodging) when every cast would be broken", () => {
+    const s = snapshot({ hits: 95, casting: "magicArrow", landsInMs: 250 });
+    expect(legalOptions(s)).toEqual(["defense:hold"]);
+    // One running step (about 200 ms) beats an arrow landing in 250 ms; two do not.
+    expect(legalOptions({ ...s, us: { ...s.us, coverSteps: 1 } })).toEqual(["defense:hold", "defense:dodge"]);
+    expect(legalOptions({ ...s, us: { ...s.us, coverSteps: 2 } })).toEqual(["defense:hold"]);
+    const slow = snapshot({ casting: "explosion", landsInMs: 1_500 });
+    expect(legalOptions({ ...slow, us: { ...slow.us, coverSteps: 2 } })).toContain("defense:dodge");
+    expect(legalOptions({ ...slow, us: { ...slow.us, coverSteps: 9 } })).not.toContain("defense:dodge");
+  });
+
+  it("waits until their spell has landed, then decides again", () => {
+    const { plan } = resolvePlan(
+      snapshot({ casting: "magicArrow", landsInMs: 250 }),
+      { choice: "defense", probabilities: { defense: 1, damage: 0, interrupt: 0 } },
+      { damage: { choice: "", probabilities: {} }, interrupt: { choice: "", probabilities: {} }, defense: { choice: "hold", probabilities: { hold: 1 } } },
+      undefined,
+      [],
+    );
+    expect(plan).toEqual({ kind: "wait", ms: 350, hold: true });
   });
 });

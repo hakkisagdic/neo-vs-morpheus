@@ -14,10 +14,12 @@ export const DAMAGE_SPELLS = [
   "magicArrow",
   "curse",
   "paralyze",
+  "energyBolt",
+  "mindBlast",
 ] as const;
 export const INTERRUPT_SPELLS = ["harm", "weaken", "magicArrow"] as const;
 /** Defensive moves: heals, cure, and running out of the opponent's range. */
-export const DEFENSE_SPELLS = ["heal", "greaterHeal", "cure", "retreat"] as const;
+export const DEFENSE_SPELLS = ["heal", "greaterHeal", "cure", "protection", "magicReflection", "retreat"] as const;
 
 export type Tile = { id: string; x: number; y: number; z: number; label: string };
 
@@ -52,6 +54,15 @@ export type DuelSnapshot = {
     freeHand?: boolean;
     /** How long the opponent has been out of range or sight (tactics give up a chase after a while). */
     outOfReachForMs?: number;
+    /** Steps to the nearest tile out of their sight or range, while a spell of theirs is coming (none: no such tile close by). */
+    coverSteps?: number;
+    /** Protection and Magic Reflection on us (the server's buff icons): casting either again takes it off. */
+    protection?: boolean;
+    magicReflection?: boolean;
+    /** The spells in our spellbook, when the template names them (none: the whole book). */
+    spells?: readonly string[];
+    /** The spells the profile offers in a fight, when it narrows them (none: the default list). */
+    offer?: readonly string[];
   };
   them: {
     name: string;
@@ -113,7 +124,7 @@ export type Plan =
   | { kind: "bandage" }
   | { kind: "drink"; potion: "heal" | "cure" | "refresh" }
   | { kind: "throw"; potion: "explosion" }
-  | { kind: "wait"; ms: number };
+  | { kind: "wait"; ms: number; hold?: boolean };
 
 export type Decision = {
   brain: string;

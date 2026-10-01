@@ -117,6 +117,8 @@ export class World extends EventEmitter<WorldEvents> {
   readonly mobiles = new Map<number, Mobile>();
   readonly items = new Map<number, Item>();
   readonly skills = new Map<number, Skill>();
+  /** The player's active buff icons (ModernUO's BuffIcon numbers), from the 0xDF packets. */
+  readonly buffs = new Set<number>();
   readonly journal: JournalEntry[] = [];
   target: TargetCursor | null = null;
   readonly now: () => number;
@@ -220,6 +222,24 @@ export class World extends EventEmitter<WorldEvents> {
         return this.#worldItem(r);
       case 0xbf:
         return this.#extended(r);
+      case 0xdf:
+        return this.#buff(r);
+    }
+  }
+
+  /** Buff icons: serial, icon, then 1 to add and 0 to remove (sent under ML rules and later). */
+  #buff(r: PacketReader): void {
+    r.skip(2);
+    const serial = r.u32();
+    const icon = r.u16();
+    const add = r.u16() !== 0;
+    if (serial !== this.playerSerial) {
+      return;
+    }
+    if (add) {
+      this.buffs.add(icon);
+    } else {
+      this.buffs.delete(icon);
     }
   }
 

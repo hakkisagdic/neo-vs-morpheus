@@ -3,6 +3,7 @@ import { castDelayMs } from "../game/caster.ts";
 import type { Grid } from "../world/grid.ts";
 import { spell } from "../uo/spells.ts";
 import type { ChoiceQuestion } from "./systemone.ts";
+import { SPELLBOOK } from "./spellbook.ts";
 import { NEUTRAL, type Tactics, applyBands } from "./tactics.ts";
 import {
   DAMAGE_SPELLS,
@@ -23,7 +24,7 @@ export const SPELL_RANGE = 10;
  * changes: every run and every label records them, so data made with different formats never mix
  * unnoticed.
  */
-export const FORMAT = { describe: "duel-1", question: "composite-2" } as const;
+export const FORMAT = { describe: "duel-1", question: "composite-3" } as const;
 
 /** Out of range or out of sight no spell reaches them, so an attack means getting there. */
 export const isOutOfReach = (s: DuelSnapshot) => (!s.them.inRange || !s.them.inLineOfSight) && !s.them.dead;
@@ -40,21 +41,37 @@ export const landsFirst = (key: string, s: DuelSnapshot) =>
 
 const CHASE_TEXT = "walk towards them (or Teleport next to them when a tile is in reach) until they are in range and in sight";
 
-const REAGENTS: Record<string, string[]> = {
-  magicArrow: ["sulfurousAsh"],
-  heal: ["garlic", "ginseng", "spidersSilk"],
-  weaken: ["garlic", "nightshade"],
-  harm: ["nightshade", "spidersSilk"],
-  cure: ["garlic", "ginseng"],
-  poison: ["nightshade"],
-  teleport: ["bloodmoss", "mandrakeRoot"],
-  curse: ["garlic", "nightshade", "sulfurousAsh"],
-  greaterHeal: ["garlic", "ginseng", "mandrakeRoot", "spidersSilk"],
-  lightning: ["mandrakeRoot", "sulfurousAsh"],
-  paralyze: ["garlic", "mandrakeRoot", "spidersSilk"],
-  explosion: ["bloodmoss", "mandrakeRoot"],
-  flamestrike: ["spidersSilk", "sulfurousAsh"],
+/**
+ * Their spells that break a cast of ours, and when after their cast ends: damage on landing, and
+ * the curses that call OnCasterHurt (ModernUO). Explosion's damage follows 3 s later under AOS
+ * rules (2.5 s before); Paralyze and heals break nothing.
+ */
+const DISTURB_DELAY_MS: Record<string, number> = {
+  magicArrow: 0, harm: 0, fireball: 0, lightning: 0, energyBolt: 0, mindBlast: 1_000, flamestrike: 0,
+  poison: 0, curse: 0, weaken: 0, clumsy: 0, feeblemind: 0, explosion: 3_000,
 };
+
+/** Whether a spell of theirs, once it lands, breaks a cast of ours. */
+export const breaksCasts = (spellKey: string) => spellKey in DISTURB_DELAY_MS;
+
+/** When their current cast breaks ours, if it does. */
+export const disturbsInMs = (s: DuelSnapshot) =>
+  s.them.casting && s.them.casting in DISTURB_DELAY_MS ? s.them.landsInMs + DISTURB_DELAY_MS[s.them.casting] : Number.POSITIVE_INFINITY;
+
+/** A cast of ours that their spell would break: it lands while ours is still being cast. */
+export const doomed = (key: string, s: DuelSnapshot) => {
+  const at = disturbsInMs(s);
+  return at > s.us.readyInMs && at < s.us.readyInMs + castDelayMs(spell(key));
+};
+
+/** About one running step: a dodge must reach its tile before they aim. */
+const STEP_MS = 200;
+
+const HOLD_TEXT = "wait for their spell to land, then cast at once: anything cast now would be broken";
+const DODGE_TEXT = "step behind cover or out of their range before their spell lands, so it cannot be aimed at you";
+
+/** Reagents per spell, from the spellbook (ModernUO's SpellInfo). */
+const REAGENTS: Record<string, string[]> = Object.fromEntries(Object.entries(SPELLBOOK).map(([k, v]) => [k, v.reagents]));
 
 // Option descriptions double as the model's criteria and the monitor's "why".
 const DAMAGE_CRITERIA: Record<string, string> = {
@@ -67,6 +84,8 @@ const DAMAGE_CRITERIA: Record<string, string> = {
   magicArrow: "In Por Ylem: fastest 0.75 s small hit, 4 mana",
   curse: "Des Sanct: lowers their stats and resistances before the big hits",
   paralyze: "An Ex Por: freezes them so they cannot move for a few seconds",
+  energyBolt: "Corp Por: heavy energy hit, 20 mana, 2.0 s to cast",
+  mindBlast: "Por Corp Wis: hit of (Magery + Int) / 5, lands 1 s after the cast, 14 mana, 1.75 s",
 };
 
 const INTERRUPT_CRITERIA: Record<string, string> = {
@@ -80,6 +99,8 @@ const DEFENSE_CRITERIA: Record<string, string> = {
   greaterHeal: "In Vas Mani: large heal, 1.5 s, 11 mana",
   cure: "An Nox: removes poison",
   retreat: "run out of their spell range to heal and wait out poison safely",
+  protection: "Uus Sanct: your casts are broken less often by their hits, for a little physical resistance; casting it again takes it off",
+  magicReflection: "In Jux Sanct: +10 fire, cold, poison and energy resistance for -20 physical; casting it again takes it off",
 };
 
 const pct = (value: number, max: number) => (max > 0 ? Math.round((100 * value) / max) : 0);
@@ -187,7 +208,11 @@ export function compositeQuestion(s: DuelSnapshot, t: Tactics = NEUTRAL): Record
   const text = (mode: Mode, key: string) =>
     key === "chase"
       ? CHASE_TEXT
-      : mode === "damage"
+      : key === "hold"
+        ? HOLD_TEXT
+        : key === "dodge"
+          ? DODGE_TEXT
+          : mode === "damage"
         ? DAMAGE_CRITERIA[key]
         : mode === "interrupt"
           ? INTERRUPT_CRITERIA[key]
@@ -228,14 +253,47 @@ export function splitComposite(d: Distribution): Record<Mode | "mode", Distribut
   };
 }
 
+/** A spell we cannot cast at all for now: not in the book, too little mana, or a reagent gone. */
+function lacksMeans(key: string, s: DuelSnapshot): boolean {
+  const sp = spell(key);
+  return (
+    (s.us.spells !== undefined && !s.us.spells.includes(key)) ||
+    s.us.mana < sp.mana ||
+    (REAGENTS[key] ?? []).some((r) => (s.reagents[r] ?? 0) < 1)
+  );
+}
+
 /** Why an option cannot be used right now, or null if it can. */
 export function blocked(key: string, s: DuelSnapshot): string | null {
   if (key === "chase") {
     return isOutOfReach(s) ? null : `${s.them.name} is already in range and in sight`;
   }
+  if (key === "hold") {
+    return Number.isFinite(disturbsInMs(s)) ? null : "nothing of theirs to wait for";
+  }
+  if (key === "dodge") {
+    const steps = s.us.coverSteps;
+    return !s.them.casting || !(s.them.casting in DISTURB_DELAY_MS)
+      ? "nothing to dodge"
+      : steps === undefined || steps * STEP_MS >= s.them.landsInMs
+        ? "no cover or edge of range close enough"
+        : null;
+  }
   if (key === "retreat") {
     const hurt = s.us.hits < s.us.hitsMax * 0.8 || s.us.poisoned;
-    return !hurt ? "healthy enough to stand and fight" : s.them.distance > SPELL_RANGE + 2 ? "already out of reach" : null;
+    // Out of reagents or mana for every attack (not merely waiting out their spell), running is all that is left.
+    const unarmed = DAMAGE_SPELLS.every((k) => k === "teleport" || lacksMeans(k, s));
+    return !hurt && !unarmed
+      ? "healthy enough to stand and fight"
+      : s.them.distance > SPELL_RANGE + 2
+        ? "already out of reach"
+        : null;
+  }
+  if (s.us.spells && !s.us.spells.includes(key)) {
+    return "not in your spellbook";
+  }
+  if (s.us.offer && !s.us.offer.includes(key)) {
+    return "not in this profile's list";
   }
   const sp = spell(key);
   if (s.us.mana < sp.mana) {
@@ -245,7 +303,13 @@ export function blocked(key: string, s: DuelSnapshot): string | null {
   if (missing.length) {
     return `out of ${missing.join(", ")}`;
   }
+  if (doomed(key, s)) {
+    return `${spell(s.them.casting ?? "").name} breaks it in ${seconds(disturbsInMs(s))}, before ${sp.name} is cast`;
+  }
   switch (key) {
+    case "protection":
+    case "magicReflection":
+      return s.us[key] ? `${sp.name} is already on; casting it again would take it off` : null;
     case "cure":
       return s.us.poisoned ? null : "not poisoned";
     case "heal":
@@ -296,6 +360,14 @@ export function legalOptions(s: DuelSnapshot): string[] {
     keys.push(...INTERRUPT_SPELLS.filter((k) => !blockedAs("interrupt", k, s)).map((k) => `interrupt:${k}`));
   }
   keys.push(...DEFENSE_SPELLS.filter((k) => !blocked(k, s)).map((k) => `defense:${k}`));
+  // Waiting pays only when their spell would break a cast of ours; dodging, when cover is in reach.
+  const casts = [...DAMAGE_SPELLS, ...DEFENSE_SPELLS].filter((k) => k !== "retreat");
+  if (!isOutOfReach(s) && casts.some((k) => doomed(k, s)) && !blocked("hold", s)) {
+    keys.push("defense:hold");
+  }
+  if (!blocked("dodge", s)) {
+    keys.push("defense:dodge");
+  }
   return keys;
 }
 
@@ -370,6 +442,12 @@ export function resolvePlan(
     }
     if (key === "chase") {
       return chase();
+    }
+    if (key === "hold") {
+      return { plan: { kind: "wait", ms: Math.max(100, Math.min(3_500, disturbsInMs(s) + 100)), hold: true }, why: HOLD_TEXT };
+    }
+    if (key === "dodge") {
+      return { plan: { kind: "retreat" }, why: DODGE_TEXT };
     }
     if (key === "teleport") {
       const t = tile ? s.tiles.find((x) => x.id === tile.choice) : s.tiles[0];

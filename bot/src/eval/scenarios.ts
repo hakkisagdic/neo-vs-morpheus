@@ -35,7 +35,7 @@ function state(us: Us, them: Them, recent: string[] = []): DuelSnapshot {
   return s;
 }
 
-const BIG_HITS = ["damage:explosion", "damage:flamestrike", "damage:lightning"];
+const BIG_HITS = ["damage:explosion", "damage:flamestrike", "damage:lightning", "damage:energyBolt"];
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -95,7 +95,8 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: "healthy, opponent casting a cheap Magic Arrow",
-    accept: ["damage:poison", ...BIG_HITS, "damage:curse", "damage:harm"],
+    // It lands in 0.25 s and breaks any cast started now (composite-3): wait, or step out of its way.
+    accept: ["defense:hold", "defense:dodge"],
     snapshot: state({ hits: 90 }, { casting: "magicArrow", castingForMs: 500, landsInMs: 250 }),
   },
 ];

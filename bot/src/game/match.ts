@@ -12,7 +12,7 @@ import { config, requireSetting } from "../config.ts";
 import type { MatchInfo, MonitorHub, RoundResult } from "../monitor/hub.ts";
 import { type DecisionRecord, type DuelEnd, DuelController } from "./duel.ts";
 import type { ArenaLayout } from "./arena.ts";
-import { moduleOf } from "./templates.ts";
+import { loadTemplate, moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
 export type BrainKind = "laya" | "jev" | "rules";
@@ -181,8 +181,12 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       const ctrlB = botB && brainB ? new DuelController(botB, brainB, botA.world.playerSerial, o.a.name) : null;
       // Tactics carry over between rounds: a change made in the monitor stays until the match ends.
       ctrlA.tactics = tacticsA;
+      ({ spells: ctrlA.spells, offer: ctrlA.offer } = loadTemplate(o.a.template));
       if (ctrlB && tacticsB) {
         ctrlB.tactics = tacticsB;
+      }
+      if (ctrlB && o.b.kind === "bot") {
+        ({ spells: ctrlB.spells, offer: ctrlB.offer } = loadTemplate(o.b.template));
       }
       ctrlA.on("tactics", (t: Tactics) => (tacticsA = t));
       ctrlB?.on("tactics", (t: Tactics) => (tacticsB = t));
