@@ -72,6 +72,8 @@ export async function systemOne(
     model?: string;
     answers?: Record<string, RawAnswer>;
     usage?: { input_tokens?: number; output_tokens?: number };
+    /** laya-serve: the checkpoint that answered ("/models/neo-duel-v8-dagger-all"). */
+    routing?: { repo?: string };
   };
 
   const answers: Record<string, ChoiceAnswer> = {};
@@ -89,7 +91,8 @@ export async function systemOne(
 
   const timing = response.headers.get("x-inference-time-ms");
   return {
-    model: body.model ?? backend.model ?? backend.name,
+    // laya-serve names every checkpoint "laya-rl-agent"; the checkpoint's folder tells them apart.
+    model: (backend.name === "laya" && body.routing?.repo?.split("/").filter(Boolean).pop()) || body.model || backend.model || backend.name,
     answers,
     usage: { inputTokens: body.usage?.input_tokens ?? 0, outputTokens: body.usage?.output_tokens ?? 0 },
     latencyMs,

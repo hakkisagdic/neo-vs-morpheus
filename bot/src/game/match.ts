@@ -292,7 +292,11 @@ async function saveRun(match: MatchInfo, records: DecisionRecord[]): Promise<voi
   const dir = join(import.meta.dirname, "..", "..", "..", "runs");
   await mkdir(dir, { recursive: true });
   const stamp = new Date(match.startedAt).toISOString().replace(/[:.]/g, "-");
+  // Which model each bot played with, and where: runs from several machines end up side by side.
+  const models = Object.fromEntries(records.filter((r) => r.decision.brain !== "rules").map((r) => [r.bot, r.decision.model]));
+  const where = config.fleetInstance ? { instance: config.fleetInstance, ...(config.fleetLane ? { lane: config.fleetLane } : {}) } : undefined;
   // run 3: decisions carry `module` and `parts` (per-mode distributions) instead of damage/interrupt/defense.
-  const versions = { run: 3, code: codeVersion(), mage: FORMAT, melee: MELEE_FORMAT };
-  await writeFile(join(dir, `${stamp}.json`), JSON.stringify({ versions, match, records }, null, 1));
+  const versions = { run: 3, code: codeVersion(), mage: FORMAT, melee: MELEE_FORMAT, models, ...(where ? { where } : {}) };
+  const name = where ? `${where.instance}--${stamp}` : stamp;
+  await writeFile(join(dir, `${name}.json`), JSON.stringify({ versions, match, records }, null, 1));
 }

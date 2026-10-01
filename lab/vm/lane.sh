@@ -12,7 +12,6 @@ up() { (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; }
 if ! up; then
   [ -d "$d" ] || cp -r "$A/modernuo/Distribution" "$d"
   mkdir -p "$d/Configuration" "$d/World"
-  ln -sfn "$A/nvm/templates" "$d/NeoTemplates"
   jq -n --arg data "$A/arena-data" --arg listen "127.0.0.1:$port" --arg name "arena lab $i" '{
     assemblyDirectories: ["./Assemblies"], dataDirectories: [$data], listeners: [$listen],
     settings: {
@@ -22,7 +21,8 @@ if ! up; then
       "autoArchive.hourlyRetention": "2", "autoArchive.dailyRetention": "2", "autoArchive.monthlyRetention": "0"
     } }' > "$d/Configuration/modernuo.json"
   jq --argjson id 7 'map(select(.Id == $id)) | first' "$d/Data/expansions.json" > "$d/Configuration/expansion.json"
-  (cd "$d" && export NEO_OWNER_USER=architect NEO_EXPANSION=7 NEO_REAGENTS=200 && exec -a "arena-uo-$i" dotnet ModernUO.dll) \
+  (cd "$d" && export NEO_OWNER_USER=architect NEO_EXPANSION=7 NEO_REAGENTS=200 NEO_TEMPLATES_DIR="$A/nvm/templates" \
+    && exec -a "arena-uo-$i" dotnet ModernUO.dll) \
     > "$A/lane-$i.server.log" 2>&1 < /dev/null &
   for _ in $(seq 150); do up && break; sleep 2; done
   up || { echo "arena server $i did not open port $port"; exit 1; }
@@ -30,5 +30,6 @@ if ! up; then
 fi
 cd "$A/nvm/bot"
 export UO_HOST=127.0.0.1 UO_PORT=$port LAYA_URL=http://127.0.0.1:$((8001 + i)) NEO_OWNER_USER=architect \
-  RULES_REACTION_MS=${RULES_REACTION_MS:-100} MONITOR_PORT=$((9000 + 100 * i))
+  RULES_REACTION_MS=${RULES_REACTION_MS:-100} MONITOR_PORT=$((9000 + 100 * i)) \
+  FLEET_INSTANCE=${FLEET_INSTANCE:-$(hostname)} FLEET_LANE=$i
 exec -a "arena-series-$i" node src/cli.ts series "$series" "$@"
