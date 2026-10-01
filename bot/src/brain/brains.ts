@@ -195,7 +195,8 @@ export class RuleBrain implements DuelBrain {
       defense = "greaterHeal";
     } else if (them.casting && them.landsInMs > 900 && spell(them.casting).circle >= 4 && can("magicArrow")) {
       mode = "interrupt";
-      interrupt = them.distance <= 1 && can("harm") ? "harm" : "magicArrow";
+      // Weaken hits as it lands; a Magic Arrow flies 1.25 s more (AOS rules) and comes too late.
+      interrupt = them.distance <= 1 && can("harm") ? "harm" : can("weaken") ? "weaken" : "magicArrow";
     } else if (!them.poisoned && can("poison")) {
       damage = "poison";
     } else if (can("explosion") && them.healthPct > 25) {

@@ -38,18 +38,22 @@ const interrupts = (s: DuelSnapshot) => legalOptions(s).filter((k) => k.startsWi
 
 describe("interrupt timing", () => {
   it("offers an interrupt only when it would land while their spell is still being cast", () => {
-    // Magic Arrow and Weaken take 750 ms, Harm 1000 ms, plus 100 ms to target.
-    expect(interrupts(snapshot({ casting: "explosion", landsInMs: 1600 }))).toEqual([
+    // Weaken takes 750 ms and Harm 1000 ms, plus 100 ms to target, and both hit at once; Magic
+    // Arrow takes 750 ms and then flies for 1.25 s under AOS rules: 2.1 s in all (composite-4).
+    expect(interrupts(snapshot({ casting: "flamestrike", landsInMs: 2200 }))).toEqual([
       "interrupt:harm", "interrupt:weaken", "interrupt:magicArrow",
     ]);
-    expect(interrupts(snapshot({ casting: "explosion", landsInMs: 900 }))).toEqual(["interrupt:weaken", "interrupt:magicArrow"]);
+    expect(interrupts(snapshot({ casting: "explosion", landsInMs: 1600 }))).toEqual(["interrupt:harm", "interrupt:weaken"]);
+    expect(interrupts(snapshot({ casting: "explosion", landsInMs: 900 }))).toEqual(["interrupt:weaken"]);
     expect(interrupts(snapshot({ casting: "magicArrow", landsInMs: 250 }))).toEqual([]);
     expect(interrupts(snapshot({ casting: null }))).toEqual([]);
   });
 
   it("counts our own recovery before we can cast", () => {
-    expect(landsFirst("magicArrow", snapshot({ casting: "explosion", landsInMs: 1200 }))).toBe(true);
-    expect(landsFirst("magicArrow", snapshot({ casting: "explosion", landsInMs: 1200, readyInMs: 500 }))).toBe(false);
+    expect(landsFirst("weaken", snapshot({ casting: "explosion", landsInMs: 1200 }))).toBe(true);
+    expect(landsFirst("weaken", snapshot({ casting: "explosion", landsInMs: 1200, readyInMs: 500 }))).toBe(false);
+    // Magic Arrow's flight counts too.
+    expect(landsFirst("magicArrow", snapshot({ casting: "explosion", landsInMs: 1200 }))).toBe(false);
   });
 
   it("does not interrupt too late even when the answer asks for it", () => {
@@ -108,7 +112,7 @@ describe("carrying labels over to the new question", () => {
     expect(out.teacher.probabilities["interrupt:magicArrow"]).toBeUndefined();
     expect(out.teacher.probabilities["damage:explosion"]).toBeCloseTo(0.75);
     expect(out.teacher.converted).toEqual({ from: "composite-1", kept: 0.4 });
-    expect(out.format.question).toBe("composite-3");
+    expect(out.format.question).toBe("composite-4");
   });
 
   it("turns attacks out of reach into chasing, and drops interrupts that could not reach", async () => {
@@ -138,11 +142,13 @@ describe("carrying labels over to the new question", () => {
 
 describe("casts their spell would break (composite-3)", () => {
   it("drops casts that would still be going when their damage lands", () => {
-    // Flamestrike lands in 1.9 s: Explosion (2.0 s) would be broken, Lightning (1.5 s) would not.
-    const options = legalOptions(snapshot({ casting: "flamestrike", landsInMs: 1_900 }));
+    // Their Lightning hits as it lands, in 1.9 s: Explosion (2.0 s) would be broken, Lightning (1.5 s) would not.
+    const options = legalOptions(snapshot({ casting: "lightning", landsInMs: 1_900 }));
     expect(options).not.toContain("damage:explosion");
     expect(options).toContain("damage:lightning");
     expect(options).toContain("defense:hold");
+    // Their Flamestrike flies 1.25 s more (AOS rules): at 3.15 s it breaks nothing of a 2 s Explosion.
+    expect(legalOptions(snapshot({ casting: "flamestrike", landsInMs: 1_900 }))).toContain("damage:explosion");
   });
 
   it("counts Explosion's three seconds before its damage lands", () => {
@@ -153,9 +159,10 @@ describe("casts their spell would break (composite-3)", () => {
   });
 
   it("offers only waiting (or dodging) when every cast would be broken", () => {
-    const s = snapshot({ hits: 95, casting: "magicArrow", landsInMs: 250 });
+    // Harm hits as it lands, in 250 ms: anything cast now would be broken.
+    const s = snapshot({ hits: 95, casting: "harm", landsInMs: 250 });
     expect(legalOptions(s)).toEqual(["defense:hold"]);
-    // One running step (about 200 ms) beats an arrow landing in 250 ms; two do not.
+    // One running step (about 200 ms) reaches cover before they aim in 250 ms; two do not.
     expect(legalOptions({ ...s, us: { ...s.us, coverSteps: 1 } })).toEqual(["defense:hold", "defense:dodge"]);
     expect(legalOptions({ ...s, us: { ...s.us, coverSteps: 2 } })).toEqual(["defense:hold"]);
     const slow = snapshot({ casting: "explosion", landsInMs: 1_500 });
@@ -164,13 +171,16 @@ describe("casts their spell would break (composite-3)", () => {
   });
 
   it("waits until their spell has landed, then decides again", () => {
-    const { plan } = resolvePlan(
-      snapshot({ casting: "magicArrow", landsInMs: 250 }),
-      { choice: "defense", probabilities: { defense: 1, damage: 0, interrupt: 0 } },
-      { damage: { choice: "", probabilities: {} }, interrupt: { choice: "", probabilities: {} }, defense: { choice: "hold", probabilities: { hold: 1 } } },
-      undefined,
-      [],
-    );
-    expect(plan).toEqual({ kind: "wait", ms: 350, hold: true });
+    const hold = (casting: string) =>
+      resolvePlan(
+        snapshot({ casting, landsInMs: 250 }),
+        { choice: "defense", probabilities: { defense: 1, damage: 0, interrupt: 0 } },
+        { damage: { choice: "", probabilities: {} }, interrupt: { choice: "", probabilities: {} }, defense: { choice: "hold", probabilities: { hold: 1 } } },
+        undefined,
+        [],
+      ).plan;
+    expect(hold("harm")).toEqual({ kind: "wait", ms: 350, hold: true });
+    // A Magic Arrow hits 1.25 s after it lands.
+    expect(hold("magicArrow")).toEqual({ kind: "wait", ms: 1_600, hold: true });
   });
 });

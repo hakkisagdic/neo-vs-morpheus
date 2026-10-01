@@ -56,6 +56,6 @@ describe("scoring recorded decisions", () => {
     const rows = outcomeLabels(scored);
     expect(rows).toHaveLength(1);
     expect(rows[0].teacher.probabilities["damage:explosion"]).toBeCloseTo(0.8);
-    expect(rows[0].format.question).toBe("composite-3");
+    expect(rows[0].format.question).toBe("composite-4");
   });
 });

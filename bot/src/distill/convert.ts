@@ -58,7 +58,7 @@ export function convertLabel(row: LabeledState, s: DuelSnapshot): ConvertedLabel
   if (from === FORMAT.question) {
     return row;
   }
-  if (from !== "composite-1" && from !== "composite-2") {
+  if (from !== "composite-1" && from !== "composite-2" && from !== "composite-3") {
     return `no conversion from ${from}`;
   }
   if (describeDuel(s) !== row.state) {

@@ -25,7 +25,7 @@ export const SPELL_RANGE = 10;
  * changes: every run and every label records them, so data made with different formats never mix
  * unnoticed.
  */
-export const FORMAT = { describe: "duel-2", question: "composite-3" } as const;
+export const FORMAT = { describe: "duel-2", question: "composite-4" } as const;
 
 /** Out of range or out of sight no spell reaches them, so an attack means getting there. */
 export const isOutOfReach = (s: DuelSnapshot) => (!s.them.inRange || !s.them.inLineOfSight) && !s.them.dead;
@@ -41,20 +41,25 @@ const ourCastMs = (key: string, s: DuelSnapshot) => castDelayMs(spell(key)) + (s
 
 /**
  * Whether our spell would hit while theirs is still being cast. Damage and curses break a spell
- * only then (ModernUO's Spell.OnCasterHurt checks IsCasting); after that it is on its way.
+ * only then (ModernUO's Spell.OnCasterHurt checks IsCasting); after that it is on its way. Ours
+ * hits after its cast, the targeting and its flight (Magic Arrow: 1.25 s under AOS rules).
  */
 export const landsFirst = (key: string, s: DuelSnapshot) =>
-  s.them.casting !== null && s.them.landsInMs >= s.us.readyInMs + ourCastMs(key, s) + TARGET_MS;
+  s.them.casting !== null &&
+  s.them.landsInMs >= s.us.readyInMs + ourCastMs(key, s) + TARGET_MS + (DISTURB_DELAY_MS[key] ?? 0);
 
 const CHASE_TEXT = "walk towards them (or Teleport next to them when a tile is in reach) until they are in range and in sight";
 
 /**
- * Their spells that break a cast of ours, and when after their cast ends: damage on landing, and
- * the curses that call OnCasterHurt (ModernUO). Explosion's damage follows 3 s later under AOS
- * rules (2.5 s before); Paralyze and heals break nothing.
+ * Spells that break a cast they hit, and how long after their cast ends the hit lands: damage,
+ * and the curses that call OnCasterHurt (ModernUO). Under AOS rules Magic Arrow, Fireball, Energy
+ * Bolt and Flamestrike fly for 1.25 s (SpellHelper.AosDamageDelay: their DelayedDamage is set;
+ * 0.5 s before AOS), Mind Blast lands after 1 s and Explosion after 3 s (their own timers);
+ * Harm, Lightning, Poison and the curses land at once. Paralyze and heals break nothing.
+ * composite-3 counted every flight as 0, so it offered Magic Arrow interrupts that land too late.
  */
 const DISTURB_DELAY_MS: Record<string, number> = {
-  magicArrow: 0, harm: 0, fireball: 0, lightning: 0, energyBolt: 0, mindBlast: 1_000, flamestrike: 0,
+  magicArrow: 1_250, harm: 0, fireball: 1_250, lightning: 0, energyBolt: 1_250, mindBlast: 1_000, flamestrike: 1_250,
   poison: 0, curse: 0, weaken: 0, clumsy: 0, feeblemind: 0, explosion: 3_000,
 };
 

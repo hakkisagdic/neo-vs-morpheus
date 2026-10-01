@@ -113,7 +113,7 @@ const snapshot = (us: Partial<DuelSnapshot["us"]> = {}, them: Partial<DuelSnapsh
 describe("Protection (AOS rules)", () => {
   it("offers no interrupt against a protected caster: our hits do not break their spells", () => {
     const casting = { casting: "explosion", landsInMs: 1_800 };
-    expect(legalOptions(snapshot({}, casting))).toContain("interrupt:magicArrow");
+    expect(legalOptions(snapshot({}, casting))).toContain("interrupt:weaken");
     expect(legalOptions(snapshot({}, { ...casting, protection: true })).filter((k) => k.startsWith("interrupt:"))).toEqual([]);
   });
 

@@ -95,8 +95,8 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: "healthy, opponent casting a cheap Magic Arrow",
-    // It lands in 0.25 s and breaks any cast started now (composite-3): wait, or step out of its way.
-    accept: ["defense:hold", "defense:dodge"],
+    // It lands in 0.25 s and then flies 1.25 s (AOS rules): a quick spell cast now is done before it hits.
+    accept: ["damage:poison", "damage:harm", "damage:magicArrow", "damage:lightning", "damage:curse"],
     snapshot: state({ hits: 90 }, { casting: "magicArrow", castingForMs: 500, landsInMs: 250 }),
   },
 ];
