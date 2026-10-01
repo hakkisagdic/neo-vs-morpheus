@@ -13,7 +13,7 @@
 //   [NeoTemplate <name> [template]          apply templates/<template>.json (default mage)
 //   [NeoMage [type] [distance]              spawn an NPC caster on the east side
 //   [NeoClear [radius]                      delete NPCs and corpses around the arena
-//   [NeoArena <open|pillars|wall>           set the arena's obstacles
+//   [NeoArena <open|pillars|wall|ring>      set the arena's obstacles
 
 using System;
 using System.Collections.Generic;
@@ -215,9 +215,30 @@ public static class ArenaCommands
         ["pillars"] = [(-3, -2), (3, -2), (-3, 2), (3, 2)],
         // Across the middle, open at both ends: no straight line from one start to the other.
         ["wall"] = [(0, -2), (0, -1), (0, 0), (0, 1), (0, 2)],
+        // A closed square, 23 by 23 tiles inside: nobody can run forever, as on the real map.
+        ["ring"] = Ring(12),
     };
 
-    [Usage("NeoArena <open|pillars|wall>")]
+    // The border of a square, `half` tiles from the centre on every side.
+    private static (int X, int Y)[] Ring(int half)
+    {
+        var tiles = new List<(int X, int Y)>();
+        for (var i = -half; i <= half; i++)
+        {
+            tiles.Add((i, -half));
+            tiles.Add((i, half));
+        }
+
+        for (var i = -half + 1; i < half; i++)
+        {
+            tiles.Add((-half, i));
+            tiles.Add((half, i));
+        }
+
+        return [.. tiles];
+    }
+
+    [Usage("NeoArena <open|pillars|wall|ring>")]
     [Description("Removes the arena's obstacles and places those of the given layout.")]
     private static void OnArena(CommandEventArgs e)
     {

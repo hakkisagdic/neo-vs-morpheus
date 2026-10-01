@@ -40,7 +40,7 @@ const USAGE = `usage: npm run nvm -- <command>
        --distance N    starting distance in tiles (default 8)
        --timeout S     seconds before a round is scored on health left (default 120)
        --no-template   keep the bots' own skills instead of the GM mage template
-       --arena L       obstacles: open (default), pillars, wall
+       --arena L       obstacles: open (default), pillars, wall, ring (a closed 23x23 square)
      e.g.  duel Neo:laya Morpheus:rules
            duel Neo:jev Morpheus:laya --rounds 5
            duel Neo:laya npc:EvilMageLord

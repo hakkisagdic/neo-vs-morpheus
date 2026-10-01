@@ -3,5 +3,5 @@
 // server/overlay/NeoArena.cs).
 export const OBSTACLE_GRAPHICS: ReadonlySet<number> = new Set([0x0080]);
 
-export const ARENA_LAYOUTS = ["open", "pillars", "wall"] as const;
+export const ARENA_LAYOUTS = ["open", "pillars", "wall", "ring"] as const;
 export type ArenaLayout = (typeof ARENA_LAYOUTS)[number];
