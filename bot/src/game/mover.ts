@@ -99,11 +99,16 @@ export class Mover {
       return this.#follow(route, maxSteps);
     }
     let steps = 0;
+    // Straight away first, a diagonal beside it only when a step is refused. A step in a new
+    // direction only turns us, so the same direction is asked again (switching direction on every
+    // try, as this once did, turned the bot on the spot and it never got away).
+    let side = 0;
     for (let tries = 0; steps < maxSteps && tries < maxSteps * 3; tries++) {
       const away = (directionTo(this.session.world.player, from) + 4) % 8;
-      const direction = tries % 3 === 0 ? away : (away + (tries % 3 === 1 ? 1 : 7)) % 8;
+      const direction = side === 0 ? away : (away + (side === 1 ? 1 : 7)) % 8;
       const facing = this.session.world.player.direction === direction;
       if (!(await this.step(direction))) {
+        side = (side + 1) % 3;
         continue;
       }
       if (facing) {
