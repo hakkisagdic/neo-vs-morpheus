@@ -22,6 +22,8 @@ import { FORMAT, compositeQuestion, describeDuel, isOutOfReach, teleportTiles } 
 import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
+import { type Instance, loadFleet, pick } from "./fleet/instances.ts";
+import { formatRows, readRuns, tally } from "./fleet/results.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
 import { loadTemplate } from "./game/templates.ts";
@@ -46,10 +48,19 @@ const USAGE = `usage: npm run nvm -- <command>
            duel Neo:laya npc:EvilMageLord
            duel Neo:laya human:Trinity
 
-  series <file.json> [--parallel N]   (N up to 8: one arena slot each)
+  series <file.json> [--parallel N]
                       the matches listed in file.json ([{label, a, b, rounds, distance, arena,
-                      timeout}], fighters as for duel), N at a time on arenas side by side (up to 4;
+                      timeout}], fighters as for duel), N at a time on arenas side by side (up to 8;
                       default 2); prints each match's rounds and result as it ends
+  fleet status|pull [instance]
+                      the machines in fleet.json (fleet.example.json): what each lane plays; their
+                      new runs brought into runs/ as <instance>--<stamp>.json
+  fleet results [--since T] [--instance X] [--flagged] [--by-arena]
+                      round wins by matchup over runs/, from every machine
+  fleet start <instance> <series.json> [--lane N] [--parallel N] [--model TAG]
+  fleet stop <instance> [--lane N]
+  fleet logs <instance> [--lane N] [--lines N]
+                      the same tools for an assistant: the MCP server in src/fleet/mcp.ts
   panel               the control panel at localhost:MONITOR_PORT, up until Ctrl-C: live matches
                       (duels publish to it while it runs), every recorded run and its replay
   train <Name> [--partner Name] [--resist] [--minutes N] [--goal N]
@@ -238,6 +249,54 @@ async function series(args: string[]): Promise<void> {
   } finally {
     gm.close();
   }
+}
+
+async function fleet(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      since: { type: "string" },
+      instance: { type: "string" },
+      flagged: { type: "boolean" },
+      "by-arena": { type: "boolean" },
+      lane: { type: "string" },
+      parallel: { type: "string" },
+      model: { type: "string" },
+      lines: { type: "string" },
+    },
+  });
+  const [action, name, seriesFile] = positionals;
+  const num = (v?: string) => (v === undefined ? undefined : Number(v));
+  if (action === "results") {
+    const since = values.since ? Date.parse(values.since) : undefined;
+    console.log(formatRows(tally(await readRuns(), { since, instance: values.instance, includeFlagged: values.flagged, byArena: values["by-arena"] })));
+    return;
+  }
+  if (!["status", "pull", "start", "stop", "logs"].includes(action) || (["start", "stop", "logs"].includes(action) && !name)) {
+    throw new Error(USAGE);
+  }
+  const step = (i: Instance): Promise<string> => {
+    switch (action) {
+      case "status":
+        return i.status();
+      case "pull":
+        return i.pull();
+      case "start":
+        if (!seriesFile) {
+          throw new Error("fleet start <instance> <series.json>");
+        }
+        return i.start({ series: seriesFile, lane: num(values.lane), parallel: num(values.parallel), model: values.model });
+      case "stop":
+        return i.stop(num(values.lane));
+      default:
+        return i.logs(num(values.lane), num(values.lines));
+    }
+  };
+  const answers = await Promise.all(
+    pick(await loadFleet(), name).map(async (i) => `== ${i.name}\n${await step(i).catch((err: Error) => `error: ${err.message}`)}`),
+  );
+  console.log(answers.join("\n\n"));
 }
 
 async function panel(): Promise<void> {
@@ -609,6 +668,9 @@ try {
       break;
     case "series":
       await series(args);
+      break;
+    case "fleet":
+      await fleet(args);
       break;
     case "train":
       await train(args);

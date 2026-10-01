@@ -1,0 +1,82 @@
+[
+ {
+  "label": "8 tiles, laya first, rules at 40 ms",
+  "a": "Neo:laya",
+  "b": "Morpheus:rules@40",
+  "rounds": 10
+ },
+ {
+  "label": "8 tiles, laya second, rules at 40 ms",
+  "a": "Neo:rules@40",
+  "b": "Morpheus:laya",
+  "rounds": 10
+ },
+ {
+  "label": "12 tiles, laya first, rules at 40 ms",
+  "a": "Neo:laya",
+  "b": "Morpheus:rules@40",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "12 tiles, laya second, rules at 40 ms",
+  "a": "Neo:rules@40",
+  "b": "Morpheus:laya",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "pillars, laya first, rules at 40 ms",
+  "a": "Neo:laya",
+  "b": "Morpheus:rules@40",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "pillars, laya second, rules at 40 ms",
+  "a": "Neo:rules@40",
+  "b": "Morpheus:laya",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "wall, laya first, rules at 40 ms",
+  "a": "Neo:laya",
+  "b": "Morpheus:rules@40",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "wall, laya second, rules at 40 ms",
+  "a": "Neo:rules@40",
+  "b": "Morpheus:laya",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "4 tiles, laya first, rules at 40 ms",
+  "a": "Neo:laya",
+  "b": "Morpheus:rules@40",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "4 tiles, laya second, rules at 40 ms",
+  "a": "Neo:rules@40",
+  "b": "Morpheus:laya",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "dexers, laya first, rules at 40 ms",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10
+ },
+ {
+  "label": "dexers, laya second, rules at 40 ms",
+  "a": "Neo:rules@40:dexer",
+  "b": "Morpheus:laya:dexer",
+  "rounds": 10
+ }
+]

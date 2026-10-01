@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "laya-fleet": {
+      "command": "node",
+      "args": ["bot/src/fleet/mcp.ts"]
+    }
+  }
+}

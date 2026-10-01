@@ -16,6 +16,10 @@ coverage/
 *.log
 /runs/
 
+# the fleet's machines (fleet.example.json shows the shape) and what it fetched from them
+/fleet.json
+/.fleet/
+
 .DS_Store
 
 # native Laya env, HF cache and fine-tuning output (scripts/laya-native.sh, training/)

@@ -1,0 +1,13 @@
+{
+  "instances": {
+    "mac": { "kind": "local" },
+    "lab-server": { "kind": "ssh-lab", "host": "root@203.0.113.7", "port": 22, "repo": "/srv/laya/neo-vs-morpheus", "runner": "laya-runner" },
+    "colab-a100": {
+      "kind": "colab",
+      "bridge": ["--port", "8766", "--dir", "~/.cache/colab-bridge/second", "--project", "laya"],
+      "dir": "/content/arena",
+      "runsRepo": "your-hf-user/laya-neo-runs",
+      "modelsRepo": "your-hf-user/laya-neo-duel"
+    }
+  }
+}
