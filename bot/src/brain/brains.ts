@@ -149,12 +149,29 @@ const oneHot = (options: readonly string[], choice: string): Distribution => ({
 export class RuleBrain implements DuelBrain {
   readonly name = "rules";
   readonly module: ModuleName;
+  /**
+   * Time it takes to act on a decision. At 0 the bot answers in well under a millisecond, which a
+   * person (about 0.2-0.3 s) or a model (0.25 s) never does, and a match then measures speed more
+   * than judgement; a small delay keeps it fair and still hard to beat.
+   */
+  readonly reactionMs: number;
 
-  constructor(module: ModuleName = "mage") {
+  constructor(module: ModuleName = "mage", reactionMs = 0) {
     this.module = module;
+    this.reactionMs = reactionMs;
   }
 
   async decide(s: DuelSnapshot): Promise<Decision> {
+    const started = performance.now();
+    const decision = await this.#decideNow(s);
+    const wait = this.reactionMs - (performance.now() - started);
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    return { ...decision, latencyMs: performance.now() - started };
+  }
+
+  async #decideNow(s: DuelSnapshot): Promise<Decision> {
     const started = performance.now();
     if (this.module === "melee") {
       const answer = oneHot(Object.keys(meleeOptions(s)), meleeBaseline(s));

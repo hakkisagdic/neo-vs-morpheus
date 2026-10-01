@@ -21,6 +21,8 @@ export const config = {
   jevApiKey: env("JEV_API_KEY"),
   jevModel: env("JEV_MODEL"), // TypeSafe: jev-latest; FreeJev rejects the field
   monitorPort: envInt("MONITOR_PORT", 8765),
+  /** How long the scripted bot takes to act on a decision: a fair rival thinks too (Laya: 0.25 s). */
+  rulesReactionMs: envInt("RULES_REACTION_MS", 100),
 };
 
 export function requireSetting(value: string, name: string): string {

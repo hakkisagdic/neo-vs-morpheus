@@ -44,10 +44,13 @@ export type MatchOptions = {
   gm?: Session;
 };
 
+/** The scripted bot's reaction time, recorded with the match it played. */
+const reaction = (brain: BrainKind) => (brain === "rules" ? { reactionMs: config.rulesReactionMs } : {});
+
 export function makeBrain(kind: BrainKind, module: ModuleName = "mage"): DuelBrain {
   switch (kind) {
     case "rules":
-      return new RuleBrain(module);
+      return new RuleBrain(module, config.rulesReactionMs);
     case "laya":
       return new ModelBrain({
         name: "laya",
@@ -112,9 +115,9 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
   const match: MatchInfo = {
     title: `${label(o.a)} vs ${describe(o.b)}`,
     fighters: [
-      { name: o.a.name, brain: o.a.brain, template: o.a.template, tactics: o.a.tactics },
+      { name: o.a.name, brain: o.a.brain, template: o.a.template, tactics: o.a.tactics, ...reaction(o.a.brain) },
       o.b.kind === "bot"
-        ? { name: o.b.name, brain: o.b.brain, template: o.b.template, tactics: o.b.tactics }
+        ? { name: o.b.name, brain: o.b.brain, template: o.b.template, tactics: o.b.tactics, ...reaction(o.b.brain) }
         : o.b.kind === "npc"
           ? { name: o.b.type, brain: "npc" }
           : { name: o.b.name, brain: "human" },

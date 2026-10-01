@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { exploration } from "../src/brain/brains.ts";
+import { RuleBrain, exploration } from "../src/brain/brains.ts";
+import { SCENARIOS } from "../src/eval/scenarios.ts";
 import type { Decision, DuelSnapshot } from "../src/brain/types.ts";
 import { takenKey } from "../src/distill/outcomes.ts";
 
@@ -24,5 +25,15 @@ describe("exploration", () => {
       plan: { kind: "cast", spell: "explosion", target: "them" },
     } as unknown as Decision;
     expect(takenKey(d, {} as DuelSnapshot)).toBe("damage:explosion");
+  });
+});
+
+describe("the scripted bot's reaction time", () => {
+  it("acts on its decision only after the reaction time", async () => {
+    const quick = await new RuleBrain("mage").decide(SCENARIOS[0].snapshot);
+    const fair = await new RuleBrain("mage", 40).decide(SCENARIOS[0].snapshot);
+    expect(quick.latencyMs).toBeLessThan(40);
+    expect(fair.latencyMs).toBeGreaterThanOrEqual(39);
+    expect(fair.plan).toEqual(quick.plan);
   });
 });

@@ -20,7 +20,7 @@ export type RoundResult = {
 
 export type MatchInfo = {
   title: string;
-  fighters: { name: string; brain: string; template?: string; tactics?: string }[];
+  fighters: { name: string; brain: string; template?: string; tactics?: string; reactionMs?: number }[];
   round: number;
   rounds: number;
   results: RoundResult[];
