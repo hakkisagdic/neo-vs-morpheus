@@ -1,9 +1,11 @@
-// Duel monitor: serves the page and streams every bot's decisions and live state over WebSocket.
+// Duel monitor: streams every bot's decisions and live state to a running control panel
+// (panel/server.ts), or, without one, serves its own page over WebSocket.
 import { readFile } from "node:fs/promises";
 import http from "node:http";
 import { extname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { parseTactics } from "../brain/tactics.ts";
+import { OBSTACLE_GRAPHICS } from "../game/arena.ts";
 import type { RunCheck } from "../eval/run-checks.ts";
 import type { DecisionRecord, DuelController } from "../game/duel.ts";
 
@@ -23,6 +25,11 @@ export type MatchInfo = {
   rounds: number;
   results: RoundResult[];
   startedAt: number;
+  /** The arena layout and starting distance (recorded since 1 October 2026). */
+  arena?: string;
+  distance?: number;
+  /** Walls and pillars as the bots saw them when the first round began. */
+  obstacles?: { x: number; y: number }[];
   /** Sanity checks on the recorded decisions (cast times, decision times), set when the match ends. */
   checks?: RunCheck[];
 };
@@ -68,9 +75,22 @@ export class MonitorHub {
   #match: MatchInfo | null = null;
   #timer: NodeJS.Timeout | null = null;
   #server: http.Server | null = null;
+  /** The control panel this hub publishes to, when one is running. */
+  #panel: WebSocket | null = null;
 
-  /** Listens on `port`, or the next free one when something else already holds it. */
+  /**
+   * Publishes to the control panel when one listens on `port`; otherwise serves its own page there,
+   * or on the next free port when something else holds it.
+   */
   async start(port: number): Promise<string> {
+    const panel = await connectPanel(port);
+    if (panel) {
+      this.#panel = panel;
+      panel.on("message", (data) => this.#receive(String(data)));
+      panel.on("close", () => (this.#panel = null));
+      this.#timer = setInterval(() => this.#broadcastLive(), 200);
+      return `http://localhost:${port} (control panel)`;
+    }
     const server = http.createServer((req, res) => void this.#serve(req, res));
     let bound = port;
     for (; bound < port + 10; bound++) {
@@ -182,7 +202,7 @@ export class MonitorHub {
   }
 
   #broadcastLive(): void {
-    if (this.#clients.size === 0 || this.#controllers.size === 0) {
+    if ((!this.#panel && this.#clients.size === 0) || this.#controllers.size === 0) {
       return;
     }
     const bots: Record<string, unknown> = {};
@@ -197,11 +217,20 @@ export class MonitorHub {
         module: (c.brain as { module?: string }).module ?? "mage",
       };
     }
-    this.#broadcast({ type: "live", at: Date.now(), bots });
+    // Walls and pillars, as every client sees the same ones.
+    const first = this.#controllers.values().next().value;
+    const obstacles = first ? first.session.world.blockingTiles(OBSTACLE_GRAPHICS) : [];
+    this.#broadcast({ type: "live", at: Date.now(), bots, obstacles });
   }
 
   #broadcast(message: unknown): void {
     const frame = JSON.stringify(message);
+    if (this.#panel) {
+      if (this.#panel.readyState === WebSocket.OPEN) {
+        this.#panel.send(frame);
+      }
+      return;
+    }
     for (const ws of this.#clients) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(frame);
@@ -213,9 +242,29 @@ export class MonitorHub {
     if (this.#timer) {
       clearInterval(this.#timer);
     }
+    this.#panel?.close();
     for (const ws of this.#clients) {
       ws.close();
     }
     await new Promise<void>((resolve) => (this.#server ? this.#server.close(() => resolve()) : resolve()));
   }
+}
+
+/** A WebSocket to the control panel's publisher endpoint, or null when no panel answers quickly. */
+function connectPanel(port: number): Promise<WebSocket | null> {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/publish`);
+    const timer = setTimeout(() => {
+      ws.terminate();
+      resolve(null);
+    }, 500);
+    ws.once("open", () => {
+      clearTimeout(timer);
+      resolve(ws);
+    });
+    ws.once("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
 }

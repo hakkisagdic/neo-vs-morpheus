@@ -27,6 +27,7 @@ import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { SkillTrainer } from "./game/train.ts";
 import { MonitorHub } from "./monitor/hub.ts";
+import { PanelServer } from "./panel/server.ts";
 
 const USAGE = `usage: npm run nvm -- <command>
 
@@ -44,6 +45,8 @@ const USAGE = `usage: npm run nvm -- <command>
            duel Neo:laya npc:EvilMageLord
            duel Neo:laya human:Trinity
 
+  panel               the control panel at localhost:MONITOR_PORT, up until Ctrl-C: live matches
+                      (duels publish to it while it runs), every recorded run and its replay
   train <Name> [--partner Name] [--resist] [--minutes N] [--goal N]
                       level a bot: Magery at the best circle, Meditation and Eval Int;
                       with --partner and --resist they also curse each other for Resisting Spells
@@ -139,6 +142,14 @@ async function duel(args: string[]): Promise<void> {
     await new Promise((r) => setTimeout(r, 2_000)); // let the page receive the last frames
     await hub.stop();
   }
+}
+
+async function panel(): Promise<void> {
+  const server = new PanelServer();
+  const url = await server.start(config.monitorPort);
+  console.log(`control panel: ${url} (Ctrl-C stops it)`);
+  await new Promise<void>((resolve) => process.once("SIGINT", () => resolve()));
+  await server.stop();
 }
 
 async function train(args: string[]): Promise<void> {
@@ -479,6 +490,9 @@ try {
   switch (command) {
     case "duel":
       await duel(args);
+      break;
+    case "panel":
+      await panel();
       break;
     case "train":
       await train(args);

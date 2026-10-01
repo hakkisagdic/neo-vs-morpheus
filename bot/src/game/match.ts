@@ -12,7 +12,7 @@ import type { DuelBrain, ModuleName } from "../brain/types.ts";
 import { config, requireSetting } from "../config.ts";
 import type { MatchInfo, MonitorHub, RoundResult } from "../monitor/hub.ts";
 import { type DecisionRecord, type DuelEnd, DuelController } from "./duel.ts";
-import type { ArenaLayout } from "./arena.ts";
+import { type ArenaLayout, OBSTACLE_GRAPHICS } from "./arena.ts";
 import { loadTemplate, moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
@@ -117,6 +117,8 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     ],
     round: 0,
     rounds: o.rounds,
+    arena: o.arena,
+    distance: o.distance,
     results: [],
     startedAt: Date.now(),
   };
@@ -169,6 +171,7 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       }
       log(`round ${round}/${o.rounds}: ${match.title}`);
       await sleep(600); // let both clients see the new positions
+      match.obstacles ??= botA.world.blockingTiles(OBSTACLE_GRAPHICS);
       // An overloaded bot tires after a step or two and then cannot move at all.
       for (const bot of [botA, botB]) {
         const { weight, maxWeight } = bot?.world.stats ?? { weight: 0, maxWeight: 0 };

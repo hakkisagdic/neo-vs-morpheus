@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neo vs Morpheus</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <nav class="views" id="nav">
+        <a href="#/live" data-view="live">Live</a>
+        <a href="#/runs" data-view="runs">Runs</a>
+        <a href="#/replay" data-view="replay">Replay</a>
+        <a href="#/machine" data-view="machine">Machine</a>
+      </nav>
+      <div class="title" id="title-live">
+        <span id="me" class="me">—</span>
+        <span class="dot">·</span>
+        <span>vs <b id="them">—</b></span>
+        <span id="meta" class="meta"></span>
+      </div>
+      <div class="right">
+        <select id="source" class="source" title="Matches running now"></select>
+        <nav id="tabs" class="tabs"></nav>
+        <button id="follow" class="follow on" title="Show the newest decision as it arrives">following live</button>
+        <span id="live" class="live">○ offline</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="view-live" class="view layout">
+        <aside class="log">
+          <ol id="decisions"></ol>
+        </aside>
+
+        <section class="grid">
+          <article class="card accent-cyan arena-card span-2">
+            <h2>Arena <small id="arena-note"></small></h2>
+            <canvas id="arena"></canvas>
+          </article>
+
+          <article class="card accent-green span-2-md">
+            <h2>Decision</h2>
+            <div id="decision" class="decision"><p class="empty">no match running: start a duel, or replay a run</p></div>
+          </article>
+
+          <article class="card accent-violet">
+            <h2>Mode <small>nextAction</small></h2>
+            <div id="mode" class="bars"></div>
+          </article>
+
+          <article class="card accent-green">
+            <h2 id="h-damage">Damage spell</h2>
+            <div id="damage" class="bars"></div>
+          </article>
+
+          <article class="card accent-violet">
+            <h2 id="h-interrupt">Interrupt spell</h2>
+            <div id="interrupt" class="bars"></div>
+            <h2 class="sub" id="h-defense">Defense spell</h2>
+            <div id="defense" class="bars"></div>
+          </article>
+
+          <article class="card accent-blue">
+            <h2>Us <small id="us-name"></small></h2>
+            <div id="us" class="status"></div>
+          </article>
+
+          <article class="card accent-red">
+            <h2>Them <small id="them-name"></small></h2>
+            <div id="themStatus" class="status"></div>
+          </article>
+
+          <article class="card accent-amber span-2">
+            <h2>Match <small id="match-title"></small></h2>
+            <div id="match" class="match"></div>
+          </article>
+
+          <article class="card accent-violet span-2">
+            <h2>Tactics <small id="tactics-name"></small></h2>
+            <div id="tactics" class="tactics"><p class="empty">waiting for a bot</p></div>
+          </article>
+        </section>
+      </section>
+
+      <section id="view-runs" class="view page" hidden>
+        <div class="toolbar">
+          <input id="runs-filter" type="search" placeholder="filter: a name, brain, template, tactics, arena…" />
+          <label><input id="runs-clean" type="checkbox" /> clean runs only</label>
+          <span id="runs-count" class="muted"></span>
+        </div>
+        <table class="runs">
+          <thead>
+            <tr><th>started</th><th>fighters</th><th>score</th><th>rounds</th><th>avg round</th><th>arena</th><th>question</th><th>decision time</th><th>checks</th></tr>
+          </thead>
+          <tbody id="runs-body"></tbody>
+        </table>
+      </section>
+
+      <section id="view-replay" class="view replay" hidden>
+        <div class="replay-main">
+          <div class="toolbar">
+            <span id="replay-title" class="replay-title">pick a run on the Runs page</span>
+            <select id="replay-round"></select>
+            <button id="replay-play" class="follow">▶ play</button>
+            <select id="replay-speed">
+              <option value="1">1×</option>
+              <option value="2">2×</option>
+              <option value="4" selected>4×</option>
+              <option value="8">8×</option>
+            </select>
+            <span id="replay-clock" class="muted"></span>
+          </div>
+          <input id="replay-time" class="timeline" type="range" min="0" max="1000" value="0" />
+          <article class="card accent-cyan arena-card">
+            <h2>Arena <small id="replay-note"></small></h2>
+            <canvas id="replay-arena"></canvas>
+          </article>
+          <div id="replay-result" class="muted"></div>
+        </div>
+        <aside class="log replay-log">
+          <ol id="replay-decisions"></ol>
+        </aside>
+      </section>
+
+      <section id="view-machine" class="view page" hidden>
+        <pre id="machine" class="machine">…</pre>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
