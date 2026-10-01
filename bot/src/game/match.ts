@@ -25,6 +25,8 @@ export type Fighter = {
   template: string;
   /** tactics/<id>.json, or "neutral": the model's own answers */
   tactics: string;
+  /** The scripted bot's reaction time for this fighter ("rules@250"); RULES_REACTION_MS otherwise. */
+  reactionMs?: number;
 };
 export type Opponent = Fighter | { kind: "npc"; type: string } | { kind: "human"; name: string };
 
@@ -44,13 +46,31 @@ export type MatchOptions = {
   gm?: Session;
 };
 
-/** The scripted bot's reaction time, recorded with the match it played. */
-const reaction = (brain: BrainKind) => (brain === "rules" ? { reactionMs: config.rulesReactionMs } : {});
+const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules"] satisfies BrainKind[];
 
-export function makeBrain(kind: BrainKind, module: ModuleName = "mage"): DuelBrain {
+/**
+ * A fighter's brain as a spec names it: "laya", "jev", "rules", or "rules@250" for the scripted bot
+ * with its own reaction time in milliseconds (0-5000). Null for anything else.
+ */
+export function parseBrain(spec: string): { brain: BrainKind; reactionMs?: number } | null {
+  const [kind, at, ...rest] = spec.split("@");
+  if (!BRAIN_KINDS.includes(kind) || rest.length) {
+    return null;
+  }
+  if (at === undefined) {
+    return { brain: kind as BrainKind };
+  }
+  const reactionMs = Number(at);
+  return kind === "rules" && /^\d+$/.test(at) && reactionMs <= 5_000 ? { brain: "rules", reactionMs } : null;
+}
+
+/** The scripted bot's reaction time, recorded with the match it played. */
+const reaction = (f: Fighter) => (f.brain === "rules" ? { reactionMs: f.reactionMs ?? config.rulesReactionMs } : {});
+
+export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reactionMs = config.rulesReactionMs): DuelBrain {
   switch (kind) {
     case "rules":
-      return new RuleBrain(module, config.rulesReactionMs);
+      return new RuleBrain(module, reactionMs);
     case "laya":
       return new ModelBrain({
         name: "laya",
@@ -107,17 +127,17 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     }
     throw err;
   }
-  const brainA = makeBrain(o.a.brain, moduleOf(o.a.template));
-  const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain, moduleOf(o.b.template)) : null;
+  const brainA = makeBrain(o.a.brain, moduleOf(o.a.template), o.a.reactionMs);
+  const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain, moduleOf(o.b.template), o.b.reactionMs) : null;
   let tacticsA = await loadTactics(o.a.tactics);
   let tacticsB = o.b.kind === "bot" ? await loadTactics(o.b.tactics) : null;
 
   const match: MatchInfo = {
     title: `${label(o.a)} vs ${describe(o.b)}`,
     fighters: [
-      { name: o.a.name, brain: o.a.brain, template: o.a.template, tactics: o.a.tactics, ...reaction(o.a.brain) },
+      { name: o.a.name, brain: o.a.brain, template: o.a.template, tactics: o.a.tactics, ...reaction(o.a) },
       o.b.kind === "bot"
-        ? { name: o.b.name, brain: o.b.brain, template: o.b.template, tactics: o.b.tactics, ...reaction(o.b.brain) }
+        ? { name: o.b.name, brain: o.b.brain, template: o.b.template, tactics: o.b.tactics, ...reaction(o.b) }
         : o.b.kind === "npc"
           ? { name: o.b.type, brain: "npc" }
           : { name: o.b.name, brain: "human" },

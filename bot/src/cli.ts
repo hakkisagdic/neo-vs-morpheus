@@ -21,7 +21,7 @@ import {
 import { FORMAT, compositeQuestion, describeDuel, isOutOfReach, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
-import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
+import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
 import { loadTemplate } from "./game/templates.ts";
@@ -46,7 +46,7 @@ const USAGE = `usage: npm run nvm -- <command>
            duel Neo:laya npc:EvilMageLord
            duel Neo:laya human:Trinity
 
-  series <file.json> [--parallel N]
+  series <file.json> [--parallel N]   (N up to 8: one arena slot each)
                       the matches listed in file.json ([{label, a, b, rounds, distance, arena,
                       timeout}], fighters as for duel), N at a time on arenas side by side (up to 4;
                       default 2); prints each match's rounds and result as it ends
@@ -72,18 +72,17 @@ const USAGE = `usage: npm run nvm -- <command>
                             (default training/data/test.jsonl, written by training/split.py)
 `;
 
-const BRAINS = new Set(["laya", "jev", "rules"]);
-
 function fighter(spec: string): Fighter {
-  const [name, brain = "rules", template = "mage", tactics = "neutral"] = spec.split(":");
-  if (!name || !BRAINS.has(brain)) {
-    throw new Error(`bad fighter "${spec}"; expected Name:laya|jev|rules[:template[:tactics]]`);
+  const [name, brainSpec = "rules", template = "mage", tactics = "neutral"] = spec.split(":");
+  const brain = parseBrain(brainSpec);
+  if (!name || !brain) {
+    throw new Error(`bad fighter "${spec}"; expected Name:laya|jev|rules[@ms][:template[:tactics]]`);
   }
   loadTemplate(template); // fail early on a template that does not exist
   if (tactics !== "neutral" && !existsSync(join(import.meta.dirname, "..", "..", "tactics", `${tactics}.json`))) {
     throw new Error(`no tactics/${tactics}.json`);
   }
-  return { kind: "bot", name, brain: brain as BrainKind, template, tactics };
+  return { kind: "bot", name, template, tactics, ...brain };
 }
 
 function opponent(spec: string): Opponent {
@@ -158,6 +157,10 @@ const SLOT_NAMES = [
   ["Trinity", "Cypher"],
   ["Tank", "Dozer"],
   ["Switch", "Apoc"],
+  ["Mouse", "Niobe"],
+  ["Ghost", "Link"],
+  ["Seraph", "Sati"],
+  ["Rama", "Zee"],
 ] as const;
 
 type SeriesEntry = { label: string; a: string; b: string; rounds?: number; distance?: number; arena?: ArenaLayout; timeout?: number };

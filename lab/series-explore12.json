@@ -1,0 +1,82 @@
+[
+ {
+  "label": "8 tiles, laya first, explore",
+  "a": "Neo:laya:mage:explore",
+  "b": "Morpheus:rules",
+  "rounds": 10
+ },
+ {
+  "label": "8 tiles, laya second, explore",
+  "a": "Neo:rules",
+  "b": "Morpheus:laya:mage:explore",
+  "rounds": 10
+ },
+ {
+  "label": "12 tiles, laya first, explore",
+  "a": "Neo:laya:mage:explore",
+  "b": "Morpheus:rules",
+  "rounds": 5,
+  "distance": 12
+ },
+ {
+  "label": "12 tiles, laya second, explore",
+  "a": "Neo:rules",
+  "b": "Morpheus:laya:mage:explore",
+  "rounds": 5,
+  "distance": 12
+ },
+ {
+  "label": "pillars, laya first, explore",
+  "a": "Neo:laya:mage:explore",
+  "b": "Morpheus:rules",
+  "rounds": 5,
+  "arena": "pillars"
+ },
+ {
+  "label": "pillars, laya second, explore",
+  "a": "Neo:rules",
+  "b": "Morpheus:laya:mage:explore",
+  "rounds": 5,
+  "arena": "pillars"
+ },
+ {
+  "label": "wall, laya first, explore",
+  "a": "Neo:laya:mage:explore",
+  "b": "Morpheus:rules",
+  "rounds": 5,
+  "arena": "wall"
+ },
+ {
+  "label": "wall, laya second, explore",
+  "a": "Neo:rules",
+  "b": "Morpheus:laya:mage:explore",
+  "rounds": 5,
+  "arena": "wall"
+ },
+ {
+  "label": "4 tiles, laya first, explore",
+  "a": "Neo:laya:mage:explore",
+  "b": "Morpheus:rules",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "4 tiles, laya second, explore",
+  "a": "Neo:rules",
+  "b": "Morpheus:laya:mage:explore",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "dexers, laya first, explore",
+  "a": "Neo:laya:dexer:explore",
+  "b": "Morpheus:rules:dexer",
+  "rounds": 5
+ },
+ {
+  "label": "dexers, laya second, explore",
+  "a": "Neo:rules:dexer",
+  "b": "Morpheus:laya:dexer:explore",
+  "rounds": 5
+ }
+]

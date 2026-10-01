@@ -1,0 +1,101 @@
+# The lab: the arena server and a runner for series on parallel arenas, on one Linux host that
+# other services share. Every name starts with laya- so that nothing here touches anything else;
+# nothing is published: the runner reaches the others on laya-net. Each container has a CPU and
+# memory cap (in all 6 CPUs and 10 GB unless the host's owner agrees to more) and half the default
+# CPU weight, so that the host's own services come first when CPUs are short.
+# The subnet lies outside Docker's address pool, so a network created later cannot claim it.
+#
+#   cd lab && docker compose --env-file .env up -d --build
+#   docker exec laya-runner npm ci                       # once
+#   docker exec laya-runner node src/cli.ts series ../lab/series-latency.json --parallel 8
+#
+# Laya needs a GPU next to the arena: on 3 CPU cores of a shared server it took ~16 s per decision
+# (an A100 takes 39 ms), so the CPU model server is only started on request (--profile cpu-model),
+# and series with Laya run on a GPU VM instead (lab/vm). lab/.env holds NEO_OWNER_PASS and
+# BOT_PASSWORD, each at most 30 characters (the UO login field).
+name: laya-lab
+
+services:
+  uo-server:
+    container_name: laya-uo-server
+    build:
+      context: ../server
+      additional_contexts:
+        modernuo: ../vendor/modernuo
+    image: laya-modernuo:225c634
+    environment:
+      NEO_OWNER_USER: ${NEO_OWNER_USER:-architect}
+      NEO_OWNER_PASS: ${NEO_OWNER_PASS:?set NEO_OWNER_PASS in lab/.env}
+      # Clients are sent here for the game connection after login: the container's fixed address.
+      NEO_PUBLIC_ADDRESS: 172.30.0.10
+      NEO_SERVER_NAME: Neo vs Morpheus lab
+      NEO_EXPANSION: "7"
+      NEO_REAGENTS: "200"
+    volumes:
+      - laya-uo-world:/app/World
+      - ../server/client-files:/uodata:ro
+      - ../templates:/app/NeoTemplates:ro
+    networks:
+      laya-net:
+        ipv4_address: 172.30.0.10
+    cpus: 2
+    mem_limit: 3g
+    cpu_shares: 512
+    init: true
+    restart: unless-stopped
+
+  model:
+    container_name: laya-model
+    profiles: [cpu-model]
+    build:
+      context: ..
+      dockerfile: lab/model.Dockerfile
+    image: laya-model:cpu
+    environment:
+      LAYA_HOST: 0.0.0.0
+      LAYA_PORT: "8001"
+      # Only our checkpoint (served under this name); the published ones would be fetched for nothing.
+      LAYA_MODELS: typed-decisions
+      LAYA_THREADS: "3"
+      OMP_NUM_THREADS: "3"
+    command: ["python", "training/serve_checkpoint.py", "/models/${LAYA_CHECKPOINT:-neo-duel-v8-dagger-all}"]
+    volumes:
+      - ../training/checkpoints:/models:ro
+    networks: [laya-net]
+    cpus: 3
+    mem_limit: 5g
+    cpu_shares: 512
+    restart: unless-stopped
+
+  runner:
+    container_name: laya-runner
+    image: node:24-slim
+    working_dir: /work/bot
+    command: ["sleep", "infinity"]
+    environment:
+      UO_HOST: 172.30.0.10
+      LAYA_URL: ${LAYA_URL:-http://laya-model:8001}
+      LAYA_API_KEY: ${LAYA_API_KEY:-}
+      NEO_OWNER_USER: ${NEO_OWNER_USER:-architect}
+      NEO_OWNER_PASS: ${NEO_OWNER_PASS}
+      BOT_PASSWORD: ${BOT_PASSWORD:?set BOT_PASSWORD in lab/.env}
+      RULES_REACTION_MS: ${RULES_REACTION_MS:-100}
+    volumes:
+      - ..:/work
+    networks: [laya-net]
+    cpus: 1
+    mem_limit: 2g
+    cpu_shares: 512
+    init: true
+    restart: unless-stopped
+
+networks:
+  laya-net:
+    name: laya-net
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  laya-uo-world:
+    name: laya-uo-world
