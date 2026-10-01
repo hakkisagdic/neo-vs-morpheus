@@ -126,8 +126,12 @@ export async function scoreRuns(runsDir: string, since = "", log: (m: string) =>
 
 /** A decision must beat its module's average by this many health points to become a row. */
 export const MIN_ADVANTAGE = 10;
-/** At most this many rows per move, so that routine moves (a dexer's swing) do not drown the rest. */
-export const MAX_PER_MOVE = 300;
+/**
+ * At most this many rows per move, so that routine moves (a dexer's swing) do not drown the rest.
+ * Raised from 300 for v7: imitation left Laya's Explosion at about 1.5% where the scripted bot's
+ * Explosions scored best, and more of the moves that won had to reach training.
+ */
+export const MAX_PER_MOVE = 1_000;
 
 /**
  * Training rows from the scored decisions that clearly beat their module's average: today's state
