@@ -23,6 +23,7 @@ import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
+import { WEAPONS } from "./game/items.ts";
 import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { SkillTrainer } from "./game/train.ts";
@@ -328,15 +329,18 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     throw new Error(`unknown module ${module}; mage or melee`);
   }
   // --set movement: a separate batch of mage states about moving, in its own files.
+  // --set mixed: recorded states against a different kind of fighter (a mage against a dexer or
+  // an archer; an archer, or a fighter against a caster or an archer), mage or melee.
   const setAt = rest.indexOf("--set");
   const set = setAt >= 0 ? rest[setAt + 1] : null;
   if (setAt >= 0) {
     rest.splice(setAt, 2);
   }
-  if (set !== null && (!["movement", "relabel", "refresh"].includes(set) || module !== "mage")) {
-    throw new Error(`unknown set ${set} for the ${module}; the mage has movement, relabel and refresh sets`);
+  const sets: Record<string, string[]> = { mage: ["movement", "relabel", "refresh", "mixed"], melee: ["mixed"] };
+  if (set !== null && !sets[module].includes(set)) {
+    throw new Error(`unknown set ${set} for the ${module}; it has ${sets[module].join(", ")}`);
   }
-  const suffix = set ? `-${set}` : module === "mage" ? "" : `-${module}`;
+  const suffix = set ? `-${module === "melee" ? "melee-" : ""}${set}` : module === "mage" ? "" : `-${module}`;
   const statesPath = join(DATA, `states${suffix}.jsonl`);
   // Fresh answers for labels that could not be carried over go where `distill convert` prefers them.
   const labeledPath = join(DATA, set === "relabel" || set === "refresh" ? "relabeled-mage.jsonl" : `labeled${suffix}.jsonl`);
@@ -369,6 +373,20 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
       sampled = reagentShortageSnapshots(Math.round(n * 0.25)).map((s, i) => ({
         id: `reagents:20261002:${i}`, source: "sampled", module: "mage", format: FORMAT, state: describeDuel(s), questions: compositeQuestion(s),
       }) as TrainingState);
+    } else if (set === "mixed") {
+      // Up to n, a seeded sample: states differ round by round, and every label costs a credit.
+      const ranged = (name?: string | null) => !!name && !!Object.values(WEAPONS).find((w) => w.name === name)?.ranged;
+      const mixed = (s: DuelSnapshot) =>
+        module === "mage" ? !!s.them.weapon : !!s.us.weapon?.ranged || !s.them.weapon || ranged(s.them.weapon);
+      const all = await statesFromRuns(runs, module, mixed);
+      let seed = 20261003;
+      const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+      for (let i = all.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [all[i], all[j]] = [all[j], all[i]];
+      }
+      fromRuns = all.slice(0, n);
+      sampled = [] as TrainingState[];
     } else if (set === "movement") {
       // States the main mage batch already paid for are not asked again.
       const paid = new Set((await readJsonl<LabeledState>(join(DATA, "labeled.jsonl"))).map((s) => s.state));

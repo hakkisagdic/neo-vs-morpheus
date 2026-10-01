@@ -1,5 +1,6 @@
 // The duel as typed questions, and the guardrails that turn answers into a legal plan.
 import { castDelayMs } from "../game/caster.ts";
+import { WEAPONS } from "../game/items.ts";
 import type { Grid } from "../world/grid.ts";
 import { spell } from "../uo/spells.ts";
 import type { ChoiceQuestion } from "./systemone.ts";
@@ -24,7 +25,7 @@ export const SPELL_RANGE = 10;
  * changes: every run and every label records them, so data made with different formats never mix
  * unnoticed.
  */
-export const FORMAT = { describe: "duel-1", question: "composite-3" } as const;
+export const FORMAT = { describe: "duel-2", question: "composite-3" } as const;
 
 /** Out of range or out of sight no spell reaches them, so an attack means getting there. */
 export const isOutOfReach = (s: DuelSnapshot) => (!s.them.inRange || !s.them.inLineOfSight) && !s.them.dead;
@@ -118,6 +119,27 @@ const DEFENSE_CRITERIA: Record<string, string> = {
 const pct = (value: number, max: number) => (max > 0 ? Math.round((100 * value) / max) : 0);
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
+/**
+ * What the opponent wields and whether they are under Protection, when either matters (duel-2).
+ * Against a caster without Protection it says nothing, so the text stays as duel-1 wrote it and
+ * the labels asked with duel-1 still hold.
+ */
+function opponentKit(them: DuelSnapshot["them"]): string {
+  const parts: string[] = [];
+  if (them.weapon) {
+    const ranged = Object.values(WEAPONS).find((w) => w.name === them.weapon)?.ranged;
+    parts.push(
+      ranged
+        ? `shooting a ${them.weapon} (ranged: they hit from afar and do not cast)`
+        : `wielding a ${them.weapon} (melee: next to you their hits break your spells unless you are under Protection)`,
+    );
+  }
+  if (them.protection) {
+    parts.push("under Protection (your hits cannot break their spells)");
+  }
+  return parts.map((p) => `${p}, `).join("");
+}
+
 /** The duel state as short English text: what the model reads. */
 export function describeDuel(s: DuelSnapshot): string {
   const { us, them } = s;
@@ -127,6 +149,7 @@ export function describeDuel(s: DuelSnapshot): string {
       `${us.poisoned ? "POISONED" : "not poisoned"}, ` +
       (us.readyInMs > 0 ? `recovering from ${us.lastSpell ?? "a spell"} for ${seconds(us.readyInMs)}.` : "ready to cast now."),
     `${them.name}: health ${them.healthPct}%, ${them.poisoned ? "POISONED" : "not poisoned"}, ` +
+      opponentKit(them) +
       (them.casting
         ? `casting ${spell(them.casting).name} (lands in about ${seconds(them.landsInMs)}), `
         : "not casting, ") +
