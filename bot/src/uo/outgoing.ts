@@ -15,16 +15,27 @@ export function parseClientVersion(version: string): ClientVersion {
 export const loginSeed = (seed: number, v: ClientVersion) =>
   new PacketWriter(21).u8(0xef).u32(seed).u32(v[0]).u32(v[1]).u32(v[2]).u32(v[3]).finish();
 
+/**
+ * The login packets carry the account name and password in 30-byte fields. A longer password would
+ * be cut, and the server would answer "bad password" for an account it made with the whole one.
+ */
+const loginField = (what: string, value: string) => {
+  if (value.length > 30) {
+    throw new Error(`the ${what} is ${value.length} characters; UO login packets carry at most 30`);
+  }
+  return value;
+};
+
 /** 0x80: account login. */
 export const accountLogin = (account: string, password: string) =>
-  new PacketWriter(62).u8(0x80).fixedString(account, 30).fixedString(password, 30).u8(0).finish();
+  new PacketWriter(62).u8(0x80).fixedString(loginField("account name", account), 30).fixedString(loginField("password", password), 30).u8(0).finish();
 
 /** 0xA0: pick a game server from the list. */
 export const selectServer = (index: number) => new PacketWriter(3).u8(0xa0).u16(index).finish();
 
 /** 0x91: log in to the game server with the key from the relay packet. */
 export const gameLogin = (authKey: number, account: string, password: string) =>
-  new PacketWriter(65).u8(0x91).u32(authKey).fixedString(account, 30).fixedString(password, 30).finish();
+  new PacketWriter(65).u8(0x91).u32(authKey).fixedString(loginField("account name", account), 30).fixedString(loginField("password", password), 30).finish();
 
 /** 0xBD: answer to the server's client version request. */
 export const clientVersionReply = (version: string) =>
