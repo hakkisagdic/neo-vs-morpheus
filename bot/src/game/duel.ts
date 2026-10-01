@@ -1,6 +1,6 @@
 // One bot's side of a duel: observe, ask the brain, act, repeat until someone dies.
 import { EventEmitter } from "node:events";
-import { PROTECTION_SLOWDOWN_MS, SPELL_RANGE, breaksCasts, teleportTiles } from "../brain/duel-policy.ts";
+import { PROTECTION_SLOWDOWN_MS, SPELL_RANGE, blocked, breaksCasts, teleportTiles } from "../brain/duel-policy.ts";
 import { type Archetype, NEUTRAL, type Tactics, tacticsFor } from "../brain/tactics.ts";
 import type { Decision, DuelBrain, DuelSnapshot } from "../brain/types.ts";
 import { CLILOC } from "../uo/cliloc.ts";
@@ -166,6 +166,31 @@ export class DuelController extends EventEmitter<DuelEvents> {
     return t.kite > 0 && this.#archetype() === "melee" && !them.dead && chebyshev(this.session.world.player, them) < t.kite;
   }
 
+  /**
+   * A spell the tactics keep up, when it is off and can be cast now: the move is the tactics',
+   * not the brain's, and is recorded as such.
+   */
+  #keepUp(s: DuelSnapshot, t: Tactics): Decision | null {
+    const key = t.keepUp.find((k) => !s.us[k] && !blocked(k, s));
+    if (!key) {
+      return null;
+    }
+    return {
+      brain: "tactics",
+      model: "tactics",
+      latencyMs: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      module: "mage",
+      mode: { choice: "defense", probabilities: { damage: 0, interrupt: 0, defense: 1 } },
+      parts: { defense: { choice: key, probabilities: { [key]: 1 } } },
+      plan: { kind: "cast", spell: key, target: "self" },
+      why: `tactics ${t.id}: keep ${spell(key).name} up`,
+      overrides: [],
+      tactics: t,
+    };
+  }
+
   /** Completes a Protection cast of theirs once its cast time has passed unbroken. */
   #settleTheirProtection(now: number): void {
     const cast = this.#theirProtectionCast;
@@ -273,7 +298,8 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const matchups = Object.keys(tactics.vs);
     this.emit("log", `tactics now ${tactics.id}: aggression ${tactics.aggression}, heal ${tactics.heal.join("-")}%, ` +
       `retreat ${tactics.retreat.join("-")}%, chase up to ${tactics.chase.maxTiles} tiles for ${tactics.chase.giveUpSeconds} s` +
-      `${tactics.kite ? `, kite at ${tactics.kite} tiles` : ""}${matchups.length ? `, matchups for ${matchups.join(", ")}` : ""}`);
+      `${tactics.kite ? `, kite at ${tactics.kite} tiles` : ""}${tactics.keepUp.length ? `, keep ${tactics.keepUp.join(" and ")} up` : ""}` +
+      `${matchups.length ? `, matchups for ${matchups.join(", ")}` : ""}`);
   }
 
   /** Fights until one side dies or `signal` aborts. */
@@ -397,7 +423,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const snapshot = this.snapshot();
     let decision: Decision;
     try {
-      decision = await this.brain.decide(snapshot, tactics);
+      decision = this.#keepUp(snapshot, tactics) ?? (await this.brain.decide(snapshot, tactics));
     } catch (err) {
       this.emit("log", `${this.brain.name} failed: ${(err as Error).message}`);
       await sleep(500, signal);

@@ -18,6 +18,12 @@ describe("kiting and matchups in tactics files", () => {
     expect(parseTactics({ kite: 40 }).kite).toBe(12);
   });
 
+  it("keeps up only the toggled spells it knows", () => {
+    expect(NEUTRAL.keepUp).toEqual([]);
+    expect(parseTactics({ keepUp: ["protection", "explosion"] }).keepUp).toEqual(["protection"]);
+    expect(tacticsFor(parseTactics({ vs: { melee: { keepUp: ["protection"] } } }), "melee").keepUp).toEqual(["protection"]);
+  });
+
   it("lays a matchup over the rest of the file, chase settings key by key", () => {
     const t = parseTactics({ aggression: 0.3, chase: { maxTiles: 20, teleport: true }, vs: { melee: { kite: 6, chase: { maxTiles: 8 } } } }, "archer");
     const melee = tacticsFor(t, "melee");

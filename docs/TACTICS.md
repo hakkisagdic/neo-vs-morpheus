@@ -86,6 +86,13 @@ being cast breaks it, unless it is already on. While they are protected the ques
 interrupt and their casts count 0.5 s longer; while we are, no cast of ours counts as doomed,
 and ours count 0.5 s longer.
 
+**Keep a spell up** (live, tactics). The tactics setting `keepUp` names toggled spells (Protection,
+Magic Reflection) that the executor casts whenever they are off, before asking the brain; the
+move is recorded as the tactics'. Measured on 1 October: the scripted mage keeping Protection up
+against the scripted dexer had none of its casts broken and still lost 0-20, as without it. Its
+trouble is its offence (it keeps casting Poison, which the dexer cures at once), and Protection
+also lowers its physical resistance, so it is not on in the profiles.
+
 **Strip a reflection** (idea, shard rules). Before AOS, Magic Reflection reflects spells. Under
 T2A rules it bounces the next spell whole and is gone (`SpellHelper.CheckReflect`), so a cheap
 Magic Arrow first strips it before the real spell; under UOR rules it is a pool of 8 to 15

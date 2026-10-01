@@ -1,0 +1,4 @@
+{
+  "description": "Neutral, except that a caster keeps Protection up against a melee fighter: their hits cannot break its spells (AOS rules), at the cost of 0.5 s on every cast.",
+  "vs": { "melee": { "keepUp": ["protection"] } }
+}

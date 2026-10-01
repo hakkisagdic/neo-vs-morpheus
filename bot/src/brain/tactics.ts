@@ -7,6 +7,8 @@
 //   yourself, from -1 (cautious) to +1 (aggressive).
 // - Chase settings go to the executor: how far to follow, when to give up, whether to teleport.
 // - Kiting goes to the executor too: the tiles to keep from a melee opponent between attacks.
+// - Spells to keep up (Protection, Magic Reflection): the executor casts one whenever it is off,
+//   before asking the brain.
 // - Matchups (`vs`): changes for one kind of opponent (melee, ranged or caster, told apart by what
 //   they wield), laid over the rest of the file.
 //
@@ -21,6 +23,10 @@ export type Band = [number, number];
 /** Kinds of opponent, by what they wield: a melee weapon, a bow or crossbow, or nothing (a caster). */
 export const ARCHETYPES = ["melee", "ranged", "caster"] as const;
 export type Archetype = (typeof ARCHETYPES)[number];
+
+/** Toggled spells a fighter can keep up (AOS rules: on until cast again). */
+export const KEEP_UP_SPELLS = ["protection", "magicReflection"] as const;
+export type KeepUpSpell = (typeof KEEP_UP_SPELLS)[number];
 
 export type Tactics = {
   id: string;
@@ -38,6 +44,8 @@ export type Tactics = {
    * reloads and stands still in time for the next shot; a mage runs while it cannot cast yet.
    */
   kite: number;
+  /** Spells cast whenever they are off and can be cast, before the brain is asked (casters). */
+  keepUp: KeepUpSpell[];
   /** The same settings for one kind of opponent, already laid over these (see tacticsFor). */
   vs: Partial<Record<Archetype, Tactics>>;
 };
@@ -53,6 +61,7 @@ export const NEUTRAL: Tactics = {
   healPotion: [0, 100],
   explosionRange: [2, 10],
   kite: 0,
+  keepUp: [],
   vs: {},
 };
 
@@ -107,6 +116,9 @@ function parseFlat(raw: Record<string, unknown>, id: string): Tactics {
       return [clamp(r[0], 1, 12), clamp(r[1], 1, 12)];
     })(),
     kite: typeof raw.kite === "number" ? Math.round(clamp(raw.kite, 0, 12)) : NEUTRAL.kite,
+    keepUp: Array.isArray(raw.keepUp)
+      ? KEEP_UP_SPELLS.filter((k) => (raw.keepUp as unknown[]).includes(k))
+      : NEUTRAL.keepUp,
     vs: {},
   };
 }
