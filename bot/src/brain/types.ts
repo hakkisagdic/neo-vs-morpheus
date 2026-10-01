@@ -83,6 +83,11 @@ export type DuelSnapshot = {
     inRange: boolean;
     /** What they wield: a weapon name, or null for bare hands (casters). */
     weapon?: string | null;
+    /**
+     * Under Protection, by what we heard them cast (AOS rules: each completed cast toggles it):
+     * our hits do not break their spells, and theirs take 0.5 s longer.
+     */
+    protection?: boolean;
   };
   /** Consumables in the pack, for templates that carry them. */
   supplies?: Supplies;

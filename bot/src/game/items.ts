@@ -42,19 +42,34 @@ export type Weapon = {
   primary: AbilityName;
   secondary: AbilityName;
   ammo?: Consumable;
+  /** ModernUO's MlSpeed: the swing delay in seconds before stamina and speed bonuses. */
+  mlSpeed: number;
 };
 
 /** Weapons by graphic (only those the templates use, and a few common ones). */
 export const WEAPONS: Record<number, Weapon> = {
-  0x13ff: { name: "katana", ranged: false, twoHanded: false, range: 1, primary: "doubleStrike", secondary: "armorIgnore" },
-  0x0f5e: { name: "broadsword", ranged: false, twoHanded: false, range: 1, primary: "crushingBlow", secondary: "armorIgnore" },
-  0x0f61: { name: "longsword", ranged: false, twoHanded: false, range: 1, primary: "armorIgnore", secondary: "concussionBlow" },
-  0x1401: { name: "kryss", ranged: false, twoHanded: false, range: 1, primary: "armorIgnore", secondary: "infectiousStrike" },
-  0x1405: { name: "war fork", ranged: false, twoHanded: false, range: 1, primary: "bleedAttack", secondary: "disarm" },
-  0x143e: { name: "halberd", ranged: false, twoHanded: true, range: 2, primary: "whirlwindAttack", secondary: "concussionBlow" },
-  0x13b2: { name: "bow", ranged: true, twoHanded: true, range: 10, primary: "paralyzingBlow", secondary: "mortalStrike", ammo: "arrow" },
-  0x0f50: { name: "crossbow", ranged: true, twoHanded: true, range: 8, primary: "concussionBlow", secondary: "mortalStrike", ammo: "bolt" },
+  0x13ff: { name: "katana", ranged: false, twoHanded: false, range: 1, primary: "doubleStrike", secondary: "armorIgnore", mlSpeed: 2.5 },
+  0x0f5e: { name: "broadsword", ranged: false, twoHanded: false, range: 1, primary: "crushingBlow", secondary: "armorIgnore", mlSpeed: 3.25 },
+  0x0f61: { name: "longsword", ranged: false, twoHanded: false, range: 1, primary: "armorIgnore", secondary: "concussionBlow", mlSpeed: 3.5 },
+  0x1401: { name: "kryss", ranged: false, twoHanded: false, range: 1, primary: "armorIgnore", secondary: "infectiousStrike", mlSpeed: 2 },
+  0x1405: { name: "war fork", ranged: false, twoHanded: false, range: 1, primary: "bleedAttack", secondary: "disarm", mlSpeed: 2.5 },
+  0x143e: { name: "halberd", ranged: false, twoHanded: true, range: 2, primary: "whirlwindAttack", secondary: "concussionBlow", mlSpeed: 4.25 },
+  0x13b2: { name: "bow", ranged: true, twoHanded: true, range: 10, primary: "paralyzingBlow", secondary: "mortalStrike", ammo: "arrow", mlSpeed: 4.25 },
+  0x0f50: { name: "crossbow", ranged: true, twoHanded: true, range: 8, primary: "concussionBlow", secondary: "mortalStrike", ammo: "bolt", mlSpeed: 4.5 },
 };
+
+/**
+ * Time between two swings under ML rules (BaseWeapon.GetDelay): 4 ticks of 0.25 s per second of
+ * MlSpeed, one tick less for every 30 stamina, never under 5 ticks. A bow at 100 stamina: 14 ticks,
+ * 3.5 s; a katana: 7 ticks, 1.75 s.
+ */
+export function swingDelayMs(weapon: Weapon, stam: number): number {
+  const ticks = Math.max(5, Math.floor(weapon.mlSpeed * 4 - Math.floor(stam / 30)));
+  return ticks * 250;
+}
+
+/** Under SE rules and later an archer shoots only after standing still this long (BaseRanged.OnSwing). */
+export const STAND_STILL_MS = 250;
 
 /** Shields by graphic: one in hand leaves no hand free for potions. */
 export const SHIELDS = new Set([0x1b72, 0x1b73, 0x1b74, 0x1b76, 0x1b78, 0x1b7a, 0x1b7b, 0x1bc3, 0x1bc4]);

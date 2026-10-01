@@ -32,12 +32,18 @@ export const isOutOfReach = (s: DuelSnapshot) => (!s.them.inRange || !s.them.inL
 /** After our cast the bot answers the target cursor at once; this covers the round trip. */
 const TARGET_MS = 100;
 
+/** Protection costs 2 points of casting speed under AOS rules: 0.5 s on every cast (Spell.GetCastDelay). */
+export const PROTECTION_SLOWDOWN_MS = 500;
+
+/** How long a cast of ours takes now: slower under our own Protection. */
+const ourCastMs = (key: string, s: DuelSnapshot) => castDelayMs(spell(key)) + (s.us.protection ? PROTECTION_SLOWDOWN_MS : 0);
+
 /**
  * Whether our spell would hit while theirs is still being cast. Damage and curses break a spell
  * only then (ModernUO's Spell.OnCasterHurt checks IsCasting); after that it is on its way.
  */
 export const landsFirst = (key: string, s: DuelSnapshot) =>
-  s.them.casting !== null && s.them.landsInMs >= s.us.readyInMs + castDelayMs(spell(key)) + TARGET_MS;
+  s.them.casting !== null && s.them.landsInMs >= s.us.readyInMs + ourCastMs(key, s) + TARGET_MS;
 
 const CHASE_TEXT = "walk towards them (or Teleport next to them when a tile is in reach) until they are in range and in sight";
 
@@ -58,10 +64,16 @@ export const breaksCasts = (spellKey: string) => spellKey in DISTURB_DELAY_MS;
 export const disturbsInMs = (s: DuelSnapshot) =>
   s.them.casting && s.them.casting in DISTURB_DELAY_MS ? s.them.landsInMs + DISTURB_DELAY_MS[s.them.casting] : Number.POSITIVE_INFINITY;
 
-/** A cast of ours that their spell would break: it lands while ours is still being cast. */
+/**
+ * A cast of ours that their spell would break: it lands while ours is still being cast. Under our
+ * own Protection nothing breaks it (AOS rules: ProtectionSpell.Registry holds 100%).
+ */
 export const doomed = (key: string, s: DuelSnapshot) => {
+  if (s.us.protection) {
+    return false;
+  }
   const at = disturbsInMs(s);
-  return at > s.us.readyInMs && at < s.us.readyInMs + castDelayMs(spell(key));
+  return at > s.us.readyInMs && at < s.us.readyInMs + ourCastMs(key, s);
 };
 
 /** About one running step: a dodge must reach its tile before they aim. */
@@ -341,6 +353,9 @@ export function blockedAs(mode: Mode, key: string, s: DuelSnapshot): string | nu
   }
   if (!s.them.casting) {
     return `${s.them.name} is not casting`;
+  }
+  if (s.them.protection) {
+    return `${s.them.name} is under Protection: hits do not break their spells`;
   }
   return landsFirst(key, s)
     ? null

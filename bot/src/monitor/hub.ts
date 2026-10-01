@@ -176,7 +176,9 @@ export class MonitorHub {
     }
     // A profile changed by hand keeps its name with a star: "balanced*".
     const base = String(message.tactics.id ?? "custom").replace(/\*$/, "");
-    controller.setTactics(parseTactics(message.tactics, `${/^[\w-]+$/.test(base) ? base : "custom"}*`));
+    // A person's values hold against every kind of opponent: the file's matchups give way to them.
+    const { vs: _matchups, ...values } = message.tactics;
+    controller.setTactics(parseTactics(values, `${/^[\w-]+$/.test(base) ? base : "custom"}*`));
   }
 
   #broadcastLive(): void {

@@ -6,6 +6,9 @@
 // - Aggression shifts the model's answer between attacking (chasing included) and moves on
 //   yourself, from -1 (cautious) to +1 (aggressive).
 // - Chase settings go to the executor: how far to follow, when to give up, whether to teleport.
+// - Kiting goes to the executor too: the tiles to keep from a melee opponent between attacks.
+// - Matchups (`vs`): changes for one kind of opponent (melee, ranged or caster, told apart by what
+//   they wield), laid over the rest of the file.
 //
 // Files live in tactics/*.json at the repository root; the monitor can change a running match's
 // values, and every decision records the values it was made with.
@@ -14,6 +17,10 @@ import { join } from "node:path";
 
 /** Percent of maximum health: [floor, ceiling]. */
 export type Band = [number, number];
+
+/** Kinds of opponent, by what they wield: a melee weapon, a bow or crossbow, or nothing (a caster). */
+export const ARCHETYPES = ["melee", "ranged", "caster"] as const;
+export type Archetype = (typeof ARCHETYPES)[number];
 
 export type Tactics = {
   id: string;
@@ -26,6 +33,13 @@ export type Tactics = {
   healPotion: Band;
   /** Tiles from which a fighter throws explosion potions (neutral: what the game allows, 2 to 10). */
   explosionRange: [number, number];
+  /**
+   * Tiles to keep from a melee opponent between attacks (0: off). An archer runs while its bow
+   * reloads and stands still in time for the next shot; a mage runs while it cannot cast yet.
+   */
+  kite: number;
+  /** The same settings for one kind of opponent, already laid over these (see tacticsFor). */
+  vs: Partial<Record<Archetype, Tactics>>;
 };
 
 /** No tactics at all: the bot plays exactly as it does without a file. */
@@ -38,6 +52,8 @@ export const NEUTRAL: Tactics = {
   bandage: [0, 100],
   healPotion: [0, 100],
   explosionRange: [2, 10],
+  kite: 0,
+  vs: {},
 };
 
 const TACTICS_DIR = join(import.meta.dirname, "..", "..", "..", "tactics");
@@ -48,8 +64,31 @@ const band = (b: unknown, fallback: Band): Band =>
     ? [clamp(Math.min(b[0], b[1]), 0, 100), clamp(Math.max(b[0], b[1]), 0, 100)]
     : fallback;
 
-/** Validated tactics: unknown keys are ignored, missing ones keep the neutral value. */
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+
+/**
+ * Validated tactics: unknown keys are ignored, missing ones keep the neutral value. A matchup in
+ * `vs` holds only what changes for that kind of opponent; it is laid over the rest of the file.
+ */
 export function parseTactics(raw: Record<string, unknown>, id = String(raw.id ?? "custom")): Tactics {
+  const base = parseFlat(raw, id);
+  const vs: Partial<Record<Archetype, Tactics>> = {};
+  if (isRecord(raw.vs)) {
+    for (const kind of ARCHETYPES) {
+      const over = raw.vs[kind];
+      if (isRecord(over)) {
+        const chase = isRecord(raw.chase) && isRecord(over.chase) ? { ...raw.chase, ...over.chase } : (over.chase ?? raw.chase);
+        vs[kind] = parseFlat({ ...raw, ...over, chase }, `${id} vs ${kind}`);
+      }
+    }
+  }
+  return { ...base, vs };
+}
+
+/** The settings for an opponent of this kind: the file's matchup for it, or the file itself. */
+export const tacticsFor = (t: Tactics, kind: Archetype | null): Tactics => (kind && t.vs[kind]) || t;
+
+function parseFlat(raw: Record<string, unknown>, id: string): Tactics {
   const chase = (raw.chase ?? {}) as Record<string, unknown>;
   return {
     id,
@@ -67,6 +106,8 @@ export function parseTactics(raw: Record<string, unknown>, id = String(raw.id ??
       const r = band(raw.explosionRange, [NEUTRAL.explosionRange[0], NEUTRAL.explosionRange[1]]);
       return [clamp(r[0], 1, 12), clamp(r[1], 1, 12)];
     })(),
+    kite: typeof raw.kite === "number" ? Math.round(clamp(raw.kite, 0, 12)) : NEUTRAL.kite,
+    vs: {},
   };
 }
 

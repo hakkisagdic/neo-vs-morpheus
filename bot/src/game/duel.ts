@@ -1,7 +1,7 @@
 // One bot's side of a duel: observe, ask the brain, act, repeat until someone dies.
 import { EventEmitter } from "node:events";
-import { SPELL_RANGE, breaksCasts, teleportTiles } from "../brain/duel-policy.ts";
-import { NEUTRAL, type Tactics } from "../brain/tactics.ts";
+import { PROTECTION_SLOWDOWN_MS, SPELL_RANGE, breaksCasts, teleportTiles } from "../brain/duel-policy.ts";
+import { type Archetype, NEUTRAL, type Tactics, tacticsFor } from "../brain/tactics.ts";
 import type { Decision, DuelBrain, DuelSnapshot } from "../brain/types.ts";
 import { CLILOC } from "../uo/cliloc.ts";
 import * as out from "../uo/outgoing.ts";
@@ -12,16 +12,18 @@ import type { Supplies, WeaponView } from "../brain/types.ts";
 import {
   GRAPHIC,
   HEAL_POTION_DELAY_MS,
+  STAND_STILL_MS,
   abilityMana,
   freeHand,
   packCount,
   selfBandageSeconds,
   setAbility,
+  swingDelayMs,
   useItem,
   wielded,
 } from "./items.ts";
 import { OBSTACLE_GRAPHICS } from "./arena.ts";
-import { Mover, chebyshev } from "./mover.ts";
+import { Mover, RUN_STEP_MS, chebyshev } from "./mover.ts";
 import type { Session } from "./session.ts";
 
 export type DecisionRecord = {
@@ -48,6 +50,11 @@ const BLOCKED_PAUSE_MS = 400;
 
 /** A fighter's decisions come no faster than this: swings, bandages and potions take time to show. */
 const SWING_PAUSE_MS = 350;
+
+/** Kiting stops this long before it must: the server marks a step when it handles it, a moment after we send it. */
+const KITE_MARGIN_MS = 100;
+/** Kiting steps per decision, so that a new decision can change course. */
+const KITE_STEPS = 4;
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve) => {
@@ -80,6 +87,13 @@ export class DuelController extends EventEmitter<DuelEvents> {
   #healPotionReadyAt = 0;
   #lastAbilityAt = Number.NEGATIVE_INFINITY;
   #lastAttackAt = 0;
+  /** When our weapon swings (or shoots) next, from the last swing the server reported. */
+  #nextSwingAt = 0;
+  /** The kind of opponent the current tactics were chosen for. */
+  #matchup: Archetype | null = null;
+  /** Their Protection, toggled by every cast of it we see complete (a hit while it is cast breaks it). */
+  #theirProtection = false;
+  #theirProtectionCast: { endsAt: number; broken: boolean } | null = null;
 
   constructor(session: Session, brain: DuelBrain, opponent: number, opponentName: string) {
     super();
@@ -136,6 +150,34 @@ export class DuelController extends EventEmitter<DuelEvents> {
     };
   }
 
+  /** What kind of opponent this is, by what they wield; null until they have been seen. */
+  #archetype(): Archetype | null {
+    const t = this.session.world.mobile(this.opponent);
+    if (t.updatedAt === 0) {
+      return null;
+    }
+    const weapon = wielded(this.session, t.serial);
+    return !weapon ? "caster" : weapon.ranged ? "ranged" : "melee";
+  }
+
+  /** Whether to keep away from them now: kiting is on, they fight in melee, and they are too close. */
+  #shouldKite(t: Tactics): boolean {
+    const them = this.session.world.mobile(this.opponent);
+    return t.kite > 0 && this.#archetype() === "melee" && !them.dead && chebyshev(this.session.world.player, them) < t.kite;
+  }
+
+  /** Completes a Protection cast of theirs once its cast time has passed unbroken. */
+  #settleTheirProtection(now: number): void {
+    const cast = this.#theirProtectionCast;
+    if (cast && now >= cast.endsAt) {
+      if (!cast.broken) {
+        this.#theirProtection = !this.#theirProtection;
+        this.#note(`${this.opponentName} turned Protection ${this.#theirProtection ? "on" : "off"}`);
+      }
+      this.#theirProtectionCast = null;
+    }
+  }
+
   /** The arena's walkable tiles as the client last saw them. */
   grid(): Grid {
     return new Grid(this.session.world.blockingTiles(OBSTACLE_GRAPHICS));
@@ -147,7 +189,10 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const now = w.now();
     const p = w.player;
     const t = w.mobile(this.opponent);
-    const casting = t.casting && now - t.casting.since < castDelayMs(t.casting.spell) + 300 ? t.casting : null;
+    this.#settleTheirProtection(now);
+    // Under Protection their casts take 0.5 s longer.
+    const theirCastMs = (sp: Parameters<typeof castDelayMs>[0]) => castDelayMs(sp) + (this.#theirProtection ? PROTECTION_SLOWDOWN_MS : 0);
+    const casting = t.casting && now - t.casting.since < theirCastMs(t.casting.spell) + 300 ? t.casting : null;
     const distance = chebyshev(p, t);
     const inLineOfSight = grid.lineOfSight(p, t);
     const outOfReach = (distance > SPELL_RANGE || !inLineOfSight) && !t.dead;
@@ -207,11 +252,12 @@ export class DuelController extends EventEmitter<DuelEvents> {
         dead: t.dead,
         casting: casting?.spell.key ?? null,
         castingForMs: casting ? now - casting.since : 0,
-        landsInMs: casting ? Math.max(0, casting.since + castDelayMs(casting.spell) - now) : 0,
+        landsInMs: casting ? Math.max(0, casting.since + theirCastMs(casting.spell) - now) : 0,
         distance,
         inLineOfSight,
         inRange: distance <= SPELL_RANGE,
         weapon: wielded(this.session, t.serial)?.name ?? null,
+        protection: this.#theirProtection,
       },
       supplies: this.#supplies(),
       reagents: w.reagents(),
@@ -224,8 +270,10 @@ export class DuelController extends EventEmitter<DuelEvents> {
   setTactics(tactics: Tactics): void {
     this.tactics = tactics;
     this.emit("tactics", tactics);
+    const matchups = Object.keys(tactics.vs);
     this.emit("log", `tactics now ${tactics.id}: aggression ${tactics.aggression}, heal ${tactics.heal.join("-")}%, ` +
-      `retreat ${tactics.retreat.join("-")}%, chase up to ${tactics.chase.maxTiles} tiles for ${tactics.chase.giveUpSeconds} s`);
+      `retreat ${tactics.retreat.join("-")}%, chase up to ${tactics.chase.maxTiles} tiles for ${tactics.chase.giveUpSeconds} s` +
+      `${tactics.kite ? `, kite at ${tactics.kite} tiles` : ""}${matchups.length ? `, matchups for ${matchups.join(", ")}` : ""}`);
   }
 
   /** Fights until one side dies or `signal` aborts. */
@@ -233,24 +281,43 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const w = this.session.world;
     const onDamage = (serial: number, amount: number) => {
       if (serial === this.opponent) {
+        const cast = this.#theirProtectionCast;
+        if (cast && !this.#theirProtection && w.now() < cast.endsAt) {
+          cast.broken = true; // a hit breaks the cast unless Protection is already on
+        }
         this.#note(`${this.opponentName} took ${amount} damage`);
       } else if (serial === w.playerSerial) {
         this.#note(`${this.name} took ${amount} damage`);
       }
     };
-    const onWords = (m: { serial: number }, sp: { name: string }) => {
+    const onWords = (m: { serial: number }, sp: Parameters<typeof castDelayMs>[0]) => {
       if (m.serial === this.opponent) {
+        if (sp.key === "protection") {
+          this.#settleTheirProtection(w.now());
+          const slower = this.#theirProtection ? PROTECTION_SLOWDOWN_MS : 0;
+          this.#theirProtectionCast = { endsAt: w.now() + castDelayMs(sp) + slower, broken: false };
+        }
         this.#note(`${this.opponentName} began casting ${sp.name}`);
       }
     };
     const onJournal = (e: { serial: number; cliloc?: number }) => {
       if (e.cliloc === CLILOC.spellFizzles && e.serial === this.opponent) {
+        if (this.#theirProtectionCast) {
+          this.#theirProtectionCast.broken = true;
+        }
         this.#note(`${this.opponentName}'s spell fizzled`);
+      }
+    };
+    const onSwing = (attacker: number) => {
+      const weapon = wielded(this.session);
+      if (attacker === w.playerSerial && weapon) {
+        this.#nextSwingAt = w.now() + swingDelayMs(weapon, w.player.stam);
       }
     };
     w.on("damage", onDamage);
     w.on("spellWords", onWords);
     w.on("journal", onJournal);
+    w.on("swing", onSwing);
 
     const ended = new Promise<DuelEnd>((resolve) => {
       const onDeath = (serial: number) => {
@@ -287,6 +354,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
       w.off("damage", onDamage);
       w.off("spellWords", onWords);
       w.off("journal", onJournal);
+      w.off("swing", onSwing);
     }
     const end = await ended;
     this.emit("end", end);
@@ -302,9 +370,26 @@ export class DuelController extends EventEmitter<DuelEvents> {
       await sleep(100, signal);
       return;
     }
+    // The tactics for this kind of opponent, once we see what they wield.
+    const kind = this.#archetype();
+    const tactics = tacticsFor(this.tactics, kind);
+    if (kind !== this.#matchup) {
+      this.#matchup = kind;
+      if (tactics !== this.tactics) {
+        this.emit("log", `${this.name} faces a ${kind} fighter: tactics ${tactics.id}`);
+      }
+    }
+
     // Decide just in time: late enough to see fresh state, early enough to cast the moment we can.
+    // Until then a caster keeps away from a melee opponent, if the tactics say so.
     const lead = this.caster.readyAt - w.now() - this.#latencyEma;
     if (lead > 0) {
+      const room = () => this.caster.readyAt - w.now() - this.#latencyEma - KITE_MARGIN_MS;
+      if (room() >= RUN_STEP_MS && this.#shouldKite(tactics)) {
+        const steps = Math.min(KITE_STEPS, Math.floor(room() / RUN_STEP_MS));
+        await this.mover.kite(them, steps, this.grid(), () => room() < RUN_STEP_MS || !this.#shouldKite(tactics));
+        return;
+      }
       await sleep(Math.min(lead, 150), signal);
       return;
     }
@@ -312,7 +397,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
     const snapshot = this.snapshot();
     let decision: Decision;
     try {
-      decision = await this.brain.decide(snapshot, this.tactics);
+      decision = await this.brain.decide(snapshot, tactics);
     } catch (err) {
       this.emit("log", `${this.brain.name} failed: ${(err as Error).message}`);
       await sleep(500, signal);
@@ -389,11 +474,20 @@ export class DuelController extends EventEmitter<DuelEvents> {
         const reach = wielded(this.session)?.range ?? 1;
         const grid = this.grid();
         const them = w.mobile(this.opponent);
+        // Kiting with a bow: run while it reloads, and stand still in time for the next shot.
+        const room = () => this.#nextSwingAt - STAND_STILL_MS - KITE_MARGIN_MS - w.now();
         if (chebyshev(w.player, them) > reach || !grid.lineOfSight(w.player, them)) {
           const steps = await this.mover.approach(them, reach, 3, grid);
           record.outcome = { result: steps > 0 ? "closing" : "blocked" };
           if (steps === 0) {
             await sleep(BLOCKED_PAUSE_MS, signal);
+          }
+        } else if (wielded(this.session)?.ranged && room() >= RUN_STEP_MS && this.#shouldKite(tactics)) {
+          const steps = Math.min(KITE_STEPS, Math.floor(room() / RUN_STEP_MS));
+          const taken = await this.mover.kite(them, steps, grid, () => room() < RUN_STEP_MS || !this.#shouldKite(tactics));
+          record.outcome = { result: taken > 0 ? "kiting" : "swinging" };
+          if (taken === 0) {
+            await sleep(SWING_PAUSE_MS, signal);
           }
         } else {
           await sleep(SWING_PAUSE_MS, signal);

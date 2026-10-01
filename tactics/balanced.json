@@ -1,10 +1,11 @@
 {
-  "description": "Plays as the model decides, with safety limits: heal under 25% health, no heals above 95%, no retreat above 40%.",
+  "description": "Plays as the model decides, with safety limits: heal under 25% health, no heals above 95%, no retreat above 40%. Against a melee fighter it keeps 8 tiles between attacks (kiting took an archer from 3-15 to 9-8 against the scripted dexer).",
   "aggression": 0,
   "heal": [25, 95],
   "retreat": [0, 40],
   "chase": { "maxTiles": 20, "giveUpSeconds": 10, "teleport": true },
   "bandage": [0, 95],
   "healPotion": [20, 70],
-  "explosionRange": [3, 6]
+  "explosionRange": [3, 6],
+  "vs": { "melee": { "kite": 8 } }
 }

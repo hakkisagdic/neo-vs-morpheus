@@ -63,6 +63,8 @@ type WorldEvents = {
   target: [cursor: TargetCursor];
   targetCancelled: [];
   damage: [serial: number, amount: number];
+  /** The server's combat timer fired a swing or shot (0x2F); it may still miss. */
+  swing: [attacker: number, defender: number];
   death: [serial: number];
   moveAck: [seq: number];
   moveReject: [seq: number];
@@ -208,6 +210,12 @@ export class World extends EventEmitter<WorldEvents> {
       case 0x0b: {
         const serial = r.u32();
         this.emit("damage", serial, r.u16());
+        return;
+      }
+      case 0x2f: {
+        r.skip(1);
+        const attacker = r.u32();
+        this.emit("swing", attacker, r.u32());
         return;
       }
       case 0x3a:

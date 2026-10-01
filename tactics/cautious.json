@@ -1,10 +1,11 @@
 {
-  "description": "Stays alive first: moves on itself weigh about twice as much, heals under 40% health, may retreat up to 60%, gives up a chase after 5 seconds and never teleports into the opponent.",
+  "description": "Stays alive first: moves on itself weigh about twice as much, heals under 40% health, may retreat up to 60%, gives up a chase after 5 seconds and never teleports into the opponent. Against a melee fighter it keeps 8 tiles between attacks (kiting took an archer from 3-15 to 9-8 against the scripted dexer).",
   "aggression": -0.6,
   "heal": [40, 95],
   "retreat": [0, 60],
   "chase": { "maxTiles": 12, "giveUpSeconds": 5, "teleport": false },
   "bandage": [0, 95],
   "healPotion": [35, 85],
-  "explosionRange": [4, 6]
+  "explosionRange": [4, 6],
+  "vs": { "melee": { "kite": 8 } }
 }

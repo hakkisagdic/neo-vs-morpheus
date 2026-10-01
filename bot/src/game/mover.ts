@@ -6,7 +6,8 @@ import type { Session } from "./session.ts";
 
 const DX = [0, 1, 1, 1, 0, -1, -1, -1];
 const DY = [-1, -1, 0, 1, 1, 1, 0, -1];
-const RUN_STEP_MS = 210;
+/** A running step takes 200 ms on foot (Movement.RunFootDelay); a little more keeps the server from refusing one. */
+export const RUN_STEP_MS = 210;
 
 export const chebyshev = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
@@ -120,6 +121,35 @@ export class Mover {
   }
 
   /**
+   * Kiting: keeps away from a threat without hiding from it, so that it stays in sight to be shot
+   * at. Each step goes to the free neighbouring tile farthest from the threat, in its line of
+   * sight, as straight away as possible; none once `stop` holds or no step gains distance. A
+   * refused step is not asked again. Returns the steps taken.
+   */
+  async kite(from: { x: number; y: number }, maxSteps: number, grid?: Grid, stop: () => boolean = () => false): Promise<number> {
+    const player = this.session.world.player;
+    const refused = new Set<number>();
+    let steps = 0;
+    for (let tries = 0; steps < maxSteps && tries < maxSteps * 3 && !stop(); tries++) {
+      const direction = kiteDirection(player, from, grid, refused);
+      if (direction === null) {
+        break;
+      }
+      const facing = player.direction === direction;
+      if (!(await this.step(direction))) {
+        refused.add(direction);
+        continue;
+      }
+      if (facing) {
+        steps++;
+        refused.clear();
+      }
+      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
+    }
+    return steps;
+  }
+
+  /**
    * Runs towards a point until within `stopAt` tiles (and, with obstacles around, in its sight),
    * taking at most `maxSteps` steps; around the obstacles when a grid is given.
    */
@@ -144,4 +174,32 @@ export class Mover {
     }
     return steps;
   }
+}
+
+/**
+ * The direction of the best kiting step: onto a free tile that is farther from the threat than
+ * where we stand, keeping it in sight when there are obstacles, the straightest away first; null
+ * when no step gains distance (cornered).
+ */
+export function kiteDirection(
+  at: { x: number; y: number },
+  threat: { x: number; y: number },
+  grid?: Grid,
+  refused: ReadonlySet<number> = new Set(),
+): number | null {
+  const away = (directionTo(at, threat) + 4) % 8;
+  const now = chebyshev(at, threat);
+  let best: { direction: number; score: number } | null = null;
+  for (let d = 0; d < 8; d++) {
+    const tile = { x: at.x + DX[d], y: at.y + DY[d] };
+    if (refused.has(d) || grid?.isBlocked(tile) || chebyshev(tile, threat) <= now) {
+      continue;
+    }
+    const turn = Math.min((d - away + 8) % 8, (away - d + 8) % 8); // 0 = straight away
+    const score = (grid && !grid.lineOfSight(tile, threat) ? 0 : 100) - turn;
+    if (!best || score > best.score) {
+      best = { direction: d, score };
+    }
+  }
+  return best?.direction ?? null;
 }

@@ -1,0 +1,4 @@
+{
+  "description": "Neutral, except that archers and mages keep 8 tiles from a melee opponent between attacks: an archer runs while its bow reloads and stands still in time for the next shot, a mage runs while it cannot cast yet.",
+  "kite": 8
+}
