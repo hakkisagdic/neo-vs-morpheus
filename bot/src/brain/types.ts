@@ -150,6 +150,8 @@ export type Decision = {
   overrides: string[];
   /** The tactics the decision was made with (none: the model's own answer). */
   tactics?: Tactics;
+  /** The option tried for exploration in place of the model's choice ("damage:explosion"). */
+  explored?: string;
 };
 
 export interface DuelBrain {

@@ -18,6 +18,12 @@ describe("kiting and matchups in tactics files", () => {
     expect(parseTactics({ kite: 40 }).kite).toBe(12);
   });
 
+  it("reads the share of decisions spent exploring, off unless set", () => {
+    expect(NEUTRAL.explore).toBe(0);
+    expect(parseTactics({ explore: 0.25 }).explore).toBe(0.25);
+    expect(parseTactics({ explore: 3 }).explore).toBe(1);
+  });
+
   it("keeps up only the toggled spells it knows", () => {
     expect(NEUTRAL.keepUp).toEqual([]);
     expect(parseTactics({ keepUp: ["protection", "explosion"] }).keepUp).toEqual(["protection"]);

@@ -1,0 +1,4 @@
+{
+  "description": "Neutral, except that a quarter of the model's decisions try a random legal move other than its choice, so that learning from outcomes sees what the moves it never picks would have done.",
+  "explore": 0.25
+}

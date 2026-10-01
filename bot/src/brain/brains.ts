@@ -42,7 +42,11 @@ export class ModelBrain implements DuelBrain {
       const answer = shapeAnswer(d.answers.move, tactics.aggression);
       const { mode, parts } = splitByMode(answer);
       const overrides: string[] = [];
-      const { plan, why } = resolveMeleePlan(s, answer, overrides, tactics);
+      const explored = exploration(answer, tactics.explore, this.random);
+      if (explored) {
+        overrides.push(`explore: ${explored} instead of ${answer.choice}`);
+      }
+      const { plan, why } = resolveMeleePlan(s, explored ? oneHot(Object.keys(answer.probabilities), explored) : answer, overrides, tactics);
       return {
         brain: this.name,
         model: d.model,
@@ -56,6 +60,7 @@ export class ModelBrain implements DuelBrain {
         why,
         overrides,
         tactics,
+        explored,
       };
     }
     const composite = this.style === "composite";
@@ -67,8 +72,9 @@ export class ModelBrain implements DuelBrain {
         ? forced(options[0])
         : await systemOne(this.backend, describeDuel(s), questions);
     const a = d.answers;
-    const parts = composite
-      ? splitComposite(shapeAnswer(a.move, tactics.aggression))
+    const shaped = composite ? shapeAnswer(a.move, tactics.aggression) : null;
+    const parts = shaped
+      ? splitComposite(shaped)
       : { mode: a.nextAction, damage: a.damageSpell, interrupt: a.interruptSpell, defense: a.defenseSpell };
     const byMode: Record<Mode, Distribution> = {
       damage: parts.damage,
@@ -77,7 +83,17 @@ export class ModelBrain implements DuelBrain {
     };
     const overrides: string[] = composite ? tacticalOptions(s, tactics).notes.map((n) => `tactics: ${n}`) : [];
     const tileAnswer = composite ? undefined : a.teleportTile;
-    const { plan, why } = resolvePlan(s, parts.mode, byMode, tileAnswer, overrides, tactics);
+    // Exploring: the plan follows the option tried; the record keeps the model's own answer.
+    const explored = shaped ? exploration(shaped, tactics.explore, this.random) : undefined;
+    let chosen = byMode;
+    let chosenMode = parts.mode;
+    if (shaped && explored) {
+      overrides.push(`explore: ${explored} instead of ${shaped.choice}`);
+      const forcedParts = splitComposite(oneHot(Object.keys(shaped.probabilities), explored));
+      chosen = { damage: forcedParts.damage, interrupt: forcedParts.interrupt, defense: forcedParts.defense };
+      chosenMode = forcedParts.mode;
+    }
+    const { plan, why } = resolvePlan(s, chosenMode, chosen, tileAnswer, overrides, tactics);
     const tile = tileAnswer ? s.tiles.find((t) => t.id === tileAnswer.choice) : undefined;
     return {
       brain: this.name,
@@ -93,8 +109,24 @@ export class ModelBrain implements DuelBrain {
       why,
       overrides,
       tactics,
+      explored,
     };
   }
+
+  /** The source of chance for exploration; tests replace it. */
+  random: () => number = Math.random;
+}
+
+/**
+ * With probability `share`, a legal option other than the answer's choice, picked uniformly: moves
+ * the model never picks get tried in the states it meets, so their outcomes can be learnt.
+ */
+export function exploration(answer: Distribution, share: number, random: () => number = Math.random): string | undefined {
+  const others = Object.keys(answer.probabilities).filter((k) => k !== answer.choice);
+  if (share <= 0 || others.length === 0 || random() >= share) {
+    return undefined;
+  }
+  return others[Math.min(others.length - 1, Math.floor(random() * others.length))];
 }
 
 /** The answer when the question has a single legal option, or none. */

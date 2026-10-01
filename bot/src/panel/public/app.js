@@ -316,6 +316,7 @@ const TACTIC_FIELDS = [
   { key: "chase.giveUpSeconds", label: "give up a chase after (s)", kind: "number", min: 0, max: 600 },
   { key: "chase.teleport", label: "teleport when chasing", kind: "check" },
   { key: "kite", label: "keep from melee (tiles)", kind: "number", min: 0, max: 12, hint: "between attacks: an archer runs while reloading, a mage while it cannot cast · 0 off" },
+  { key: "explore", label: "explore", kind: "range", min: 0, max: 0.5, step: 0.05, hint: "share of the model's decisions that try another legal move at random, for learning from outcomes · 0 off" },
   { key: "bandage", label: "bandage band %", kind: "band", module: "melee" },
   { key: "healPotion", label: "heal potion band %", kind: "band", module: "melee" },
   { key: "explosionRange", label: "throw explosions from (tiles)", kind: "band", module: "melee" },

@@ -9,6 +9,8 @@
 // - Kiting goes to the executor too: the tiles to keep from a melee opponent between attacks.
 // - Spells to keep up (Protection, Magic Reflection): the executor casts one whenever it is off,
 //   before asking the brain.
+// - Exploration: the share of a model's decisions that try another legal move at random, so that
+//   learning from outcomes sees what moves the model never picks would have done.
 // - Matchups (`vs`): changes for one kind of opponent (melee, ranged or caster, told apart by what
 //   they wield), laid over the rest of the file.
 //
@@ -46,6 +48,8 @@ export type Tactics = {
   kite: number;
   /** Spells cast whenever they are off and can be cast, before the brain is asked (casters). */
   keepUp: KeepUpSpell[];
+  /** Share of a model's decisions (0 to 1) that try a random legal move other than its choice. */
+  explore: number;
   /** The same settings for one kind of opponent, already laid over these (see tacticsFor). */
   vs: Partial<Record<Archetype, Tactics>>;
 };
@@ -62,6 +66,7 @@ export const NEUTRAL: Tactics = {
   explosionRange: [2, 10],
   kite: 0,
   keepUp: [],
+  explore: 0,
   vs: {},
 };
 
@@ -119,6 +124,7 @@ function parseFlat(raw: Record<string, unknown>, id: string): Tactics {
     keepUp: Array.isArray(raw.keepUp)
       ? KEEP_UP_SPELLS.filter((k) => (raw.keepUp as unknown[]).includes(k))
       : NEUTRAL.keepUp,
+    explore: typeof raw.explore === "number" ? clamp(raw.explore, 0, 1) : NEUTRAL.explore,
     vs: {},
   };
 }

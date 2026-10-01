@@ -44,6 +44,9 @@ const MELEE_KEYS: Record<string, (p: Decision["plan"]) => string | null> = {
 
 /** The option a decision carried out, as a key of today's question; null when it only waited. */
 export function takenKey(d: Decision, s: DuelSnapshot): string | null {
+  if (d.explored) {
+    return d.explored; // tried in place of the model's choice, and carried out as such
+  }
   const p = d.plan;
   if (d.module === "melee") {
     return MELEE_KEYS[p.kind]?.(p) ?? null;
