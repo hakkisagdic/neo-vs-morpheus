@@ -46,6 +46,10 @@ const USAGE = `usage: npm run nvm -- <command>
            duel Neo:laya npc:EvilMageLord
            duel Neo:laya human:Trinity
 
+  series <file.json> [--parallel N]
+                      the matches listed in file.json ([{label, a, b, rounds, distance, arena,
+                      timeout}], fighters as for duel), N at a time on arenas side by side (up to 4;
+                      default 2); prints each match's rounds and result as it ends
   panel               the control panel at localhost:MONITOR_PORT, up until Ctrl-C: live matches
                       (duels publish to it while it runs), every recorded run and its replay
   train <Name> [--partner Name] [--resist] [--minutes N] [--goal N]
@@ -142,6 +146,94 @@ async function duel(args: string[]): Promise<void> {
   } finally {
     await new Promise((r) => setTimeout(r, 2_000)); // let the page receive the last frames
     await hub.stop();
+  }
+}
+
+/**
+ * The characters each arena slot fights with: matches at once need bots of their own. (The
+ * server refuses some names: "Smith" became "Generic Player".)
+ */
+const SLOT_NAMES = [
+  ["Neo", "Morpheus"],
+  ["Trinity", "Cypher"],
+  ["Tank", "Dozer"],
+  ["Switch", "Apoc"],
+] as const;
+
+type SeriesEntry = { label: string; a: string; b: string; rounds?: number; distance?: number; arena?: ArenaLayout; timeout?: number };
+
+/**
+ * Several matches at once, one per arena slot, sharing one GM session. Each slot's bots take the
+ * slot's own names; what is printed uses the names in the file again, so a series reads the same
+ * whatever slot played it.
+ */
+async function series(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { parallel: { type: "string", default: "2" } } });
+  if (positionals.length !== 1) {
+    throw new Error(USAGE);
+  }
+  const entries = JSON.parse(await readFile(positionals[0], "utf8")) as SeriesEntry[];
+  for (const e of entries) {
+    if (e.arena && !ARENA_LAYOUTS.includes(e.arena)) {
+      throw new Error(`${e.label}: unknown arena ${e.arena}`);
+    }
+    fighter(e.a);
+    opponent(e.b); // fail before any match starts
+  }
+  const parallel = Math.max(1, Math.min(SLOT_NAMES.length, Number(values.parallel) || 2));
+  const clock = (d: Date) => d.toTimeString().slice(0, 5);
+  const gm = await Session.gm();
+  const queue = [...entries];
+  const play = async (slot: number) => {
+    const names = SLOT_NAMES[slot];
+    for (let e = queue.shift(); e; e = queue.shift()) {
+      const original = [e.a.split(":")[0], e.b.split(":")[0]];
+      const rename = (spec: string, i: number) =>
+        spec.startsWith("npc:") || spec.startsWith("human:") ? spec : [names[i], ...spec.split(":").slice(1)].join(":");
+      const back = (text: string) => text.replaceAll(names[0], original[0]).replaceAll(names[1], original[1]);
+      const lines: string[] = [];
+      const started = new Date();
+      const hub = new MonitorHub();
+      await hub.start(config.monitorPort);
+      try {
+        const results = await runMatch(
+          {
+            a: fighter(rename(e.a, 0)),
+            b: opponent(rename(e.b, 1)),
+            rounds: e.rounds ?? 5,
+            distance: e.distance ?? 8,
+            template: true,
+            roundTimeoutMs: (e.timeout ?? 120) * 1000,
+            arena: e.arena ?? "open",
+            slot,
+            gm,
+          },
+          hub,
+          (m) => {
+            if (/^round \d+:|warning|rror/.test(m)) {
+              lines.push(back(m));
+            }
+          },
+        );
+        const wins = new Map<string, number>();
+        for (const r of results) {
+          if (r.winner) {
+            wins.set(back(r.winner), (wins.get(back(r.winner)) ?? 0) + 1);
+          }
+        }
+        lines.push(`result: ${[...wins].map(([n, w]) => `${n} ${w}`).join(", ") || "all draws"} of ${results.length}`);
+      } catch (err) {
+        lines.push(`error: ${(err as Error).message}`);
+      } finally {
+        await hub.stop();
+      }
+      console.log([`== ${e.label} (slot ${slot}, ${clock(started)}-${clock(new Date())})`, ...lines].join("\n"));
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(parallel, entries.length) }, (_, slot) => play(slot)));
+  } finally {
+    gm.close();
   }
 }
 
@@ -511,6 +603,9 @@ try {
       break;
     case "panel":
       await panel();
+      break;
+    case "series":
+      await series(args);
       break;
     case "train":
       await train(args);

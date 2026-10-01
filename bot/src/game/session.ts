@@ -84,11 +84,22 @@ export class Session {
     this.client.send(out.speech(text));
   }
 
+  /** The GM command in flight: replies carry no id, so commands go one at a time. */
+  #commands: Promise<unknown> = Promise.resolve();
+
   /**
    * Runs a NeoArena GM command and resolves with its "NEO ..." reply (without the prefix).
-   * Rejects on "NEO error ..." or when no reply arrives.
+   * Rejects on "NEO error ..." or when no reply arrives. Matches sharing this session (parallel
+   * arenas) queue their commands.
    */
   command(text: string, timeoutMs = 5_000): Promise<string> {
+    const run = () => this.#send(text, timeoutMs);
+    const result = this.#commands.then(run, run);
+    this.#commands = result.catch(() => undefined);
+    return result;
+  }
+
+  #send(text: string, timeoutMs: number): Promise<string> {
     return new Promise((resolve, reject) => {
       const onJournal = (entry: { text: string; serial: number }) => {
         if (!entry.text.startsWith("NEO ")) {

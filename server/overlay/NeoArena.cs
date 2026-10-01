@@ -8,12 +8,15 @@
 // GM commands that the bot's orchestrator sends as speech:
 //
 //   [NeoPrep <name>                         resurrect, heal, cure, end lasting spells, restock one player
-//   [NeoDuel <nameA> <nameB> [distance]     prep both and face them off in the arena
-//   [NeoPlace <name> <west|east> [distance] prep one player and put them on one side
+//   [NeoDuel <nameA> <nameB> [distance] [slot]  prep both and face them off in the arena
+//   [NeoPlace <name> <west|east> [distance] [slot] prep one player and put them on one side
 //   [NeoTemplate <name> [template]          apply templates/<template>.json (default mage)
-//   [NeoMage [type] [distance]              spawn an NPC caster on the east side
-//   [NeoClear [radius]                      delete NPCs and corpses around the arena
-//   [NeoArena <open|pillars|wall|ring>      set the arena's obstacles
+//   [NeoMage [type] [distance] [slot]       spawn an NPC caster on the east side
+//   [NeoClear [radius] [slot]               delete NPCs and corpses around the arena
+//   [NeoArena <open|pillars|wall|ring> [slot] set the arena's obstacles
+//
+// A slot picks one of several arenas side by side, each 80 tiles east of the last (slot 0 is
+// the configured centre), so several matches can run at once on one server.
 
 using System;
 using System.Collections.Generic;
@@ -105,10 +108,20 @@ public static class ArenaCommands
         CommandSystem.Register("NeoArena", AccessLevel.GameMaster, OnArena);
     }
 
-    // West and east spots `distance` tiles apart, centered on the arena.
-    private static (int West, int East) Spots(int distance)
+    // Arenas side by side: far enough apart that neither fighters, obstacles nor clearing reach
+    // a neighbour (a clear covers 20 tiles, obstacles 30).
+    private const int SlotSpacing = 80;
+
+    private static int Slot(CommandEventArgs e, int index) =>
+        Math.Clamp(e.Length > index ? e.GetInt32(index) : 0, 0, 7);
+
+    private static Point3D Center(int slot) =>
+        new(ArenaSettings.Center.X + slot * SlotSpacing, ArenaSettings.Center.Y, 0);
+
+    // West and east spots `distance` tiles apart, centered on the slot's arena.
+    private static (int West, int East) Spots(int distance, int slot)
     {
-        var west = ArenaSettings.Center.X - distance / 2;
+        var west = Center(slot).X - distance / 2;
         return (west, west + distance);
     }
 
@@ -129,7 +142,7 @@ public static class ArenaCommands
         Reply(e.Mobile, $"prep {target.Name} 0x{target.Serial.Value:X8}");
     }
 
-    [Usage("NeoDuel <nameA> <nameB> [distance]")]
+    [Usage("NeoDuel <nameA> <nameB> [distance] [slot]")]
     [Description("Preps two online players and places them facing each other in the arena.")]
     private static void OnDuel(CommandEventArgs e)
     {
@@ -140,7 +153,7 @@ public static class ArenaCommands
             return;
         }
 
-        var (west, east) = Spots(Distance(e, 2));
+        var (west, east) = Spots(Distance(e, 2), Slot(e, 3));
         var y = ArenaSettings.Center.Y;
 
         Prep(a);
@@ -158,7 +171,7 @@ public static class ArenaCommands
         );
     }
 
-    [Usage("NeoPlace <name> <west|east> [distance]")]
+    [Usage("NeoPlace <name> <west|east> [distance] [slot]")]
     [Description("Preps one online player and places them on one side of the arena.")]
     private static void OnPlace(CommandEventArgs e)
     {
@@ -168,19 +181,19 @@ public static class ArenaCommands
             return;
         }
 
-        var (west, east) = Spots(Distance(e, 2));
+        var (west, east) = Spots(Distance(e, 2), Slot(e, 3));
         Prep(target);
         Place(target, e.GetString(1).InsensitiveEquals("east") ? east : west, ArenaSettings.Center.Y);
         Reply(e.Mobile, $"place {target.Name} 0x{target.Serial.Value:X8} {target.X},{target.Y},{target.Z}");
     }
 
-    [Usage("NeoClear [radius=20]")]
+    [Usage("NeoClear [radius=20] [slot]")]
     [Description("Deletes NPCs and corpses around the arena, between rounds.")]
     private static void OnClear(CommandEventArgs e)
     {
         var radius = Math.Clamp(e.Length > 0 ? e.GetInt32(0) : 20, 1, 60);
         var map = ArenaSettings.Map;
-        var center = new Point3D(ArenaSettings.Center.X, ArenaSettings.Center.Y, 0);
+        var center = Center(Slot(e, 1));
 
         var doomed = new List<IEntity>();
         foreach (var creature in map.GetMobilesInRange<BaseCreature>(center, radius))
@@ -238,7 +251,7 @@ public static class ArenaCommands
         return [.. tiles];
     }
 
-    [Usage("NeoArena <open|pillars|wall|ring>")]
+    [Usage("NeoArena <open|pillars|wall|ring> [slot]")]
     [Description("Removes the arena's obstacles and places those of the given layout.")]
     private static void OnArena(CommandEventArgs e)
     {
@@ -250,7 +263,7 @@ public static class ArenaCommands
         }
 
         var map = ArenaSettings.Map;
-        var center = new Point3D(ArenaSettings.Center.X, ArenaSettings.Center.Y, 0);
+        var center = Center(Slot(e, 1));
         var old = new List<Item>();
         foreach (var item in map.GetItemsInRange<Static>(center, 30))
         {
@@ -327,7 +340,7 @@ public static class ArenaCommands
         Reply(e.Mobile, $"template {target.Name} {template.Id} stats {target.RawStr}/{target.RawDex}/{target.RawInt}{note}");
     }
 
-    [Usage("NeoMage [type=EvilMageLord] [distance=8]")]
+    [Usage("NeoMage [type=EvilMageLord] [distance=8] [slot]")]
     [Description("Spawns an NPC caster east of the arena center as an opponent.")]
     private static void OnMage(CommandEventArgs e)
     {
@@ -346,7 +359,7 @@ public static class ArenaCommands
             return;
         }
 
-        var (_, east) = Spots(Distance(e, 1));
+        var (_, east) = Spots(Distance(e, 1), Slot(e, 2));
         var y = ArenaSettings.Center.Y;
         creature.Home = new Point3D(east, y, 0);
         creature.RangeHome = 4;

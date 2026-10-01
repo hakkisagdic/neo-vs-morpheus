@@ -38,6 +38,10 @@ export type MatchOptions = {
   roundTimeoutMs: number;
   /** Obstacles to set up before the first round; "open" clears them. */
   arena: ArenaLayout;
+  /** Which of the server's arenas, side by side 80 tiles apart (0, the default: the configured one). */
+  slot?: number;
+  /** A GM session shared by matches running at once; without one the match opens and closes its own. */
+  gm?: Session;
 };
 
 export function makeBrain(kind: BrainKind, module: ModuleName = "mage"): DuelBrain {
@@ -91,7 +95,7 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
   let botA: Session;
   let botB: Session | null;
   try {
-    gm = await open(Session.gm(log));
+    gm = o.gm ?? (await open(Session.gm(log)));
     botA = await open(Session.bot(o.a.name, log));
     botB = o.b.kind === "bot" ? await open(Session.bot(o.b.name, log)) : null;
   } catch (err) {
@@ -125,7 +129,8 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
   const records: DecisionRecord[] = [];
 
   // Every match states its layout, so obstacles never linger from an earlier one.
-  await gm.command(`[NeoArena ${o.arena}`).catch((err) => {
+  const slot = o.slot ?? 0;
+  await gm.command(`[NeoArena ${o.arena} ${slot}`).catch((err) => {
     for (const x of sessions) {
       x.close();
     }
@@ -154,17 +159,17 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
 
       // Every round starts in an empty arena: an NPC that outlived an earlier match would fight
       // whoever stands nearest, bots included.
-      await gm.command("[NeoClear");
+      await gm.command(`[NeoClear 20 ${slot}`);
 
       let opponentSerial: number;
       let opponentName: string;
       if (o.b.kind === "npc") {
-        await gm.command(`[NeoPlace ${o.a.name} west ${o.distance}`);
-        const reply = await gm.command(`[NeoMage ${o.b.type} ${o.distance}`); // "mage <name> 0x... x,y,z"
+        await gm.command(`[NeoPlace ${o.a.name} west ${o.distance} ${slot}`);
+        const reply = await gm.command(`[NeoMage ${o.b.type} ${o.distance} ${slot}`); // "mage <name> 0x... x,y,z"
         opponentSerial = Number.parseInt(reply.split(" ").find((p) => p.startsWith("0x")) ?? "0", 16);
         opponentName = o.b.type;
       } else {
-        const reply = await gm.command(`[NeoDuel ${o.a.name} ${o.b.name} ${o.distance}`);
+        const reply = await gm.command(`[NeoDuel ${o.a.name} ${o.b.name} ${o.distance} ${slot}`);
         const serials = parseDuelReply(reply);
         opponentSerial = serials.get(o.b.name.toLowerCase()) ?? 0;
         opponentName = o.b.name;
@@ -241,7 +246,8 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       log(`warning: ${problem}; this run is not comparable`);
     }
     await saveRun(match, records).catch((err) => log(`could not save the run: ${err.message}`));
-    for (const s of [gm, botA, botB]) {
+    // A shared GM session belongs to whoever shared it.
+    for (const s of [o.gm ? null : gm, botA, botB]) {
       s?.close();
     }
   }
