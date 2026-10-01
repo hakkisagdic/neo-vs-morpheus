@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { FORMAT, compositeQuestion, describeDuel, isOutOfReach } from "../brain/duel-policy.ts";
 import type { DuelSnapshot } from "../brain/types.ts";
 import type { LabeledState } from "./label.ts";
-import { movementSnapshots, sampledSnapshots } from "./states.ts";
+import { movementSnapshots, reagentShortageSnapshots, sampledSnapshots } from "./states.ts";
 
 export type ConvertedLabel = LabeledState & {
   teacher: LabeledState["teacher"] & { converted?: { from: string; kept: number } };
@@ -25,7 +25,7 @@ export async function snapshotsFor(ids: string[], runsDir: string): Promise<Map<
     const [kind, a, b] = id.split(":");
     if (kind === "run") {
       files.add(a);
-    } else if (kind === "sampled" || kind === "movement") {
+    } else if (kind === "sampled" || kind === "movement" || kind === "reagents") {
       draws.set(`${kind}:${a}`, Math.max(draws.get(`${kind}:${a}`) ?? 0, Number(b) + 1));
     }
   }
@@ -37,7 +37,8 @@ export async function snapshotsFor(ids: string[], runsDir: string): Promise<Map<
   }
   for (const [key, n] of draws) {
     const [kind, seed] = key.split(":");
-    const snapshots = kind === "sampled" ? sampledSnapshots(n, Number(seed)) : movementSnapshots(n, Number(seed));
+    const make = { sampled: sampledSnapshots, movement: movementSnapshots, reagents: reagentShortageSnapshots }[kind];
+    const snapshots = make ? make(n, Number(seed)) : [];
     snapshots.forEach((s, i) => out.set(`${kind}:${seed}:${i}`, s));
   }
   return out;
@@ -57,14 +58,21 @@ export function convertLabel(row: LabeledState, s: DuelSnapshot): ConvertedLabel
   if (from === FORMAT.question) {
     return row;
   }
-  if (from !== "composite-1") {
+  if (from !== "composite-1" && from !== "composite-2") {
     return `no conversion from ${from}`;
   }
   if (describeDuel(s) !== row.state) {
     return "the snapshot no longer renders to the stored text";
   }
-  const questions = compositeQuestion(s);
+  const current = compositeQuestion(s);
   const old = row.teacher.probabilities;
+  // A conversion only takes options away (illegal now, or wasted): an option the teacher never
+  // saw (a spell added since, hold, dodge) would read as one it gave no chance, so it stays out.
+  // Chasing is the old attack options under a new name.
+  const criteria = Object.fromEntries(
+    Object.entries(current.move.criteria).filter(([k]) => k in old || (k === "damage:chase" && from === "composite-1")),
+  );
+  const questions = { move: { ...current.move, criteria } };
   const attack = Object.entries(old)
     .filter(([k]) => k.startsWith("damage:"))
     .reduce((sum, [, p]) => sum + p, 0);

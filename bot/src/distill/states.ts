@@ -126,6 +126,25 @@ export function movementSnapshots(n: number, seed = 20261001): DuelSnapshot[] {
   });
 }
 
+/**
+ * Mage states with one to three kinds of reagent gone (and sometimes little mana): the spells that
+ * need them drop out of the question, and the model has to choose from what is left.
+ */
+export function reagentShortageSnapshots(n: number, seed = 20261002): DuelSnapshot[] {
+  const r = rng(seed);
+  const kinds = ["blackPearl", "bloodmoss", "garlic", "ginseng", "mandrakeRoot", "nightshade", "sulfurousAsh", "spidersSilk"];
+  return Array.from({ length: n }, () => {
+    const s = sampleSnapshot(r);
+    for (let gone = r.int(1, 3); gone > 0; gone--) {
+      s.reagents[r.pick(kinds)] = 0;
+    }
+    if (r.chance(0.2)) {
+      s.us.mana = r.int(0, 12);
+    }
+    return s;
+  });
+}
+
 /** Out of sight or out of spell range: where the mage has to decide whether to move. */
 export const isMovementState = (s: DuelSnapshot) => !s.them.inLineOfSight || !s.them.inRange;
 

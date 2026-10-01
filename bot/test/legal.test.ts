@@ -120,6 +120,16 @@ describe("carrying labels over to the new question", () => {
     expect(out.teacher.probabilities["defense:greaterHeal"]).toBeCloseTo(0.3 / 0.8);
   });
 
+  it("never offers an option the teacher did not see", async () => {
+    const { describeDuel } = await import("../src/brain/duel-policy.ts");
+    const s = snapshot({});
+    const seen = { "damage:explosion": 0.5, "damage:magicArrow": 0.3, "defense:greaterHeal": 0.2 };
+    const out = convertLabel({ ...label(s, seen, describeDuel(s)), format: { describe: "duel-1", question: "composite-2" } } as never, s);
+    if (typeof out === "string") throw new Error(out);
+    expect(Object.keys(out.questions.move.criteria).sort()).toEqual(Object.keys(seen).sort());
+    expect(out.teacher.probabilities["damage:energyBolt"]).toBeUndefined();
+  });
+
   it("refuses a label whose snapshot no longer renders to its text", () => {
     const s = snapshot();
     expect(convertLabel(label(s, { "damage:explosion": 1 }, "something else"), s)).toMatch(/no longer renders/);

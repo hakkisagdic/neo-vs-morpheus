@@ -7,16 +7,18 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from "./distill/convert.ts";
+import { outcomeLabels, scoreRuns } from "./distill/outcomes.ts";
 import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
 import {
   type TrainingState,
   isMovementState,
+  reagentShortageSnapshots,
   sampledMeleeStates,
   sampledMovementStates,
   sampledStates,
   statesFromRuns,
 } from "./distill/states.ts";
-import { FORMAT, compositeQuestion, describeDuel, teleportTiles } from "./brain/duel-policy.ts";
+import { FORMAT, compositeQuestion, describeDuel, isOutOfReach, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, runMatch } from "./game/match.ts";
@@ -54,6 +56,8 @@ const USAGE = `usage: npm run nvm -- <command>
   distill label [limit] [--module melee] label them with Jev (resumable) into training/data/labeled[-melee].jsonl
       --set movement  a mage batch about moving instead: recorded states out of sight or out of
                       range that labeled.jsonl lacks, plus n sampled ones (states-movement.jsonl)
+  distill outcomes [since]  decisions from recorded runs (file names >= since) that did clearly better
+                            than average, as training rows (training/data/labeled-outcome.jsonl)
   distill convert           carry every mage label over to the current question
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
@@ -318,19 +322,43 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
   if (setAt >= 0) {
     rest.splice(setAt, 2);
   }
-  if (set !== null && ((set !== "movement" && set !== "relabel") || module !== "mage")) {
-    throw new Error(`unknown set ${set} for the ${module}; the mage has movement and relabel sets`);
+  if (set !== null && (!["movement", "relabel", "refresh"].includes(set) || module !== "mage")) {
+    throw new Error(`unknown set ${set} for the ${module}; the mage has movement, relabel and refresh sets`);
   }
   const suffix = set ? `-${set}` : module === "mage" ? "" : `-${module}`;
   const statesPath = join(DATA, `states${suffix}.jsonl`);
   // Fresh answers for labels that could not be carried over go where `distill convert` prefers them.
-  const labeledPath = join(DATA, set === "relabel" ? "relabeled-mage.jsonl" : `labeled${suffix}.jsonl`);
+  const labeledPath = join(DATA, set === "relabel" || set === "refresh" ? "relabeled-mage.jsonl" : `labeled${suffix}.jsonl`);
   if (sub === "states") {
     const runs = join(import.meta.dirname, "..", "..", "runs");
     const n = Number(rest[0] ?? 1200);
     let fromRuns;
     let sampled;
-    if (set === "movement") {
+    if (set === "refresh") {
+      // Asked again with today's question: labelled states in reach (their moves changed the most),
+      // three in four, and states short of reagents, one in four.
+      const labeled = [
+        ...(await readJsonl<LabeledState>(join(DATA, "labeled.jsonl"))),
+        ...(await readJsonl<LabeledState>(join(DATA, "labeled-movement.jsonl"))),
+      ];
+      const snaps = await snapshotsFor(labeled.map((l) => l.id), runs);
+      const order = labeled.map((l) => l.id).filter((id) => snaps.has(id) && !isOutOfReach(snaps.get(id) as DuelSnapshot));
+      // A seeded shuffle, so the same batch comes out every time.
+      let seed = 20261002;
+      const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      const fromLabels = order.slice(0, Math.round(n * 0.75)).map((id) => {
+        const s = snaps.get(id) as DuelSnapshot;
+        return { id, source: id.startsWith("run:") ? "run" : "sampled", module: "mage", format: FORMAT, state: describeDuel(s), questions: compositeQuestion(s) } as TrainingState;
+      });
+      fromRuns = fromLabels;
+      sampled = reagentShortageSnapshots(Math.round(n * 0.25)).map((s, i) => ({
+        id: `reagents:20261002:${i}`, source: "sampled", module: "mage", format: FORMAT, state: describeDuel(s), questions: compositeQuestion(s),
+      }) as TrainingState);
+    } else if (set === "movement") {
       // States the main mage batch already paid for are not asked again.
       const paid = new Set((await readJsonl<LabeledState>(join(DATA, "labeled.jsonl"))).map((s) => s.state));
       fromRuns = (await statesFromRuns(runs, module, isMovementState)).filter((s) => !paid.has(s.state));
@@ -388,6 +416,15 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     for (const [why, n] of dropped) {
       console.log(`  dropped ${n}: ${why}`);
     }
+  } else if (sub === "outcomes") {
+    // What happened after every recorded decision, as training rows (see distill/outcomes.ts).
+    const since = rest[0] ?? "";
+    const scored = await scoreRuns(join(import.meta.dirname, "..", "..", "runs"), since);
+    const rows = outcomeLabels(scored);
+    const path = join(DATA, "labeled-outcome.jsonl");
+    await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const byModule = Object.entries(Object.groupBy(rows, (r) => r.module ?? "mage")).map(([m, rs]) => `${m} ${rs?.length}`);
+    console.log(`${scored.length} decisions scored, ${rows.length} clearly better than average (${byModule.join(", ")}) -> ${path}`);
   } else if (sub === "label") {
     const brain = makeBrain("jev");
     if (!(brain instanceof ModelBrain)) {
