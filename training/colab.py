@@ -129,7 +129,7 @@ if subprocess.run(["pgrep", "-f", {script()!r}], capture_output=True).returncode
 with open("{REMOTE_HOME}/{args.name}.log", "w") as log:
     p = subprocess.Popen(["python", "-u", {script()!r}, "--mode", "top",
                           "--train-top-layers", "{args.train_top_layers}", "--epochs", "{args.epochs}",
-                          "--batch", "{args.batch}", "--accum", "1", "--holdout", "{args.holdout}",
+                          "--batch", "{args.batch}", "--accum", "{args.accum}", "--holdout", "{args.holdout}",
                           "--precision", "{args.precision}",{' "--no-checkpointing",' if args.no_checkpointing else ''}
                           "--data", "training/data/labeled.jsonl",
                           "--out", "training/checkpoints/{args.name}"],
@@ -290,6 +290,7 @@ def main():
     ap.add_argument("--data", default="training/data/labeled.jsonl")
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--batch", type=int, default=16)
+    ap.add_argument("--accum", type=int, default=1, help="batches per optimiser step (16 x 4 = 64 on a T4)")
     ap.add_argument("--train-top-layers", type=int, default=28, help="28 = the whole encoder")
     ap.add_argument("--holdout", type=float, default=0.1, help="share of the labels kept for fitting the temperature")
     ap.add_argument("--precision", choices=["fp32", "bf16", "fp16"], default="fp32", help="bf16 on the G4/A100/L4, fp16 on a T4")
