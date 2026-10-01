@@ -120,6 +120,8 @@ protocol is known, and reading the screen would be slower and less exact.
 - **Mistake mining.** After each episode, rules find bad outcomes (a death, a burst of damage, a
   refused or wasted move, an interrupt that could not land in time, chasing out of range while
   hurt) and flag the decisions in the seconds before them.
+- **Skills too.** Using and training skills (every one of them) is learnt the same way: the
+  flight recorder logs each use and its gain, and the reward is skill gained per hour.
 - **Relabel and retrain.** Flagged states are labelled by Jev (a weekly credit budget) or by the
   user in the monitor (accept, or pick another option); every label records its source. They
   join the training set with extra weight. The fixed test sets and scenario suites decide
@@ -148,7 +150,11 @@ a one-off:
    serve a model with a question it was not trained on (v3 with the new mage question lost 0-40).
 3. **Environment changed.** Relabel only the states whose text or options changed.
 4. **From play.** Flight recorder, mistake mining, relabelling queue (above).
-5. **Train** incrementally on everything kept (old data replayed against forgetting), a checkpoint
+5. **Rollback** is the model together with its question format: a checkpoint runs only with the
+   question it was trained on. Each checkpoint carries a small card (question and description
+   versions, code commit, data digest, gate results); the bot refuses a checkpoint whose question
+   differs from its own, and rolling back serves the checkpoint with the code it needs.
+6. **Train** incrementally on everything kept (old data replayed against forgetting), a checkpoint
    per run, tagged on Hugging Face; promote only if every gate holds, keep the previous one to
    roll back to. Per-shard differences go into small adapters on one base model.
 
