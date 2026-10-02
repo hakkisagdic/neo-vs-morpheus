@@ -73,10 +73,18 @@ license: other
 ---
 # neo-vs-morpheus raw archive (private, never public)
 
-Everything the labels were made from, as it was on the machine that made it: FreeJev (Jev) labels
+Everything the labels were made from, as it was on the machine that made it: FreeJev labels
 with the teacher's full probabilities, sampled states, splits, and the run logs states come from.
-The labels cost FreeJev credits and exist nowhere else. Each backup is a commit, so the history
-keeps every earlier version. Published datasets are cut from here; this repo itself stays private.
+FreeJev is a third-party Jev-compatible API, not affiliated with TypeSafe; its answers report
+typesafe/jev-1.13-20260917, which has not been verified. The labels cost FreeJev credits and exist
+nowhere else. Each backup is a commit, so the history keeps every earlier version. Published
+datasets are cut from here; this repo itself stays private.
+
+- `data/`: training/data: labels, states and training sets; `data/composite-4/` holds the labels
+  carried over to composite-4 questions and the v8 training sets. train-<tag>.jsonl trained the
+  model neo-duel-<tag> (hakkisagdic/laya-neo-duel).
+- `trained/<run>.jsonl`: the exact training set of each run, uploaded when the run starts.
+- `runs/`: every recorded match, from every machine (<instance>--<stamp>.json).
 """
 
 

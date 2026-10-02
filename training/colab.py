@@ -45,6 +45,8 @@ import tempfile
 import textwrap
 import time
 
+from hfdata import DATA_REPO, archive
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 REPO_URL = "https://github.com/hakkisagdic/neo-vs-morpheus.git"
 REMOTE_HOME = "/content"
@@ -102,6 +104,7 @@ def train(args):
         sys.exit(f"commit {commit[:9]} is not on GitHub yet; push first (the runtime clones it)")
     with open(os.path.join(ROOT, args.data), "rb") as f:
         data = f.read()
+    archive(os.path.join(ROOT, args.data), args.name, args.data_repo)
     upload(args, base64.b64encode(gzip.compress(data, 9)).decode())
     setup = cell("setup", f'''
 import base64, gzip, hashlib, os, subprocess
@@ -288,6 +291,7 @@ def main():
     ap.add_argument("--project", help="colab-bridge 0.2+ project: names our cells and holds our GPU claim on a shared runtime")
     ap.add_argument("--name", default="neo-duel", help="checkpoint name")
     ap.add_argument("--data", default="training/data/labeled.jsonl")
+    ap.add_argument("--data-repo", default=DATA_REPO, help="private dataset that keeps each run's training set")
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--accum", type=int, default=1, help="batches per optimiser step (16 x 4 = 64 on a T4)")

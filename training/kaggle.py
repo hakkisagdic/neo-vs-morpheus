@@ -31,6 +31,8 @@ import sys
 import tempfile
 import time
 
+from hfdata import DATA_REPO, archive
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 REPO_URL = "https://github.com/hakkisagdic/neo-vs-morpheus.git"
 LAYA = "laya==0.3.20"
@@ -102,6 +104,7 @@ def train(args):
     name = slug(args.name)
     with open(os.path.join(ROOT, args.data), "rb") as f:
         data = f.read()
+    archive(os.path.join(ROOT, args.data), name, args.data_repo)
     with tempfile.TemporaryDirectory(prefix="kaggle-") as tmp:
         # The labels: a private dataset per run, so runs never race over one dataset's versions.
         ds_dir = os.path.join(tmp, "dataset")
@@ -201,6 +204,7 @@ def main():
     ap.add_argument("command", choices=["train", "status", "wait", "fetch", "all"])
     ap.add_argument("--name", required=True, help="run name; also names the dataset and the kernel")
     ap.add_argument("--data", default="training/data/train-all.jsonl")
+    ap.add_argument("--data-repo", default=DATA_REPO, help="private dataset that keeps each run's training set")
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--accum", type=int, default=4)
