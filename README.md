@@ -6,6 +6,11 @@ open-weights [Laya](https://github.com/NandhaKishorM/laya) running locally, or T
 and can fight each other. A live **duel monitor** shows each decision with its probabilities,
 the way the Jev UO demo that inspired this project did.
 
+> **About the teacher.** The labels, and every result below that names Jev, came through
+> [FreeJev](https://freejev.org), a third-party Jev-compatible API. Its answers report
+> `typesafe/jev-1.13-20260917`, but FreeJev is not affiliated with TypeSafe, and whether TypeSafe's
+> Jev is behind it has not been verified.
+
 Everything runs locally in Docker: a [ModernUO](https://github.com/modernuo/ModernUO) shard, the
 Laya server, and a headless bot client. No game client or EA files are needed to start: the
 server falls back to a synthetic flat arena.
@@ -124,7 +129,7 @@ python3 training/colab.py clean                                  # remove our fi
 `training/data` and `training/checkpoints` are git-ignored. v1 is published as the
 [neo-duel-v1 release](https://github.com/hakkisagdic/neo-vs-morpheus/releases/tag/neo-duel-v1);
 later checkpoints and the labels are in private Hugging Face repos (`training/publish_hf.py`)
-until FreeJev and TypeSafe confirm that redistributing Jev outputs is fine.
+until FreeJev confirms that redistributing its outputs is fine.
 
 Every match is saved to `runs/` with each decision and the state it was made from.
 
@@ -142,11 +147,11 @@ opponent, ...), the same composite question to every model; no clock involved:
 
 | model | right move (top-1) | probability on right moves | latency |
 |---|---|---|---|
-| Jev 1.13 (via FreeJev) | 9 / 12 | 61% | 3.3 s |
+| FreeJev (reports Jev 1.13) | 9 / 12 | 61% | 3.3 s |
 | Laya `typed-decisions`, not fine-tuned | 0 / 12 | 13% | 0.15 s (Metal) |
-| Laya, decision head distilled from 1,195 Jev labels (on a Mac) | 4 / 12 | 30% | 0.25 s (Metal) |
+| Laya, decision head distilled from 1,195 FreeJev labels (on a Mac) | 4 / 12 | 30% | 0.25 s (Metal) |
 | Laya, whole encoder fine-tuned on the same labels (Colab GPU) | 8 / 12 | 51% | 0.36 s (Metal) |
-| Laya v2, whole encoder, 6,131 Jev labels | 11 / 12 | 60% | 0.4-0.6 s (Metal) |
+| Laya v2, whole encoder, 6,131 FreeJev labels | 11 / 12 | 60% | 0.4-0.6 s (Metal) |
 | Laya v3, v2's labels plus 1,437 fighter labels | 11 / 12 | 59% | 0.4-0.6 s (Metal) |
 
 Out of the box Laya matches words rather than situations (a poisoned bot "chooses" Poison; an
