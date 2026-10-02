@@ -52,6 +52,8 @@ const USAGE = `usage: npm run nvm -- <command>
                       the matches listed in file.json ([{label, a, b, rounds, distance, arena,
                       timeout}], fighters as for duel), N at a time on arenas side by side (up to 8;
                       default 2); prints each match's rounds and result as it ends
+  fleet setup <instance>  a fresh GPU VM: arena, bot and Laya serving, at GitHub's main plus this
+                      checkout's unpushed and uncommitted changes (lab/vm/setup.sh)
   fleet status|pull [instance]
                       the machines in fleet.json (fleet.example.json): what each lane plays; their
                       new runs brought into runs/ as <instance>--<stamp>.json
@@ -273,11 +275,13 @@ async function fleet(args: string[]): Promise<void> {
     console.log(formatRows(tally(await readRuns(), { since, instance: values.instance, includeFlagged: values.flagged, byArena: values["by-arena"] })));
     return;
   }
-  if (!["status", "pull", "start", "stop", "logs"].includes(action) || (["start", "stop", "logs"].includes(action) && !name)) {
+  if (!["setup", "status", "pull", "start", "stop", "logs"].includes(action) || (["setup", "start", "stop", "logs"].includes(action) && !name)) {
     throw new Error(USAGE);
   }
   const step = (i: Instance): Promise<string> => {
     switch (action) {
+      case "setup":
+        return i.setup();
       case "status":
         return i.status();
       case "pull":

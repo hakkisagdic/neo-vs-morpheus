@@ -36,6 +36,17 @@ async function each(instance: string | undefined, step: (i: Instance) => Promise
 const instanceArg = z.string().optional().describe("one instance from fleet.json; all of them when left out");
 
 server.registerTool(
+  "fleet_setup",
+  {
+    title: "Set up a VM",
+    description:
+      "Make a fresh GPU VM ready to play: ModernUO with the arena overlay, Node and the bot, at GitHub's main plus this checkout's unpushed and uncommitted changes. Runs in the background; fleet_status shows its progress.",
+    inputSchema: { instance: z.string() },
+  },
+  async ({ instance }) => each(instance, (i) => i.setup()),
+);
+
+server.registerTool(
   "fleet_status",
   {
     title: "Fleet status",

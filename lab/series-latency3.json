@@ -1,0 +1,62 @@
+[
+ {
+  "label": "150 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@150",
+  "b": "Morpheus:rules@0",
+  "rounds": 20
+ },
+ {
+  "label": "150 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0",
+  "b": "Morpheus:rules@150",
+  "rounds": 20
+ },
+ {
+  "label": "175 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@175",
+  "b": "Morpheus:rules@0",
+  "rounds": 20
+ },
+ {
+  "label": "175 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0",
+  "b": "Morpheus:rules@175",
+  "rounds": 20
+ },
+ {
+  "label": "200 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@200",
+  "b": "Morpheus:rules@0",
+  "rounds": 20
+ },
+ {
+  "label": "200 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0",
+  "b": "Morpheus:rules@200",
+  "rounds": 20
+ },
+ {
+  "label": "225 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@225",
+  "b": "Morpheus:rules@0",
+  "rounds": 20
+ },
+ {
+  "label": "225 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0",
+  "b": "Morpheus:rules@225",
+  "rounds": 20
+ },
+ {
+  "label": "250 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@250",
+  "b": "Morpheus:rules@0",
+  "rounds": 20
+ },
+ {
+  "label": "250 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0",
+  "b": "Morpheus:rules@250",
+  "rounds": 20
+ }
+]

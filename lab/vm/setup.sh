@@ -14,12 +14,27 @@ A=${ARENA_DIR:-/content/arena}
 COMMIT=${COMMIT:-main}
 mkdir -p "$A" && cd "$A"
 SUDO=$([ "$(id -u)" = 0 ] || echo sudo)
+# Without root (Camber's Jupyter nodes) apt is out of reach: the native libraries must be there
+# already, and jq comes as a static binary into $A/bin.
+can_apt() { [ "$(id -u)" = 0 ] || sudo -n true 2>/dev/null; }
 step() { echo "== $(date +%T) $*"; }
-export DOTNET_ROOT=$A/dotnet PATH=$A/dotnet:$A/node/bin:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
+export DOTNET_ROOT=$A/dotnet PATH=$A/bin:$A/dotnet:$A/node/bin:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 
 if [ ! -f .done-apt ]; then
-  step "apt: jq libdeflate0 libargon2-1"
-  $SUDO apt-get -qq update >/dev/null && $SUDO apt-get -qq install -y jq libdeflate0 libargon2-1 >/dev/null
+  if can_apt; then
+    step "apt: jq libdeflate0 libargon2-1"
+    $SUDO apt-get -qq update >/dev/null && $SUDO apt-get -qq install -y jq libdeflate0 libargon2-1 >/dev/null
+  else
+    step "no root: native libraries from the image, jq into $A/bin"
+    for lib in libdeflate.so.0 libargon2.so.1; do
+      ldconfig -p | grep -q "$lib" || { echo "missing $lib and no root to install it"; exit 1; }
+    done
+    if ! command -v jq >/dev/null; then
+      mkdir -p "$A/bin"
+      curl -fsSL https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 -o "$A/bin/jq"
+      chmod +x "$A/bin/jq"
+    fi
+  fi
   touch .done-apt
 fi
 

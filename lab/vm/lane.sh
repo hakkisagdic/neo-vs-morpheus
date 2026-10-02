@@ -5,7 +5,7 @@
 #   lane.sh 0 /content/arena/nvm/lab/series-mage12.json --parallel 8
 set -euo pipefail
 A=${ARENA_DIR:-/content/arena}; i=$1; series=$2; shift 2
-export DOTNET_ROOT=$A/dotnet PATH=$A/dotnet:$A/node/bin:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1
+export DOTNET_ROOT=$A/dotnet PATH=$A/bin:$A/dotnet:$A/node/bin:$PATH DOTNET_CLI_TELEMETRY_OPTOUT=1
 set -a; . "$A/secrets.env"; set +a
 port=$((2593 + i)); d=$A/uo-$i
 up() { (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; }
