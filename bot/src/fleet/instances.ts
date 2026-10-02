@@ -241,6 +241,7 @@ class SshLab implements Instance {
 const PY_HELPERS = `
 import glob, json, os, re, subprocess, sys, time, urllib.request
 def sh(c):
+    # Patterns for pgrep/pkill start "[a]rena-": the shell running them has the pattern in its own command line.
     return subprocess.run(c, shell=True, capture_output=True, text=True).stdout.strip()
 def laya_servers():
     """{port: checkpoint folder} for every Laya server, read from each process's environment."""
@@ -294,7 +295,7 @@ for log in sorted(glob.glob(f"{A}/lane-*.series.log"), key=lambda p: int(re.sear
     batch = text[text.rfind("\\n### ") + 1:] if "\\n### " in text else text
     head = batch.splitlines()[0][4:] if batch.startswith("### ") else ""
     results = re.findall(r"^result: .*$", batch, re.M)
-    running = sh(f"pgrep -fa 'arena-series-{i} '")
+    running = sh(f"pgrep -fa '[a]rena-series-{i} '")
     total = ""
     m = re.search(r"series (\\S+\\.json)", running)
     if m and os.path.exists(m.group(1)):
@@ -356,7 +357,7 @@ print(f"FLEET>>>{len(new)}")`,
     return this.#cell(
       "start",
       `A, name, lane, model = ${JSON.stringify(this.#dir)}, ${JSON.stringify(this.name)}, ${lane}, ${JSON.stringify(o.model ?? "")}
-if sh(f"pgrep -f 'arena-series-{lane} '"):
+if sh(f"pgrep -f '[a]rena-series-{lane} '"):
     print(f"FLEET>>>lane {lane} is busy; stop it first"); return
 os.makedirs(f"{A}/series", exist_ok=True)
 path = f"{A}/series/${file}"
@@ -396,7 +397,8 @@ print("FLEET>>>" + "; ".join(said))`,
   }
 
   async stop(lane?: number): Promise<string> {
-    const pattern = lane === undefined ? "arena-series-[0-9]" : `arena-series-${lane} `;
+    // "[a]rena": the pattern must not match the shell that runs pkill, whose command line holds it.
+    const pattern = lane === undefined ? "[a]rena-series-[0-9]" : `[a]rena-series-${lane} `;
     return this.#cell("stop", `sh(${JSON.stringify(`pkill -f '${pattern}'`)})\nprint("FLEET>>>stopped " + ${JSON.stringify(lane === undefined ? "every lane" : `lane ${lane}`)})`);
   }
 
