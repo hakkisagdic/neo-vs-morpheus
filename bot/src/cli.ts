@@ -309,6 +309,7 @@ async function fleet(args: string[]): Promise<void> {
 async function panel(): Promise<void> {
   const server = new PanelServer();
   const url = await server.start(config.monitorPort);
+  server.warm();
   const pulls = startFleetPulls();
   console.log(`control panel: ${url} (Ctrl-C stops it); the fleet's runs are pulled every 10 minutes`);
   await new Promise<void>((resolve) => process.once("SIGINT", () => resolve()));

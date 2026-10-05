@@ -250,6 +250,11 @@ export class PanelServer {
     }
   }
 
+  /** Reads every run once in the background, so that the first Runs page opens at once. */
+  warm(): void {
+    void this.#runs().catch(() => {});
+  }
+
   /** Every run's summary, newest first; a file is read again only when it changed. */
   async #runs(): Promise<RunSummary[]> {
     const files = (await readdir(RUNS)).filter((f) => f.endsWith(".json"));
@@ -304,14 +309,25 @@ function machineReport(): Promise<string> {
 
 type FleetSnapshot = { at: number; since: number; instances: InstanceInfo[]; results: Row[]; runsToday: Record<string, number> };
 
-let fleet: { at: number; data: Promise<FleetSnapshot> } | null = null;
+/** The newest snapshot, served at once while a fresher one is built: ssh and the Kaggle CLI take seconds. */
+let fleetLast: FleetSnapshot | null = null;
+let fleetBuilding: Promise<FleetSnapshot> | null = null;
 let pulling = false;
+
+function refreshFleet(): Promise<FleetSnapshot> {
+  fleetBuilding ??= buildFleet()
+    .then((snapshot) => (fleetLast = snapshot))
+    .finally(() => (fleetBuilding = null));
+  return fleetBuilding;
+}
 
 /**
  * Brings the other machines' runs here every 10 minutes while the panel runs, so that today's
- * numbers include them. One pull at a time; a machine that fails is tried again next round.
+ * numbers include them. One pull at a time; a machine that fails is tried again next round. The
+ * first snapshot is built at once, so that the first page to open finds it ready.
  */
 export function startFleetPulls(everyMs = 600_000): NodeJS.Timeout {
+  void refreshFleet().catch(() => {});
   const pull = async () => {
     if (pulling) {
       return;
@@ -323,7 +339,7 @@ export function startFleetPulls(everyMs = 600_000): NodeJS.Timeout {
           await m.pull().catch(() => "");
         }
       }
-      fleet = null; // the next snapshot reads the new runs
+      void refreshFleet().catch(() => {}); // with the new runs
     } finally {
       pulling = false;
     }
@@ -332,12 +348,18 @@ export function startFleetPulls(everyMs = 600_000): NodeJS.Timeout {
   return setInterval(() => void pull(), everyMs);
 }
 
-/** Every machine in fleet.json and today's results, at most every 45 s: ssh and the Kaggle CLI are slow. */
-function fleetSnapshot(): Promise<FleetSnapshot> {
-  if (!fleet || Date.now() - fleet.at > 45_000) {
-    fleet = { at: Date.now(), data: buildFleet() };
+/**
+ * Every machine in fleet.json and today's results: the newest snapshot at once, rebuilt in the
+ * background once it is 45 s old (`refreshing` says a newer one is on its way). Only the very
+ * first request waits for one.
+ */
+async function fleetSnapshot(): Promise<FleetSnapshot & { refreshing: boolean }> {
+  if (!fleetLast) {
+    await refreshFleet();
+  } else if (Date.now() - fleetLast.at > 45_000) {
+    void refreshFleet().catch(() => {});
   }
-  return fleet.data;
+  return { ...(fleetLast as FleetSnapshot), refreshing: fleetBuilding !== null };
 }
 
 async function buildFleet(): Promise<FleetSnapshot> {

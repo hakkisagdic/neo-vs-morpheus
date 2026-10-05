@@ -134,18 +134,32 @@ export function formatRows(rows: Row[]): string {
 
 export const RUNS_DIR = join(import.meta.dirname, "..", "..", "..", "runs");
 
-/** Every run in runs/, or only the files written since a time (cheaper: no other file is parsed). */
+/** Runs read so far, by path, while the file is unchanged: a run file is about a megabyte of JSON. */
+const parsed = new Map<string, { mtimeMs: number; info: RunInfo | null }>();
+
+/** Every run in runs/, or only the files written since a time; a file is parsed again only when it changed. */
 export async function readRuns(dir = RUNS_DIR, modifiedSince = 0): Promise<RunInfo[]> {
   const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json"));
   const out: RunInfo[] = [];
   for (const file of files) {
-    if (modifiedSince && (await stat(join(dir, file)).catch(() => null))?.mtimeMs! < modifiedSince) {
+    const path = join(dir, file);
+    const st = await stat(path).catch(() => null);
+    if (!st || st.mtimeMs < modifiedSince) {
       continue;
     }
-    try {
-      out.push(runInfo(file, JSON.parse(await readFile(join(dir, file), "utf8")) as RunFile));
-    } catch {
-      // a run still being written, or not a run file
+    let hit = parsed.get(path);
+    if (!hit || hit.mtimeMs !== st.mtimeMs) {
+      let info: RunInfo | null = null;
+      try {
+        info = runInfo(file, JSON.parse(await readFile(path, "utf8")) as RunFile);
+      } catch {
+        // a run still being written (its next write changes the time), or not a run file
+      }
+      hit = { mtimeMs: st.mtimeMs, info };
+      parsed.set(path, hit);
+    }
+    if (hit.info) {
+      out.push(hit.info);
     }
   }
   return out;

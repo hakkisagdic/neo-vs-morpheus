@@ -8,10 +8,11 @@
 // Runs from elsewhere land in runs/ as "<instance>--<stamp>.json", next to the Mac's own.
 import { spawn } from "node:child_process";
 import { existsSync, openSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { readRuns } from "./results.ts";
 
 export const ROOT = join(import.meta.dirname, "..", "..", "..");
 const CACHE = join(ROOT, ".fleet");
@@ -39,7 +40,8 @@ export type InstanceConfig =
 export type StartOptions = { series: string; lane?: number; parallel?: number; model?: string };
 
 /** One lane as the dashboard shows it. */
-export type LaneInfo = { lane: number; model?: string; running: boolean; series?: string; done: number; total?: number; last?: string };
+/** One lane; `updatedAt` (ms) is when its log last changed, where that can be seen. */
+export type LaneInfo = { lane: number; model?: string; running: boolean; series?: string; done: number; total?: number; last?: string; updatedAt?: number };
 
 /** A machine at a glance: a few summary lines and its lanes. */
 export type InstanceInfo = { name: string; kind: string; ok: boolean; error?: string; summary: string[]; lanes: LaneInfo[] };
@@ -231,7 +233,8 @@ class Local implements Instance {
       const series = batch.startsWith("### ") ? batch.split("\n")[0].split(" ")[2] : undefined;
       const results = batch.match(/^result: .*$/gm) ?? [];
       const total = series ? await readFile(join(this.#dir, "series", series), "utf8").then((t) => (JSON.parse(t) as unknown[]).length).catch(() => undefined) : undefined;
-      lanes.push({ lane, model: servers.get(8001 + lane), running: running.has(lane), series, done: results.length, total, last: results.at(-1)?.slice("result: ".length) });
+      const updatedAt = (await stat(join(this.#dir, log)).catch(() => null))?.mtimeMs;
+      lanes.push({ lane, model: servers.get(8001 + lane), running: running.has(lane), series, done: results.length, total, last: results.at(-1)?.slice("result: ".length), updatedAt });
     }
     lanes.sort((a, b) => a.lane - b.lane);
     const load = (await run("sysctl", ["-n", "vm.loadavg"]).catch(() => "")).replace(/[{}]/g, "").trim().split(/\s+/);
@@ -850,6 +853,10 @@ class Camber implements Instance {
   async info(): Promise<InstanceInfo> {
     const runs = ((await this.#cli("stash", "ls", `${this.#c.stash}/nvm/runs/`).catch(() => "")).match(/\.json\b/g) ?? []).length;
     const root = await this.#cli("stash", "ls", `${this.#c.stash}/`).catch(() => "");
+    // The node's processes are out of sight: a lane counts as running while its runs keep coming
+    // (pulled every 10 minutes, after Stash's own delay).
+    const since = Date.now() - 45 * 60_000;
+    const active = new Set((await readRuns(RUNS, since)).filter((r) => r.instance === this.name && r.startedAt >= since).map((r) => Number(r.lane)));
     const lanes: LaneInfo[] = [];
     await mkdir(join(CACHE, this.name), { recursive: true });
     for (const lane of [...root.matchAll(/lane-(\d+)\.series\.log/g)].map((m) => Number(m[1]))) {
@@ -857,7 +864,7 @@ class Camber implements Instance {
       await this.#cli("stash", "cp", `${this.#c.stash}/lane-${lane}.series.log`, local).catch(() => "");
       const text = await readFile(local, "utf8").catch(() => "");
       const results = text.match(/^result: .*$/gm) ?? [];
-      lanes.push({ lane, model: "L4 (Camber)", running: false, done: results.length, last: results.at(-1)?.slice("result: ".length) });
+      lanes.push({ lane, model: "L4 (Camber)", running: active.has(lane), done: results.length, last: results.at(-1)?.slice("result: ".length) });
     }
     return { name: this.name, kind: "camber", ok: true, summary: [`${runs} runs in Stash`, "the node is started and stopped in Camber's web app"], lanes };
   }

@@ -7,7 +7,7 @@ let runs = [];
 export async function showRuns(filter = "") {
   if (filter) $("runs-filter").value = filter;
   if (!runs.length) {
-    $("runs-body").innerHTML = `<tr><td colspan="9" class="muted">reading the runs…</td></tr>`;
+    $("runs-body").innerHTML = `<tr><td colspan="9" class="muted"><span class="spinner"></span>reading the runs</td></tr>`;
   }
   runs = await (await fetch("/api/runs")).json();
   render();

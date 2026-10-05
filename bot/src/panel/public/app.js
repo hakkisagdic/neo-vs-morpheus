@@ -434,7 +434,13 @@ async function route() {
   if (view === "runs") await showRuns(decodeURIComponent(rest.join("/")));
   if (view === "replay") await showReplay(decodeURIComponent(rest.join("/")));
   if (view === "machine") {
-    const load = async () => ($("machine").textContent = (await (await fetch("/api/machine")).json()).report);
+    const load = async () => {
+      try {
+        $("machine").textContent = (await (await fetch("/api/machine")).json()).report;
+      } catch {
+        $("machine").textContent = "the panel cannot read the machine report";
+      }
+    };
     await load();
     machineTimer = setInterval(load, 10_000);
   }
