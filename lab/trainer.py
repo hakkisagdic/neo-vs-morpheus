@@ -7,6 +7,9 @@
 1. A training kernel that finished is fetched (training/kaggle.py fetch), published to the private
    model repo, and put on one of this Mac's candidate lanes against the scripted bot at matched
    speed (lab/evaluate.py), replacing the older candidate there.
+   Once a candidate and the champion have each played 400 mage-duel rounds since the candidate
+   came, a one-sided two-proportion z-test (95%) promotes it (the champion's lanes become its) or
+   drops it (its lane goes back to the champion).
 2. While fewer than two of the account's GPU sessions run (Kaggle's limit) and the weekly quota has
    room for a training, the next version goes up, two at a time when two wait (a kernel has two
    T4s, so both train in one session): the runs played since the last labeling become
@@ -26,6 +29,7 @@ plan. Standard library only.
 import argparse
 import datetime
 import json
+import math
 import os
 import re
 import shutil
@@ -42,6 +46,11 @@ DATA = os.path.join("training", "data")
 MIN_NEW_ROWS = 3000
 #: New Jev labels a "jev" version needs over the last one.
 MIN_NEW_JEV = 1000
+#: Mage-duel rounds each side needs before a candidate is promoted or dropped, and the one-sided
+#: z for 95% confidence; the scripted bot at this reaction time or quicker is "matched speed".
+GATE_ROUNDS = 400
+GATE_Z = 1.645
+MATCHED_MS = 60
 #: Hours of weekly GPU quota a training needs (a 50-70k row set takes 3-5 h on a T4).
 QUOTA_HOURS = 5.0
 #: Runs still playing when runs are labeled are picked up next time: the next labeling starts this much earlier.
@@ -125,6 +134,63 @@ def evaluate(state, name):
     log(f"{name}: evaluating on lane {lane}" if not code else f"{name}: evaluation start failed: {out[-300:]}")
     candidates[str(lane)] = name
     order.append(name)
+    state.setdefault("eval_since", {})[name] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def duel_results(since):
+    """Mage-duel round wins and losses against the scripted bot at matched speed (rules@60 or quicker)
+    on this Mac since a time, by checkpoint, its own play only (no tactics profile)."""
+    code, out = sh(["npm", "run", "-s", "nvm", "--", "fleet", "results", "--since", since, "--instance", "mac"], cwd=BOT, timeout=900)
+    results = {}
+    for m in re.finditer(r"^(neo-duel-\S+) mage vs rules@(\d+) mage: (\d+)-(\d+)", out, re.M):
+        if int(m.group(2)) <= MATCHED_MS:
+            wins, losses = results.get(m.group(1), (0, 0))
+            results[m.group(1)] = (wins + int(m.group(3)), losses + int(m.group(4)))
+    return results
+
+
+def switch_lanes(old, new):
+    """Every Mac lane the plan gives to `old` plays `new` from now on, on the same series."""
+    with open(os.path.join(ROOT, ".fleet", "plan.json")) as f:
+        lanes = [l for l in json.load(f).get("mac", []) if l.get("model") == old]
+    for lane in lanes:
+        sh([sys.executable, "lab/evaluate.py", "--model", new, "--lane", str(lane["lane"]), "--series", lane["series"]])
+    return [l["lane"] for l in lanes]
+
+
+def gate(state):
+    """Each candidate against the champion over the same hours: once both have GATE_ROUNDS mage-duel
+    rounds, a one-sided two-proportion z-test promotes a better candidate (its lanes and the
+    champion's become its) or drops a worse one (its lane goes back to the champion)."""
+    champion = state.setdefault("champion", "neo-duel-v8")
+    for lane, name in list(state.get("candidates", {}).items()):
+        since = state.get("eval_since", {}).get(name)
+        if not since or name == champion:
+            continue
+        results = duel_results(since)
+        (cw, cl), (bw, bl) = results.get(name, (0, 0)), results.get(champion, (0, 0))
+        n1, n2 = cw + cl, bw + bl
+        if n1 < GATE_ROUNDS or n2 < GATE_ROUNDS:
+            log(f"{name} against {champion}: {cw}-{cl} and {bw}-{bl}; waiting for {GATE_ROUNDS} rounds each")
+            continue
+        pooled = (cw + bw) / (n1 + n2)
+        se = math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2)) or 1.0
+        z = (cw / n1 - bw / n2) / se
+        verdict = f"{name} {100 * cw / n1:.0f}% ({cw}-{cl}) against {champion} {100 * bw / n2:.0f}% ({bw}-{bl}), z {z:+.2f}"
+        if z > GATE_Z:
+            moved = switch_lanes(champion, name)
+            state["champion"] = name
+            state.setdefault("history", []).append({"promoted": name, "over": champion, "at": since, "result": verdict})
+            del state["candidates"][lane]
+            log(f"promoted: {verdict}; lanes {moved} now play it")
+        elif z < -GATE_Z:
+            sh([sys.executable, "lab/evaluate.py", "--model", champion, "--lane", lane])
+            state.setdefault("history", []).append({"dropped": name, "at": since, "result": verdict})
+            del state["candidates"][lane]
+            log(f"dropped: {verdict}; lane {lane} plays {champion} again")
+        else:
+            log(f"undecided: {verdict}")
+        save(state)
 
 
 def build_jev(state):
@@ -211,7 +277,9 @@ def round_once():
             state["pushed"].remove(name)
             state.setdefault("failed", []).append(name)
         save(state)
-    # 2. A free GPU session trains the next version.
+    # 2. Candidates that played enough rounds are promoted or dropped.
+    gate(state)
+    # 3. A free GPU session trains the next version.
     busy = sum(1 for s in kernels.values() if s in ("running", "queued"))
     left = quota_left()
     if busy >= 2:
