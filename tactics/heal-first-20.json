@@ -1,0 +1,4 @@
+{
+  "description": "Neutral, except that healing comes first under 20% health: below it only Heal, Greater Heal and cures remain (cures because a heal does not take on a poisoned target). At 35% (heal-first) neo-duel-v8 won 42% of its mage duels against the scripted bot at matched speed, against 55% for its neutral play (2026-10-05), so this switches later.",
+  "heal": [20, 100]
+}

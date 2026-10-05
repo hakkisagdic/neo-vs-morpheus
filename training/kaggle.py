@@ -143,7 +143,17 @@ def train(args):
                        "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_internet": True,
                        "dataset_sources": [f"{owner}/{dataset}"], "competition_sources": [], "kernel_sources": [],
                        "machine_shape": args.accelerator}, f)
-        print(kaggle("kernels", "push", "-p", k_dir).strip())
+        # Kaggle runs two GPU sessions at a time and answers a third push with an error on stdout
+        # (exit code 0): wait for a slot rather than report a kernel that never started.
+        while True:
+            out = kaggle("kernels", "push", "-p", k_dir).strip()
+            if "Maximum batch GPU session count" not in out:
+                break
+            print(f"{time.strftime('%H:%M')} both GPU sessions are busy; trying again in 5 minutes", flush=True)
+            time.sleep(300)
+        print(out)
+        if "error" in out.lower():
+            sys.exit(f"kernel push failed: {out}")
     print(f"kernel {owner}/{kernel} started at {commit[:9]} on {args.accelerator}: {' '.join(train_args)}")
 
 
