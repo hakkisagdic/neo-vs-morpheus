@@ -14,8 +14,12 @@
    (build_set.py), and training/kaggle.py starts it. No DAgger rows: the scripted bot's labels made
    neo-duel-v8-dagger-all worse in every build.
 
-State lives in .fleet/trainer.json: the next version number, the newest set, label files every
-version keeps (extra), when runs were last labeled, versions built but not pushed (queue), pushed but
+recipe "jev" instead builds each version from a fixed base set (state "set") plus the Jev label
+files in extra, once 1,000 new labels have come: outcome rows made v9a lose to v8 (47% against
+62% in the mage duel), so the jev recipe adds none.
+
+State lives in .fleet/trainer.json: the recipe, the next version number, the newest (or base) set,
+label files every version keeps (extra), when runs were last labeled, versions built but not pushed (queue), pushed but
 not fetched (pushed), and which candidate plays on which lane. Edit it between rounds to change the
 plan. Standard library only.
 """
@@ -36,6 +40,8 @@ STATE = os.path.join(ROOT, ".fleet", "trainer.json")
 DATA = os.path.join("training", "data")
 #: A training this size or smaller is not worth a slot; wait for more runs.
 MIN_NEW_ROWS = 3000
+#: New Jev labels a "jev" version needs over the last one.
+MIN_NEW_JEV = 1000
 #: Hours of weekly GPU quota a training needs (a 50-70k row set takes 3-5 h on a T4).
 QUOTA_HOURS = 5.0
 #: Runs still playing when runs are labeled are picked up next time: the next labeling starts this much earlier.
@@ -121,8 +127,32 @@ def evaluate(state, name):
     order.append(name)
 
 
+def build_jev(state):
+    """recipe "jev": the base set plus every label file in extra (Jev's answers on Laya's own states),
+    once those have grown by MIN_NEW_JEV rows since the last version."""
+    n = state["next"]
+    extra = [f for f in state.get("extra", []) if os.path.exists(os.path.join(ROOT, f))]
+    total = 0
+    for f in extra:
+        with open(os.path.join(ROOT, f)) as fh:
+            total += sum(1 for line in fh if line.strip())
+    if total - state.get("extra_rows", 0) < MIN_NEW_JEV:
+        log(f"{total - state.get('extra_rows', 0)} new Jev labels since the last version; waiting for {MIN_NEW_JEV}")
+        return None
+    data = os.path.join(DATA, f"train-v{n}.jsonl")
+    code, out = sh(["nice", "-n", "19", sys.executable, "training/build_set.py", "--out", data, state["set"], *extra])
+    if code:
+        log(f"building {data} failed: {out[-300:]}")
+        return None
+    log(f"neo-duel-v{n}: {out.splitlines()[-2].strip() if len(out.splitlines()) > 1 else out}")
+    state.update(next=n + 1, extra_rows=total)
+    return {"name": f"neo-duel-v{n}", "data": data}
+
+
 def build_next(state):
     """Labels the runs since the last labeling and builds the next version's set onto the newest one."""
+    if state.get("recipe") == "jev":
+        return build_jev(state)
     n = state["next"]
     name = f"neo-duel-v{n}"
     now = datetime.datetime.now(datetime.timezone.utc)
