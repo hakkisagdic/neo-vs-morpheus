@@ -111,8 +111,16 @@ def main():
             sh([sys.executable, "training/kaggle.py", "all", "--name", args.name, "--data", data], log=turn.log)
         else:
             sh([PY, "-c", f"import sys; sys.path.insert(0, 'training'); from hfdata import archive; archive({data!r}, {args.name!r})"], log=turn.log)
-            sh([PY, "-u", "training/finetune.py", "--mode", "top", "--data", data, "--out", checkpoint, "--train-top-layers", "28",
-                "--epochs", "4", "--batch", "16", "--accum", "4", "--holdout", "0.05", "--no-checkpointing"], log=turn.log)
+            # Written as it goes, where the panel's Training card follows it.
+            log = os.path.join(ROOT, ".fleet", "train", f"{args.name}.log")
+            os.makedirs(os.path.dirname(log), exist_ok=True)
+            print(f"$ training/finetune.py (log: {log})", flush=True)
+            with open(log, "w") as f:
+                code = subprocess.run([PY, "-u", "training/finetune.py", "--mode", "top", "--data", data, "--out", checkpoint, "--train-top-layers", "28",
+                                       "--epochs", "4", "--batch", "16", "--accum", "4", "--holdout", "0.05", "--no-checkpointing"],
+                                      cwd=ROOT, stdout=f, stderr=subprocess.STDOUT).returncode
+            if code:
+                sys.exit(f"failed: training/finetune.py, see {log}")
 
     turn.step("train", train)
     turn.step("publish", lambda: sh([PY, "training/publish_hf.py", "model", checkpoint, "--tag", args.name, "--card", "docs/hf/laya-neo-duel.md"], log=turn.log))
