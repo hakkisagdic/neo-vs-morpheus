@@ -9,7 +9,9 @@
    speed (lab/evaluate.py), replacing the older candidate there.
    Once a candidate and the champion have each played 400 mage-duel rounds since the candidate
    came, a one-sided two-proportion z-test (95%) promotes it (the champion's lanes become its) or
-   drops it (its lane goes back to the champion).
+   drops it (its lane goes back to the champion). While FreeJev credits last, Jev labels the
+   champion's own states from its clean runs, a mage batch and then a melee one (DAgger with Jev as
+   the expert), and the next versions are built with those labels.
 2. While fewer than two of the account's GPU sessions run (Kaggle's limit) and the weekly quota has
    room for a training, the next version goes up, two at a time when two wait (a kernel has two
    T4s, so both train in one session): the runs played since the last labeling become
@@ -51,6 +53,10 @@ MIN_NEW_JEV = 1000
 GATE_ROUNDS = 400
 GATE_Z = 1.645
 MATCHED_MS = 60
+#: States asked of Jev per labeling batch, and the credits below which labeling waits.
+LABEL_BATCH = 2000
+MIN_CREDITS = 300
+LABELER_PID = os.path.join(ROOT, ".fleet", "train", "labeler.pid")
 #: Hours of weekly GPU quota a training needs (a 50-70k row set takes 3-5 h on a T4).
 QUOTA_HOURS = 5.0
 #: Runs still playing when runs are labeled are picked up next time: the next labeling starts this much earlier.
@@ -180,6 +186,7 @@ def gate(state):
         if z > GATE_Z:
             moved = switch_lanes(champion, name)
             state["champion"] = name
+            state.setdefault("label_since", {})[name] = since[:16].replace(":", "-")
             state.setdefault("history", []).append({"promoted": name, "over": champion, "at": since, "result": verdict})
             del state["candidates"][lane]
             log(f"promoted: {verdict}; lanes {moved} now play it")
@@ -256,6 +263,49 @@ def build_outcomes(state):
     return {"name": name, "data": data}
 
 
+def labeler_running():
+    """The labeler this loop started is still at work (a pid file, so a restarted loop knows too)."""
+    try:
+        with open(LABELER_PID) as f:
+            os.kill(int(f.read().strip()), 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def label(state):
+    """Keeps FreeJev answering the champion's own states while credits last, a mage batch and then a
+    melee one, from the champion's clean runs since it took over (DAgger with Jev as the expert)."""
+    if labeler_running():
+        return
+    code, out = sh(["npm", "run", "-s", "nvm", "--", "distill", "credits"], cwd=BOT, timeout=120)
+    try:
+        credits = float(out.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        log(f"FreeJev credits unknown: {out[-200:]}")
+        return
+    if credits < MIN_CREDITS:
+        log(f"{credits:.0f} FreeJev credits left: labeling waits for a top-up")
+        return
+    champion = state.get("champion", "neo-duel-v8")
+    module = state.get("label_next", "mage")
+    since = state.setdefault("label_since", {}).setdefault(champion, "2026-10-05T13-50")
+    melee = ["--module", "melee"] if module == "melee" else []
+    code, out = sh(["nice", "-n", "19", "npm", "run", "-s", "nvm", "--", "distill", "states", str(LABEL_BATCH), "--set", "laya",
+                    "--since", since, "--model", champion, *melee], cwd=BOT)
+    if code:
+        log(f"states for {champion} failed: {out[-300:]}")
+        return
+    logfile = open(os.path.join(ROOT, ".fleet", "train", f"freejev-{'melee-' if melee else ''}laya.log"), "a")
+    proc = subprocess.Popen(["npm", "run", "-s", "nvm", "--", "distill", "label", str(LABEL_BATCH), "--set", "laya", *melee],
+                            cwd=BOT, stdout=logfile, stderr=subprocess.STDOUT, start_new_session=True)
+    with open(LABELER_PID, "w") as f:
+        f.write(str(proc.pid))
+    state["label_next"] = "mage" if melee else "melee"
+    log(f"labeling {champion}'s {module} states with Jev ({credits:.0f} credits left): {out.splitlines()[-1] if out else ''}")
+    save(state)
+
+
 def round_once():
     state = load()
     kernels = sessions()
@@ -277,8 +327,9 @@ def round_once():
             state["pushed"].remove(name)
             state.setdefault("failed", []).append(name)
         save(state)
-    # 2. Candidates that played enough rounds are promoted or dropped.
+    # 2. Candidates that played enough rounds are promoted or dropped; Jev labels the champion's states.
     gate(state)
+    label(state)
     # 3. A free GPU session trains the next version.
     busy = sum(1 for s in kernels.values() if s in ("running", "queued"))
     left = quota_left()

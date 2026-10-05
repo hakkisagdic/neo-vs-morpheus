@@ -22,7 +22,7 @@ import {
 } from "./distill/states.ts";
 import { FORMAT, compositeQuestion, describeDuel, isOutOfReach, teleportTiles } from "./brain/duel-policy.ts";
 import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
-import { config } from "./config.ts";
+import { config, requireSetting } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
 import { type Instance, formatInfo, loadFleet, pick } from "./fleet/instances.ts";
 import { formatRows, readRuns, tally } from "./fleet/results.ts";
@@ -86,6 +86,7 @@ const USAGE = `usage: npm run nvm -- <command>
   distill convert           carry every mage label over to the current question
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
+  distill credits           the FreeJev credits left (states --set laya + label --set laya use them)
                             (default training/data/test.jsonl, written by training/split.py)
 `;
 
@@ -645,6 +646,13 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     const teacher = { ...brain.backend, timeoutMs: 120_000 };
     const n = await labelStates(teacher, statesPath, labeledPath, Number(rest[0] ?? 1e9), (m) => console.log(m));
     console.log(`labeled ${n} states`);
+  } else if (sub === "credits") {
+    // FreeJev's remaining credits (its usage endpoint is free); the key is sent, never printed.
+    const res = await fetch(new URL("/api/v1/usage", config.jevUrl), { headers: { Authorization: `Bearer ${requireSetting(config.jevApiKey, "JEV_API_KEY")}` } });
+    if (!res.ok) {
+      throw new Error(`FreeJev answered ${res.status} for the usage`);
+    }
+    console.log((await res.json() as { credits_remaining?: number }).credits_remaining ?? "unknown");
   } else if (sub === "agree") {
     const brain = makeBrain("laya");
     if (!(brain instanceof ModelBrain)) {
