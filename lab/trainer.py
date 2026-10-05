@@ -175,7 +175,8 @@ def round_once():
                 save(state)
         if state.get("queue"):
             job = state["queue"][0]
-            code, out = sh([sys.executable, "training/kaggle.py", "train", "--name", job["name"], "--data", job["data"]])
+            # train_args: kaggle.py options for every version (3 epochs: the fourth added 0.002 held-out agreement to v9a).
+            code, out = sh([sys.executable, "training/kaggle.py", "train", "--name", job["name"], "--data", job["data"], *state.get("train_args", [])])
             if code:
                 log(f"{job['name']}: push failed: {out[-300:]}")
             else:
