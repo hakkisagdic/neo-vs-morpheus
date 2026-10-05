@@ -128,8 +128,9 @@ def evaluate(state, name):
 
 
 def build_jev(state):
-    """recipe "jev": the base set plus every label file in extra (Jev's answers on Laya's own states),
-    once those have grown by MIN_NEW_JEV rows since the last version."""
+    """recipe "jev": a base set plus every label file in extra (Jev's answers on Laya's own states),
+    once those have grown by MIN_NEW_JEV rows since the last version. With variants, one version per
+    base ({"suffix": "p", "base": ...}), built together so that they share a session's two GPUs."""
     n = state["next"]
     extra = [f for f in state.get("extra", []) if os.path.exists(os.path.join(ROOT, f))]
     total = 0
@@ -138,21 +139,31 @@ def build_jev(state):
             total += sum(1 for line in fh if line.strip())
     if total - state.get("extra_rows", 0) < MIN_NEW_JEV:
         log(f"{total - state.get('extra_rows', 0)} new Jev labels since the last version; waiting for {MIN_NEW_JEV}")
-        return None
-    data = os.path.join(DATA, f"train-v{n}.jsonl")
-    code, out = sh(["nice", "-n", "19", sys.executable, "training/build_set.py", "--out", data, state["set"], *extra])
-    if code:
-        log(f"building {data} failed: {out[-300:]}")
-        return None
-    log(f"neo-duel-v{n}: {out.splitlines()[-2].strip() if len(out.splitlines()) > 1 else out}")
-    state.update(next=n + 1, extra_rows=total)
-    return {"name": f"neo-duel-v{n}", "data": data}
+        return []
+    jobs = []
+    for variant in state.get("variants") or [{"suffix": "", "base": state["set"]}]:
+        name = f"neo-duel-v{n}{variant['suffix']}"
+        data = os.path.join(DATA, f"train-v{n}{variant['suffix']}.jsonl")
+        code, out = sh(["nice", "-n", "19", sys.executable, "training/build_set.py", "--out", data, variant["base"], *extra])
+        if code:
+            log(f"building {data} failed: {out[-300:]}")
+            continue
+        log(f"{name}: {out.splitlines()[-2].strip() if len(out.splitlines()) > 1 else out}")
+        jobs.append({"name": name, "data": data})
+    if jobs:
+        state.update(next=n + 1, extra_rows=total)
+    return jobs
 
 
 def build_next(state):
     """Labels the runs since the last labeling and builds the next version's set onto the newest one."""
     if state.get("recipe") == "jev":
         return build_jev(state)
+    return [job] if (job := build_outcomes(state)) else []
+
+
+def build_outcomes(state):
+    """recipe "outcomes": labels the runs since the last labeling and adds them to the newest set."""
     n = state["next"]
     name = f"neo-duel-v{n}"
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -209,9 +220,9 @@ def round_once():
         log(f"{left:.1f} GPU hours left this week: not enough for a training")
     else:
         if not state.get("queue"):
-            job = build_next(state)
-            if job:
-                state.setdefault("queue", []).append(job)
+            jobs = build_next(state)
+            if jobs:
+                state.setdefault("queue", []).extend(jobs)
                 save(state)
         if state.get("queue"):
             # Two versions share one session when two wait: a kernel has two T4s, one for each.
