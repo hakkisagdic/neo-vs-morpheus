@@ -37,7 +37,25 @@ const median = (xs: number[]): number => {
 
 type Checked = Pick<DecisionRecord, "bot" | "decision" | "outcome"> & { snapshot: { us: { protection?: boolean } } };
 
-export function checkRun(records: Checked[]): RunCheck[] {
+/** Brains that ask a model server, and so can fail to answer at all. */
+const MODEL_BRAINS = new Set(["laya", "jev"]);
+
+/**
+ * The checks of each bot that decided, and, given the match's fighters, of each model fighter that
+ * never did: when its server is down or every request times out it stands still and loses, which
+ * leaves no decisions to check (this happened on a cloud node whose model ran without its GPU).
+ */
+export function checkRun(records: Checked[], fighters: { name: string; brain: string }[] = []): RunCheck[] {
+  const silent = fighters
+    .filter((f) => MODEL_BRAINS.has(f.brain) && !records.some((r) => r.bot === f.name))
+    .map((f) => ({
+      bot: f.name, brain: f.brain, casts: 0, castDriftMs: null, slowCasts: 0, latencyMs: 0,
+      problems: [`${f.name} (${f.brain}) made no decisions (its model server down, or every request timed out?)`],
+    }));
+  return [...decided(records), ...silent];
+}
+
+function decided(records: Checked[]): RunCheck[] {
   return [...new Set(records.map((r) => r.bot))].map((bot) => {
     const mine = records.filter((r) => r.bot === bot);
     const drifts = mine.flatMap((r) => {

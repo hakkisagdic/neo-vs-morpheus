@@ -78,7 +78,7 @@ export function summarise(file: string, run: RunFile): RunSummary {
       draws++;
     }
   }
-  const checks = checkRun(run.records ?? []);
+  const checks = checkRun(run.records ?? [], run.match.fighters);
   const total = run.match.results.reduce((s, r) => s + r.durationMs, 0);
   return {
     file,

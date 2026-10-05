@@ -45,4 +45,12 @@ describe("run checks", () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toMatch(/Neo took 1400 ms/);
   });
+
+  it("flags a model fighter that never decided, but not a scripted one", () => {
+    const records = Array.from({ length: 5 }, () => rec("Morpheus", "rules", "harm", 1_000, 0));
+    const fighters = [{ name: "Neo", brain: "laya" }, { name: "Morpheus", brain: "rules" }];
+    expect(checkRun(records, fighters).flatMap((c) => c.problems)).toEqual(["Neo (laya) made no decisions (its model server down, or every request timed out?)"]);
+    expect(checkRun([], [{ name: "Morpheus", brain: "rules" }, { name: "Trinity", brain: "rules" }])).toEqual([]);
+    expect(checkRun([...records, rec("Neo", "laya", "harm", 1_000)], fighters).flatMap((c) => c.problems)).toEqual([]);
+  });
 });

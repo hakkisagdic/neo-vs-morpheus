@@ -264,7 +264,7 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
       await sleep(3_000);
     }
   } finally {
-    match.checks = checkRun(records);
+    match.checks = checkRun(records, match.fighters);
     for (const problem of match.checks.flatMap((c) => c.problems)) {
       log(`warning: ${problem}; this run is not comparable`);
     }
@@ -293,7 +293,10 @@ async function saveRun(match: MatchInfo, records: DecisionRecord[]): Promise<voi
   await mkdir(dir, { recursive: true });
   const stamp = new Date(match.startedAt).toISOString().replace(/[:.]/g, "-");
   // Which model each bot played with, and where: runs from several machines end up side by side.
-  const models = Object.fromEntries(records.filter((r) => r.decision.brain !== "rules").map((r) => [r.bot, r.decision.model]));
+  // A "forced" move (a guardrail's, made without asking the model) names no checkpoint.
+  const models = Object.fromEntries(
+    records.filter((r) => r.decision.brain !== "rules" && r.decision.model !== "forced").map((r) => [r.bot, r.decision.model]),
+  );
   const where = config.fleetInstance ? { instance: config.fleetInstance, ...(config.fleetLane ? { lane: config.fleetLane } : {}) } : undefined;
   // run 3: decisions carry `module` and `parts` (per-mode distributions) instead of damage/interrupt/defense.
   const versions = { run: 3, code: codeVersion(), mage: FORMAT, melee: MELEE_FORMAT, models, ...(where ? { where } : {}) };

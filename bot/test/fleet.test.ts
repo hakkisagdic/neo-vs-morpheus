@@ -50,6 +50,16 @@ describe("tally", () => {
     expect(tally([flagged], { instance: "alastyr" })).toEqual([]);
   });
 
+  it("names the model from the decisions when the run recorded a guardrail's move, and flags a silent model", () => {
+    const decision = (model: string) => ({ bot: "Neo", decision: { brain: "laya", model, latencyMs: 250, plan: { kind: "wait" } }, snapshot: { us: {} } });
+    const records = [decision("forced"), decision("neo-duel-v8")] as unknown as RunFile["records"];
+    const info = runInfo("mac--x.json", run({ brain: "laya" }, { brain: "rules" }, ["Neo"], { versions: { models: { Neo: "forced" } }, records }));
+    expect(info.sides[0]).toBe("neo-duel-v8 mage");
+    expect(info.problems).toEqual([]);
+    const silent = runInfo("camber--x.json", run({ brain: "laya" }, { brain: "rules" }, ["Morpheus"], { records: [] }));
+    expect(silent.problems).toEqual(["Neo (laya) made no decisions (its model server down, or every request timed out?)"]);
+  });
+
   it("knows where a run was played", () => {
     expect(instanceOf("colab-a100--2026.json", run({ brain: "rules" }, { brain: "rules" }, []))).toBe("colab-a100");
     expect(instanceOf("2026.json", run({ brain: "rules" }, { brain: "rules" }, []))).toBe("mac");

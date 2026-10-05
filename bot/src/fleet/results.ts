@@ -66,7 +66,8 @@ export function instanceOf(file: string, run: RunFile): string {
 
 export function runInfo(file: string, run: RunFile): RunInfo {
   const m = run.match;
-  const models = run.versions?.models ?? {};
+  // Runs saved before the fix may name "forced" when a guardrail's move came last; the decisions tell.
+  const models = Object.fromEntries(Object.entries(run.versions?.models ?? {}).filter(([, model]) => model !== "forced"));
   // Older runs name no model; their decisions do (for laya-serve only once it reported checkpoints).
   for (const r of run.records ?? []) {
     // "forced": a move the bot made without asking the model (a guardrail), which names no checkpoint.
@@ -76,7 +77,8 @@ export function runInfo(file: string, run: RunFile): RunInfo {
   }
   const sides = m.fighters.map((f) => describeSide(f, models[f.name]));
   const wins = m.fighters.map((f) => m.results.filter((r) => r.winner === f.name).length);
-  const problems = (m.checks ?? checkRun(run.records ?? [])).flatMap((c) => c.problems);
+  // Checked again when the records are there, so that a run saved before a check was added gets it too.
+  const problems = (run.records ? checkRun(run.records, m.fighters) : (m.checks ?? [])).flatMap((c) => c.problems);
   return {
     file,
     instance: instanceOf(file, run),

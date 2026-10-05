@@ -30,7 +30,7 @@ export async function daggerLabels(runsDir: string, since = "", log: (m: string)
   let skippedRuns = 0;
   for (const file of files) {
     const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as Run;
-    const problems = checkRun(run.records).flatMap((c) => c.problems);
+    const problems = checkRun(run.records, run.match.fighters).flatMap((c) => c.problems);
     if (problems.length) {
       log(`skipping ${file}: ${problems.join("; ")}`);
       skippedRuns++;
