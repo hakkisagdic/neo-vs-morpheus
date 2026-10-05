@@ -110,9 +110,12 @@ export function scoreRun(file: string, run: Run): Scored[] {
   return out;
 }
 
-/** Scored decisions of every run since a file name, leaving out runs that fail the run checks. */
+/** A run file's time stamp, whichever machine played it ("alastyr--2026-10-05T…" or "2026-10-05T…"). */
+export const runStamp = (file: string): string => (file.includes("--") ? file.slice(file.lastIndexOf("--") + 2) : file);
+
+/** Scored decisions of every run since a time stamp, leaving out runs that fail the run checks. */
 export async function scoreRuns(runsDir: string, since = "", log: (m: string) => void = () => {}): Promise<Scored[]> {
-  const files = (await readdir(runsDir)).filter((f) => f.endsWith(".json") && f >= since).sort();
+  const files = (await readdir(runsDir)).filter((f) => f.endsWith(".json") && runStamp(f) >= since).sort();
   const out: Scored[] = [];
   for (const file of files) {
     const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as Run;

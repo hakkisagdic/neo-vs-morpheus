@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from "./distill/convert.ts";
+import { daggerLabels } from "./distill/dagger.ts";
 import { outcomeLabels, scoreRuns } from "./distill/outcomes.ts";
 import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
 import {
@@ -77,7 +78,9 @@ const USAGE = `usage: npm run nvm -- <command>
   distill label [limit] [--module melee] label them with Jev (resumable) into training/data/labeled[-melee].jsonl
       --set movement  a mage batch about moving instead: recorded states out of sight or out of
                       range that labeled.jsonl lacks, plus n sampled ones (states-movement.jsonl)
-  distill outcomes [since]  decisions from recorded runs (file names >= since) that did clearly better
+  distill dagger [since]    the states Laya met in recorded runs (time stamps >= since), answered by the
+                            scripted bot: DAgger rows (training/data/labeled-dagger-runs.jsonl)
+  distill outcomes [since]  decisions from recorded runs (time stamps >= since) that did clearly better
                             than average, as training rows (training/data/labeled-outcome.jsonl)
   distill convert           carry every mage label over to the current question
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
@@ -612,6 +615,15 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const byModule = Object.entries(Object.groupBy(rows, (r) => r.module ?? "mage")).map(([m, rs]) => `${m} ${rs?.length}`);
     console.log(`${scored.length} decisions scored, ${rows.length} clearly better than average (${byModule.join(", ")}) -> ${path}`);
+  } else if (sub === "dagger") {
+    // Laya's own states, answered by the scripted bot (see distill/dagger.ts).
+    const since = rest[0] ?? "";
+    const { rows, states, agreed, skippedRuns } = await daggerLabels(join(import.meta.dirname, "..", "..", "runs"), since, (m) => console.log(m));
+    const path = join(DATA, "labeled-dagger-runs.jsonl");
+    await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const byModule = Object.entries(Object.groupBy(rows, (r) => r.module ?? "mage")).map(([m, rs]) => `${m} ${rs?.length}`);
+    console.log(`${states} Laya decisions, ${rows.length} distinct states labelled (${byModule.join(", ")}); ` +
+      `the expert agreed with Laya on ${Math.round((100 * agreed) / Math.max(1, rows.length))}%; ${skippedRuns} runs failed the checks -> ${path}`);
   } else if (sub === "label") {
     const brain = makeBrain("jev");
     if (!(brain instanceof ModelBrain)) {
