@@ -195,7 +195,7 @@ def round_once():
                 evaluate(state, name)
             else:
                 state.setdefault("failed", []).append(name)
-        elif st in ("error", "cancelled", "cancelacknowledged"):
+        elif st == "error" or st.startswith("cancel"):  # Kaggle says CANCEL_ACKNOWLEDGED
             log(f"{name}: the kernel ended with {st}; left out")
             state["pushed"].remove(name)
             state.setdefault("failed", []).append(name)
