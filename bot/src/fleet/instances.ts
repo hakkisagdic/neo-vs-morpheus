@@ -878,7 +878,7 @@ class Camber implements Instance {
   }
 
   async start(): Promise<string> {
-    throw new Error("Camber lanes start from its notebook, while the node runs");
+    throw new Error("Camber lanes start from its notebook while the node runs: bash /home/jovyan/arena/nvm/lab/vm/notebook-lanes.sh HOURS MODEL...");
   }
 
   async stop(): Promise<string> {
