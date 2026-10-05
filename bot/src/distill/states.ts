@@ -7,6 +7,8 @@ import { MELEE_FORMAT, describeMelee, meleeQuestion } from "../brain/melee-polic
 import type { DuelSnapshot, ModuleName } from "../brain/types.ts";
 import { castDelayMs } from "../game/caster.ts";
 import { spell } from "../uo/spells.ts";
+import { checkRun } from "../eval/run-checks.ts";
+import { type Run, runStamp, splitRounds } from "./outcomes.ts";
 
 export type TrainingState = {
   id: string;
@@ -186,6 +188,55 @@ export async function statesFromRuns(
     }
   }
   return out;
+}
+
+/**
+ * The states Laya itself met in clean runs since a time stamp, for a stronger teacher to label:
+ * DAgger with Jev rather than the scripted bot, whose labels made Laya worse; `model` keeps one
+ * checkpoint's states (the one to improve). Each label costs a
+ * credit, so up to n, two in three from rounds Laya lost (where its play needs the most help),
+ * picked by a seeded shuffle so that a batch can be made again exactly.
+ */
+export async function layaStates(runsDir: string, module: ModuleName, since: string, n: number, model?: string, seed = 20261005): Promise<TrainingState[]> {
+  const lost: TrainingState[] = [];
+  const won: TrainingState[] = [];
+  const seen = new Set<string>();
+  const files = (await readdir(runsDir).catch(() => [] as string[])).filter((f) => f.endsWith(".json") && runStamp(f) >= since).sort();
+  for (const file of files) {
+    let run: Run & { match: { fighters?: { name: string; brain: string }[] } };
+    try {
+      run = JSON.parse(await readFile(join(runsDir, file), "utf8"));
+    } catch {
+      continue;
+    }
+    if (!run.records?.length || checkRun(run.records, run.match.fighters).some((c) => c.problems.length)) {
+      continue;
+    }
+    const index = new Map(run.records.map((r, k) => [r, k]));
+    splitRounds(run.records, run.match.results.length).forEach((records, round) => {
+      const winner = run.match.results[round]?.winner;
+      for (const rec of records) {
+        if (rec.decision.brain !== "laya" || rec.decision.model === "forced" || (model && rec.decision.model !== model) || (rec.decision.module ?? "mage") !== module) {
+          continue;
+        }
+        const t = toTraining(`run:${file}:${index.get(rec)}`, "run", rec.snapshot, module);
+        if (!seen.has(t.state)) {
+          seen.add(t.state);
+          (winner && winner !== rec.bot ? lost : won).push(t);
+        }
+      }
+    });
+  }
+  const r = rng(seed);
+  const shuffle = <T>(xs: T[]) => {
+    for (let i = xs.length - 1; i > 0; i--) {
+      const j = Math.floor(r.next() * (i + 1));
+      [xs[i], xs[j]] = [xs[j], xs[i]];
+    }
+    return xs;
+  };
+  const fromLost = shuffle(lost).slice(0, Math.round((n * 2) / 3));
+  return [...fromLost, ...shuffle(won).slice(0, n - fromLost.length)];
 }
 
 export function sampledStates(n: number, seed = 20260927): TrainingState[] {

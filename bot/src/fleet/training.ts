@@ -68,8 +68,13 @@ async function macJobs(): Promise<TrainingJob[]> {
     if (Date.now() - st.mtimeMs > RECENT_MS) {
       continue;
     }
-    const log = readTrainingLog(await readFile(join(LOGS, file), "utf8"));
+    const text = await readFile(join(LOGS, file), "utf8");
     const line = processes.split("\n").find((l) => l.includes(`checkpoints/${name} `) || l.endsWith(`checkpoints/${name}`));
+    // Other logs kept here (a labeling run, say) are not fine-tunes.
+    if (!line && !text.includes("trainable parameters")) {
+      continue;
+    }
+    const log = readTrainingLog(text);
     const epochs = log.epochs ?? (Number(/--epochs (\d+)/.exec(line ?? "")?.[1]) || undefined);
     // The newest epoch line is the log's last change: its time and its seconds give the pace.
     const etaAt = line && log.epoch && epochs && log.seconds ? st.mtimeMs + ((epochs - log.epoch) * log.seconds * 1000) / log.epoch : undefined;

@@ -13,6 +13,7 @@ import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
 import {
   type TrainingState,
   isMovementState,
+  layaStates,
   reagentShortageSnapshots,
   sampledMeleeStates,
   sampledMovementStates,
@@ -500,7 +501,7 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
   if (setAt >= 0) {
     rest.splice(setAt, 2);
   }
-  const sets: Record<string, string[]> = { mage: ["movement", "relabel", "refresh", "mixed"], melee: ["mixed"] };
+  const sets: Record<string, string[]> = { mage: ["movement", "relabel", "refresh", "mixed", "laya"], melee: ["mixed", "laya"] };
   if (set !== null && !sets[module].includes(set)) {
     throw new Error(`unknown set ${set} for the ${module}; it has ${sets[module].join(", ")}`);
   }
@@ -550,6 +551,13 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
         [all[i], all[j]] = [all[j], all[i]];
       }
       fromRuns = all.slice(0, n);
+      sampled = [] as TrainingState[];
+    } else if (set === "laya") {
+      // The states Laya met in clean runs since --since (a run file time stamp), for Jev to label.
+      const sinceAt = rest.indexOf("--since");
+      const since = sinceAt >= 0 ? rest[sinceAt + 1] : "";
+      const modelAt = rest.indexOf("--model");
+      fromRuns = await layaStates(runs, module, since, n, modelAt >= 0 ? rest[modelAt + 1] : undefined);
       sampled = [] as TrainingState[];
     } else if (set === "movement") {
       // States the main mage batch already paid for are not asked again.

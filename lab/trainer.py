@@ -13,9 +13,10 @@
    (build_set.py), and training/kaggle.py starts it. No DAgger rows: the scripted bot's labels made
    neo-duel-v8-dagger-all worse in every build.
 
-State lives in .fleet/trainer.json: the next version number, the newest set, when runs were last
-labeled, versions built but not pushed (queue), pushed but not fetched (pushed), and which candidate
-plays on which lane. Edit it between rounds to change the plan. Standard library only.
+State lives in .fleet/trainer.json: the next version number, the newest set, label files every
+version keeps (extra), when runs were last labeled, versions built but not pushed (queue), pushed but
+not fetched (pushed), and which candidate plays on which lane. Edit it between rounds to change the
+plan. Standard library only.
 """
 import argparse
 import datetime
@@ -131,7 +132,9 @@ def build_next(state):
         log(f"only {new} new outcome rows since {state['labeled_until']}; waiting for more runs")
         return None
     data = os.path.join(DATA, f"train-v{n}.jsonl")
-    code, out = sh(["nice", "-n", "19", sys.executable, "training/build_set.py", "--out", data, state["set"], rows])
+    # Label files every version keeps (Jev's answers on Laya's own states, say), where they exist yet.
+    extra = [f for f in state.get("extra", []) if os.path.exists(os.path.join(ROOT, f))]
+    code, out = sh(["nice", "-n", "19", sys.executable, "training/build_set.py", "--out", data, state["set"], *extra, rows])
     if code:
         log(f"building {data} failed: {out[-300:]}")
         return None
