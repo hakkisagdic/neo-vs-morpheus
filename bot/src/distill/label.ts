@@ -74,7 +74,9 @@ export async function labelStates(
       // in an hour) or no answer at all. FreeJev never hands back an answer for a repeated key, so
       // back off (1, 2, 4, then 5 minutes) and go on with a new call; the state is left for the next
       // run. Failed calls are not billed. Other errors stop the run.
-      const transient = status === undefined || status === "409" || status === "429" || status.startsWith("5");
+      // A 401 ("configure an active project API key") once cleared by itself mid-run; a key that is
+      // really wrong keeps failing and stops the run after MAX_FAILURES back-offs.
+      const transient = status === undefined || status === "401" || status === "409" || status === "429" || status.startsWith("5");
       if (!transient || failures >= (status === "429" ? MAX_RATE_LIMITED : MAX_FAILURES)) {
         log(`stopping: ${message}`);
         break;
