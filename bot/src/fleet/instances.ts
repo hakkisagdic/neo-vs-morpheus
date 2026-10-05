@@ -7,7 +7,7 @@
 //            colab-bridge; its runs come back through a private Hugging Face dataset
 // Runs from elsewhere land in runs/ as "<instance>--<stamp>.json", next to the Mac's own.
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, openSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
@@ -20,6 +20,8 @@ const RUNS = join(ROOT, "runs");
 export type InstanceConfig =
   | { kind: "local" }
   | { kind: "ssh-lab"; host: string; port?: number; repo: string; runner?: string }
+  | { kind: "kaggle"; kernels: string[] }
+  | { kind: "camber"; stash: string }
   | {
       kind: "colab";
       /** colab-bridge (a notebook tab; its Colab secrets reach the VM) or Google's Colab CLI (no tab, no secrets). */
@@ -27,6 +29,8 @@ export type InstanceConfig =
       bridge?: string[];
       /** The Colab CLI session (colab new -s NAME). */
       session?: string;
+      /** HOME for the Colab CLI: one folder per Google account, each with its own login. */
+      home?: string;
       dir?: string;
       runsRepo: string;
       modelsRepo: string;
@@ -34,11 +38,19 @@ export type InstanceConfig =
 
 export type StartOptions = { series: string; lane?: number; parallel?: number; model?: string };
 
+/** One lane as the dashboard shows it. */
+export type LaneInfo = { lane: number; model?: string; running: boolean; series?: string; done: number; total?: number; last?: string };
+
+/** A machine at a glance: a few summary lines and its lanes. */
+export type InstanceInfo = { name: string; kind: string; ok: boolean; error?: string; summary: string[]; lanes: LaneInfo[] };
+
 export interface Instance {
   readonly name: string;
   /** Makes the machine ready to play (a fresh VM: the arena, the bot, this checkout's changes). */
   setup(): Promise<string>;
   status(): Promise<string>;
+  /** The same as status, as data for the dashboard. */
+  info(): Promise<InstanceInfo>;
   /** Brings the instance's new runs into runs/. */
   pull(): Promise<string>;
   start(o: StartOptions): Promise<string>;
@@ -59,6 +71,10 @@ export async function loadFleet(path = join(ROOT, "fleet.json")): Promise<Instan
         return new SshLab(name, c);
       case "colab":
         return new Colab(name, c);
+      case "kaggle":
+        return new Kaggle(name, c);
+      case "camber":
+        return new Camber(name, c);
       default:
         throw new Error(`${name}: unknown kind ${(c as { kind: string }).kind}`);
     }
@@ -77,9 +93,9 @@ export function pick(fleet: Instance[], name?: string): Instance[] {
 }
 
 /** Runs a program without a terminal or stdin (ssh must not read ours) and returns its output. */
-export function run(cmd: string, args: string[], timeoutMs = 120_000): Promise<string> {
+export function run(cmd: string, args: string[], timeoutMs = 120_000, env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"], ...(env ? { env } : {}) });
     let out = "";
     let err = "";
     child.stdout.on("data", (d) => (out += d));
@@ -157,10 +173,24 @@ export async function workingTreePatch(): Promise<string> {
   return patch;
 }
 
+/** An InstanceInfo as the CLI and the MCP tools print it. */
+export function formatInfo(i: InstanceInfo): string {
+  const lanes = i.lanes.map(
+    (l) =>
+      `lane ${l.lane} [${l.model ?? "?"}]: ${l.running ? "running" : "idle"}, ${l.done}${l.total ? `/${l.total}` : ""} entries done` +
+      `${l.series ? ` (${l.series})` : ""}; last: ${l.last ?? "-"}`,
+  );
+  return [...i.summary, ...lanes].join("\n") || "nothing to report";
+}
+
 const hfCli = () => (existsSync(join(ROOT, ".laya", "venv", "bin", "hf")) ? join(ROOT, ".laya", "venv", "bin", "hf") : "hf");
 
 const seriesPath = (series: string) => (isAbsolute(series) ? series : existsSync(series) ? series : join(ROOT, series));
 
+/**
+ * This Mac: lanes of lab/mac (an arena server in Docker per lane, the series run natively, a Laya
+ * server per lane on the GPU through Metal). Logs and series files live in .fleet/mac.
+ */
 class Local implements Instance {
   readonly name: string;
 
@@ -168,31 +198,119 @@ class Local implements Instance {
     this.name = name;
   }
 
-  async status(): Promise<string> {
-    // "src/cli.ts series": the fleet's own ssh commands mention "cli.ts series" too.
-    const series = await run("pgrep", ["-lf", "src/cli.ts series"]).catch(() => "");
+  get #dir() {
+    return join(CACHE, "mac");
+  }
+
+  /** {port: checkpoint folder} for the Laya servers lab/mac/model.sh started ("mac-laya-<port> ... <checkpoint>"). */
+  async #servers(): Promise<Map<number, string>> {
+    const out = await run("pgrep", ["-lf", "mac-laya-"]).catch(() => "");
+    const servers = new Map<number, string>();
+    for (const line of out.split("\n")) {
+      const m = line.match(/mac-laya-(\d+) .* (\S+)$/);
+      if (m) {
+        servers.set(Number(m[1]), basename(m[2]));
+      }
+    }
+    return servers;
+  }
+
+  async #lanesRunning(): Promise<Set<number>> {
+    const out = await run("pgrep", ["-lf", "mac-series-"]).catch(() => "");
+    return new Set([...out.matchAll(/mac-series-(\d+) /g)].map((m) => Number(m[1])));
+  }
+
+  async info(): Promise<InstanceInfo> {
+    const [servers, running] = [await this.#servers(), await this.#lanesRunning()];
+    const lanes: LaneInfo[] = [];
+    const logs = (await readdir(this.#dir).catch(() => [] as string[])).filter((f) => /^lane-\d+\.log$/.test(f));
+    for (const log of logs) {
+      const lane = Number(log.match(/\d+/)![0]);
+      const text = await readFile(join(this.#dir, log), "utf8");
+      const batch = text.slice(Math.max(0, text.lastIndexOf("### ")));
+      const series = batch.startsWith("### ") ? batch.split("\n")[0].split(" ")[2] : undefined;
+      const results = batch.match(/^result: .*$/gm) ?? [];
+      const total = series ? await readFile(join(this.#dir, "series", series), "utf8").then((t) => (JSON.parse(t) as unknown[]).length).catch(() => undefined) : undefined;
+      lanes.push({ lane, model: servers.get(8001 + lane), running: running.has(lane), series, done: results.length, total, last: results.at(-1)?.slice("result: ".length) });
+    }
+    lanes.sort((a, b) => a.lane - b.lane);
+    const load = (await run("sysctl", ["-n", "vm.loadavg"]).catch(() => "")).replace(/[{}]/g, "").trim().split(/\s+/);
     const runs = (await readdir(RUNS).catch(() => [] as string[])).filter((f) => f.endsWith(".json")).length;
-    return [`${runs} run files in runs/ (from every instance)`, series ? `series running:\n${series}` : "no series running"].join("\n");
+    return {
+      name: this.name,
+      kind: "mac",
+      ok: true,
+      summary: [`load ${load[0] ?? "?"} (5 min ${load[1] ?? "?"})`, `${servers.size} Laya servers on Metal`, `${runs} run files in runs/ from every machine`],
+      lanes,
+    };
+  }
+
+  async status(): Promise<string> {
+    return formatInfo(await this.info());
   }
 
   async setup(): Promise<string> {
-    return "the Mac is set up by hand (README: docker compose up, scripts/laya-native.sh)";
+    await run("docker", ["compose", "-f", join(ROOT, "docker-compose.yml"), "build", "uo-server"], 1_800_000);
+    return "arena image neo-vs-morpheus/modernuo built; lanes start with lab/mac/lane.sh (fleet start mac ...)";
   }
 
   async pull(): Promise<string> {
     return "runs are already here";
   }
 
-  async start(): Promise<string> {
-    throw new Error("start the Mac's arena and series yourself: npm run nvm -- series <file> --parallel N");
+  async start(o: StartOptions): Promise<string> {
+    const lane = o.lane ?? 0;
+    if ((await this.#lanesRunning()).has(lane)) {
+      throw new Error(`lane ${lane} is busy; stop it first`);
+    }
+    const said: string[] = [];
+    const port = 8001 + lane;
+    if (o.model && (await this.#servers()).get(port) !== o.model) {
+      const checkpoint = join(ROOT, "training", "checkpoints", o.model);
+      if (!existsSync(join(checkpoint, "rl_agent_config.json"))) {
+        await run(hfCli(), ["download", "hakkisagdic/laya-neo-duel", "--revision", o.model, "--local-dir", checkpoint, "--quiet"], 3_600_000);
+      }
+      await run("pkill", ["-f", `mac-laya-${port} `]).catch(() => "");
+      await new Promise((r) => setTimeout(r, 2_000));
+      detach(join(ROOT, "lab", "mac", "model.sh"), [String(port), checkpoint], join(this.#dir, `laya-${port}.log`));
+      for (let i = 0; i < 90 && !(await laya(port)); i++) {
+        await new Promise((r) => setTimeout(r, 2_000));
+      }
+      said.push(`lane ${lane} now plays ${o.model}`);
+    }
+    await mkdir(join(this.#dir, "series"), { recursive: true });
+    const series = join(this.#dir, "series", basename(o.series));
+    await writeFile(series, await readFile(seriesPath(o.series), "utf8"));
+    const log = join(this.#dir, `lane-${lane}.log`);
+    await writeFile(log, `### ${new Date().toISOString()} ${basename(series)}\n`, { flag: "a" });
+    detach(join(ROOT, "lab", "mac", "lane.sh"), [String(lane), series, "--parallel", String(o.parallel ?? 8)], log);
+    said.push(`started ${basename(series)} on lane ${lane} (${o.parallel ?? 8} arenas)`);
+    return said.join("; ");
   }
 
-  async stop(): Promise<string> {
-    throw new Error("stop the Mac's series yourself (Ctrl-C in its terminal)");
+  async stop(lane?: number): Promise<string> {
+    await run("pkill", ["-f", lane === undefined ? "mac-series-" : `mac-series-${lane} `]).catch(() => "");
+    return `stopped ${lane === undefined ? "every lane" : `lane ${lane}`}`;
   }
 
-  async logs(): Promise<string> {
-    return "the Mac's series print to the terminal that started them";
+  async logs(lane = 0, lines = 40): Promise<string> {
+    const text = await readFile(join(this.#dir, `lane-${lane}.log`), "utf8").catch(() => `no log for lane ${lane}`);
+    return text.split("\n").slice(-Math.min(lines, 500)).join("\n");
+  }
+}
+
+/** Starts a script that outlives this process, its output appended to log. */
+function detach(script: string, args: string[], log: string): void {
+  const fd = openSync(log, "a");
+  spawn("bash", [script, ...args], { detached: true, stdio: ["ignore", fd, fd] }).unref();
+}
+
+async function laya(port: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2_000) });
+    return (await res.text()).includes("typed-decisions");
+  } catch {
+    return false;
   }
 }
 
@@ -238,6 +356,20 @@ class SshLab implements Instance {
         `echo "runs there: $(ls ${r}/runs | wc -l)"`,
       ].join("; "),
     );
+  }
+
+  async info(): Promise<InstanceInfo> {
+    const text = await this.status();
+    const running = /^series: \S/m.test(text);
+    const lanes: LaneInfo[] = [...text.matchAll(/^lane-(\d+)\.log: (\d+) results since ### (\S+) (\S+); last (.*)$/gm)].map((m) => ({
+      lane: Number(m[1]),
+      model: "scripted bot (no GPU)",
+      running,
+      series: m[4],
+      done: Number(m[2]),
+      last: m[5].replace(/^result: /, "") || undefined,
+    }));
+    return { name: this.name, kind: "ssh-lab", ok: true, summary: text.split("\n").filter((l) => /^(load|memory|runs there)/.test(l)), lanes };
   }
 
   async pull(): Promise<string> {
@@ -326,9 +458,14 @@ class Colab implements Instance {
     return this.#c.session ?? "arena";
   }
 
+  /** The Colab CLI's environment: its own HOME, and so its own login, per Google account. */
+  get #cliEnv(): NodeJS.ProcessEnv | undefined {
+    return this.#c.home ? { ...process.env, HOME: this.#c.home.replace(/^~(?=\/|$)/, homedir()) } : undefined;
+  }
+
   /** A file to or from the VM through the Colab CLI. */
   #copy(direction: "upload" | "download", from: string, to: string): Promise<string> {
-    return run("colab", [direction, "-s", this.#session, from, to], 3_600_000);
+    return run("colab", [direction, "-s", this.#session, from, to], 3_600_000, this.#cliEnv);
   }
 
   async #cell(action: string, body: string, timeoutMs = 300_000): Promise<string> {
@@ -337,7 +474,7 @@ class Colab implements Instance {
     const code = `# fleet ${this.name}: ${action}\ndef _fleet():\n${PY_HELPERS.replace(/^/gm, "    ")}\n${body.replace(/^/gm, "    ")}\n_fleet()\n`;
     await writeFile(file, code);
     const out = this.#cli
-      ? await run("colab", ["exec", "-s", this.#session, "-f", file, "--timeout", String(Math.round(timeoutMs / 1000))], timeoutMs + 60_000)
+      ? await run("colab", ["exec", "-s", this.#session, "-f", file, "--timeout", String(Math.round(timeoutMs / 1000))], timeoutMs + 60_000, this.#cliEnv)
       : await run("colab-bridge", [...(this.#c.bridge ?? []).map((a) => a.replace(/^~(?=\/)/, homedir())), "run", file], timeoutMs);
     const at = out.lastIndexOf("FLEET>>>");
     if (at < 0) {
@@ -396,6 +533,19 @@ shipper = "running" if sh("pgrep -f '[s]hip.py'") else "off"
 lines.append(f"runs there: {len(glob.glob(A + '/nvm/runs/*.json'))}; shipper: {shipper}")
 print("FLEET>>>" + "\\n".join(lines))`,
     );
+  }
+
+  async info(): Promise<InstanceInfo> {
+    const text = await this.status();
+    const lanes: LaneInfo[] = [...text.matchAll(/^lane (\d+) \[([^\]]*)\]: (running|idle), (\d+)(?:\/(\d+))? entries done.*?; last: (.*)$/gm)].map((m) => ({
+      lane: Number(m[1]),
+      model: m[2],
+      running: m[3] === "running",
+      done: Number(m[4]),
+      total: m[5] ? Number(m[5]) : undefined,
+      last: m[6].replace(/^result: /, ""),
+    }));
+    return { name: this.name, kind: "colab", ok: true, summary: text.split("\n").filter((l) => !l.startsWith("lane ")), lanes };
   }
 
   async pull(): Promise<string> {
@@ -574,5 +724,134 @@ print("FLEET>>>" + "; ".join(said))`,
 
   async logs(lane = 0, lines = 40): Promise<string> {
     return this.#cell("logs", `print("FLEET>>>" + sh(${JSON.stringify(`tail -n ${Math.min(lines, 500)} ${this.#dir}/lane-${lane}.series.log`)}))`);
+  }
+}
+
+/** Kaggle arena kernels started by lab/kaggle_arena.py ("<name>-arena-run"); their runs arrive when a kernel ends. */
+class Kaggle implements Instance {
+  readonly name: string;
+  readonly #c: Extract<InstanceConfig, { kind: "kaggle" }>;
+
+  constructor(name: string, c: Extract<InstanceConfig, { kind: "kaggle" }>) {
+    this.name = name;
+    this.#c = c;
+  }
+
+  async #states(): Promise<{ kernel: string; state: string }[]> {
+    const owner = (await run("kaggle", ["config", "view"])).match(/username:\s*(\S+)/)?.[1] ?? "";
+    return Promise.all(
+      this.#c.kernels.map(async (kernel) => {
+        const out = await run("kaggle", ["kernels", "status", `${owner}/${kernel}-arena-run`]).catch((e: Error) => e.message);
+        return { kernel, state: out.match(/status "?(?:KernelWorkerStatus\.)?(\w+)/)?.[1]?.toLowerCase() ?? "unknown" };
+      }),
+    );
+  }
+
+  async info(): Promise<InstanceInfo> {
+    const states = await this.#states();
+    const lanes: LaneInfo[] = states.map(({ kernel, state }, lane) => ({ lane, model: "2 × T4 kernel", running: state === "running", series: kernel, done: 0, last: state }));
+    return { name: this.name, kind: "kaggle", ok: true, summary: [`${lanes.filter((l) => l.running).length} of ${lanes.length} arena kernels running; runs arrive when a kernel ends`], lanes };
+  }
+
+  async status(): Promise<string> {
+    return formatInfo(await this.info());
+  }
+
+  async setup(): Promise<string> {
+    return "nothing to set up: each run uploads its own bundle (lab/kaggle_arena.py)";
+  }
+
+  async pull(): Promise<string> {
+    const notes: string[] = [];
+    for (const { kernel, state } of await this.#states()) {
+      if (state !== "complete") {
+        notes.push(`${kernel}: ${state}, nothing to fetch yet`);
+        continue;
+      }
+      const out = await run("python3", [join(ROOT, "lab", "kaggle_arena.py"), "fetch", "--name", kernel], 1_800_000).catch((e: Error) => e.message);
+      notes.push(`${kernel}: ${out.split("\n").at(-1)}`);
+    }
+    return notes.join("\n");
+  }
+
+  async start(o: StartOptions): Promise<string> {
+    const name = `${basename(o.series, ".json")}-${Date.now().toString(36)}`;
+    const lanes = o.model ? [o.model, o.model] : ["neo-duel-v8", "neo-duel-v8-dagger-all"];
+    const out = await run(
+      "python3",
+      [join(ROOT, "lab", "kaggle_arena.py"), "run", "--name", name, "--series", seriesPath(o.series), ...lanes.flatMap((l) => ["--lane", l]), "--parallel", String(o.parallel ?? 6)],
+      3_600_000,
+    );
+    return `${out.split("\n").at(-1)}\nadd "${name}" to this instance's kernels in fleet.json to follow it`;
+  }
+
+  async stop(): Promise<string> {
+    throw new Error("Kaggle's CLI cannot stop a kernel: cancel it on kaggle.com");
+  }
+
+  async logs(): Promise<string> {
+    return "a kernel's log comes with its output when it ends (fleet pull)";
+  }
+}
+
+/**
+ * Camber: a Jupyter node started in Camber's web app, the arena installed in its persistent Stash
+ * (lab/vm/setup.sh without root). Its lanes write runs and lane logs there; the CLI reads them.
+ */
+class Camber implements Instance {
+  readonly name: string;
+  readonly #c: Extract<InstanceConfig, { kind: "camber" }>;
+
+  constructor(name: string, c: Extract<InstanceConfig, { kind: "camber" }>) {
+    this.name = name;
+    this.#c = c;
+  }
+
+  #cli(...args: string[]): Promise<string> {
+    return run(join(homedir(), ".camber", "bin", "camber"), args, 1_800_000);
+  }
+
+  async info(): Promise<InstanceInfo> {
+    const runs = ((await this.#cli("stash", "ls", `${this.#c.stash}/nvm/runs/`).catch(() => "")).match(/\.json\b/g) ?? []).length;
+    const root = await this.#cli("stash", "ls", `${this.#c.stash}/`).catch(() => "");
+    const lanes: LaneInfo[] = [];
+    await mkdir(join(CACHE, this.name), { recursive: true });
+    for (const lane of [...root.matchAll(/lane-(\d+)\.series\.log/g)].map((m) => Number(m[1]))) {
+      const local = join(CACHE, this.name, `lane-${lane}.series.log`);
+      await this.#cli("stash", "cp", `${this.#c.stash}/lane-${lane}.series.log`, local).catch(() => "");
+      const text = await readFile(local, "utf8").catch(() => "");
+      const results = text.match(/^result: .*$/gm) ?? [];
+      lanes.push({ lane, model: "L4 (Camber)", running: false, done: results.length, last: results.at(-1)?.slice("result: ".length) });
+    }
+    return { name: this.name, kind: "camber", ok: true, summary: [`${runs} runs in Stash`, "the node is started and stopped in Camber's web app"], lanes };
+  }
+
+  async status(): Promise<string> {
+    return formatInfo(await this.info());
+  }
+
+  async setup(): Promise<string> {
+    return "set up once from a Camber notebook: lab/vm/setup.sh with ARENA_DIR in Stash (no root)";
+  }
+
+  async pull(): Promise<string> {
+    const cache = join(CACHE, this.name, "runs");
+    await mkdir(cache, { recursive: true });
+    await this.#cli("stash", "cp", "-r", `${this.#c.stash}/nvm/runs/`, `${cache}/`);
+    return `${await importRuns(cache, this.name)} new runs`;
+  }
+
+  async start(): Promise<string> {
+    throw new Error("Camber lanes start from its notebook, while the node runs");
+  }
+
+  async stop(): Promise<string> {
+    throw new Error("stop Camber lanes from its notebook, or stop the node in the web app");
+  }
+
+  async logs(lane = 0, lines = 40): Promise<string> {
+    const local = join(CACHE, this.name, `lane-${lane}.series.log`);
+    await this.#cli("stash", "cp", `${this.#c.stash}/lane-${lane}.series.log`, local);
+    return (await readFile(local, "utf8")).split("\n").slice(-Math.min(lines, 500)).join("\n");
   }
 }

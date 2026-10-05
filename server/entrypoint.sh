@@ -17,10 +17,11 @@ jq -n \
   --arg data "$data_dir" \
   --arg name "${NEO_SERVER_NAME:-Neo vs Morpheus}" \
   --arg address "${NEO_PUBLIC_ADDRESS:-127.0.0.1}" \
+  --arg listen "0.0.0.0:${NEO_PORT:-2593}" \
   '{
     assemblyDirectories: ["./Assemblies"],
     dataDirectories: [$data],
-    listeners: ["0.0.0.0:2593"],
+    listeners: [$listen],
     settings: {
       "serverListing.serverName": $name,
       "serverListing.address": $address,

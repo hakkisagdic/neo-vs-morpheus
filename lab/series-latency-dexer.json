@@ -1,0 +1,50 @@
+[
+ {
+  "label": "dexers, 0 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@0:dexer",
+  "b": "Morpheus:rules@0:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 0 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0:dexer",
+  "b": "Morpheus:rules@0:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 100 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@100:dexer",
+  "b": "Morpheus:rules@0:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 100 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0:dexer",
+  "b": "Morpheus:rules@100:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 250 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@250:dexer",
+  "b": "Morpheus:rules@0:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 250 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0:dexer",
+  "b": "Morpheus:rules@250:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 400 ms vs 0 ms, slow side first",
+  "a": "Neo:rules@400:dexer",
+  "b": "Morpheus:rules@0:dexer",
+  "rounds": 20
+ },
+ {
+  "label": "dexers, 400 ms vs 0 ms, quick side first",
+  "a": "Neo:rules@0:dexer",
+  "b": "Morpheus:rules@400:dexer",
+  "rounds": 20
+ }
+]

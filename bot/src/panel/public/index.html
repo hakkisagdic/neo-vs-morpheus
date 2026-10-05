@@ -9,6 +9,7 @@
   <body>
     <header class="bar">
       <nav class="views" id="nav">
+        <a href="#/fleet" data-view="fleet">Fleet</a>
         <a href="#/live" data-view="live">Live</a>
         <a href="#/runs" data-view="runs">Runs</a>
         <a href="#/replay" data-view="replay">Replay</a>
@@ -82,6 +83,26 @@
             <div id="tactics" class="tactics"><p class="empty">waiting for a bot</p></div>
           </article>
         </section>
+      </section>
+
+      <section id="view-fleet" class="view page fleet" hidden>
+        <div id="fleet-kpis" class="kpis"></div>
+        <div id="fleet-cards" class="machines"></div>
+        <article id="fleet-detail" class="card accent-cyan" hidden>
+          <h2 id="fleet-detail-title">lanes</h2>
+          <table class="runs">
+            <thead><tr><th>lane</th><th>state</th><th>model</th><th>series</th><th>entries</th><th>last result</th></tr></thead>
+            <tbody id="fleet-lanes"></tbody>
+          </table>
+        </article>
+        <article class="card accent-green">
+          <h2>Today's results <small>round wins by matchup, every machine; a row opens its runs</small></h2>
+          <table class="runs results">
+            <thead><tr><th>side</th><th>score</th><th>share</th><th>against</th><th>runs</th></tr></thead>
+            <tbody id="fleet-results"></tbody>
+          </table>
+        </article>
+        <p id="fleet-updated" class="muted"></p>
       </section>
 
       <section id="view-runs" class="view page" hidden>

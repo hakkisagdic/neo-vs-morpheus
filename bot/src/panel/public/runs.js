@@ -4,7 +4,8 @@ import { $, esc } from "./util.js";
 
 let runs = [];
 
-export async function showRuns() {
+export async function showRuns(filter = "") {
+  if (filter) $("runs-filter").value = filter;
   if (!runs.length) {
     $("runs-body").innerHTML = `<tr><td colspan="9" class="muted">reading the runs…</td></tr>`;
   }
@@ -29,7 +30,7 @@ function render() {
   const q = $("runs-filter").value.trim().toLowerCase();
   const clean = $("runs-clean").checked;
   const rows = runs.filter(
-    (r) => (!clean || !r.problems.length) && (!q || JSON.stringify([r.title, r.fighters, r.arena, r.file]).toLowerCase().includes(q)),
+    (r) => (!clean || !r.problems.length) && (!q || JSON.stringify([r.title, r.fighters, r.arena, r.file, r.versions?.models]).toLowerCase().includes(q)),
   );
   $("runs-count").textContent = `${rows.length} of ${runs.length} runs`;
   $("runs-body").innerHTML = rows

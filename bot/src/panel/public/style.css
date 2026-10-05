@@ -611,3 +611,128 @@ table.runs tbody tr:hover td {
     font-size: 12px;
   }
 }
+
+/* ---------------------------------------------------------------- fleet */
+
+.fleet {
+  display: grid;
+  gap: 14px;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.kpi {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.kpi-v {
+  font-size: 26px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-v small,
+.big small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.kpi-k {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.machines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.machine {
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+}
+
+.machine:hover,
+.machine.open {
+  border-color: var(--cyan);
+}
+
+.machine.on {
+  border-top-color: var(--green);
+}
+
+.machine.idle {
+  border-top-color: var(--muted);
+}
+
+.machine.err {
+  border-top-color: var(--red);
+}
+
+.machine .big {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.led {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--muted);
+}
+
+.led.on {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+.led.err {
+  background: var(--red);
+}
+
+.meter {
+  display: inline-block;
+  width: 70px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+}
+
+.meter.split {
+  background: var(--red);
+}
+
+.meter.split i {
+  background: var(--green);
+}
+
+table.results tbody tr {
+  cursor: pointer;
+}
+
+table.results td.score {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

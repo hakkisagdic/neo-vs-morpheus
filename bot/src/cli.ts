@@ -31,7 +31,7 @@ import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { SkillTrainer } from "./game/train.ts";
 import { MonitorHub } from "./monitor/hub.ts";
-import { PanelServer } from "./panel/server.ts";
+import { PanelServer, startFleetPulls } from "./panel/server.ts";
 
 const USAGE = `usage: npm run nvm -- <command>
 
@@ -309,8 +309,10 @@ async function fleet(args: string[]): Promise<void> {
 async function panel(): Promise<void> {
   const server = new PanelServer();
   const url = await server.start(config.monitorPort);
-  console.log(`control panel: ${url} (Ctrl-C stops it)`);
+  const pulls = startFleetPulls();
+  console.log(`control panel: ${url} (Ctrl-C stops it); the fleet's runs are pulled every 10 minutes`);
   await new Promise<void>((resolve) => process.once("SIGINT", () => resolve()));
+  clearInterval(pulls);
   await server.stop();
 }
 

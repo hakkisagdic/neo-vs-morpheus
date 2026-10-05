@@ -2,7 +2,7 @@
 // matchup. A side is described by what decides for it (the checkpoint, or the scripted bot and its
 // reaction time), the template and the tactics, so "laya first" and "laya second" entries, slots and
 // lanes all add up into one row.
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { checkRun } from "../eval/run-checks.ts";
 
@@ -69,7 +69,8 @@ export function runInfo(file: string, run: RunFile): RunInfo {
   const models = run.versions?.models ?? {};
   // Older runs name no model; their decisions do (for laya-serve only once it reported checkpoints).
   for (const r of run.records ?? []) {
-    if (!models[r.bot] && r.decision.brain !== "rules") {
+    // "forced": a move the bot made without asking the model (a guardrail), which names no checkpoint.
+    if (!models[r.bot] && r.decision.brain !== "rules" && r.decision.model !== "forced") {
       models[r.bot] = r.decision.model;
     }
   }
@@ -131,10 +132,14 @@ export function formatRows(rows: Row[]): string {
 
 export const RUNS_DIR = join(import.meta.dirname, "..", "..", "..", "runs");
 
-export async function readRuns(dir = RUNS_DIR): Promise<RunInfo[]> {
+/** Every run in runs/, or only the files written since a time (cheaper: no other file is parsed). */
+export async function readRuns(dir = RUNS_DIR, modifiedSince = 0): Promise<RunInfo[]> {
   const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json"));
   const out: RunInfo[] = [];
   for (const file of files) {
+    if (modifiedSince && (await stat(join(dir, file)).catch(() => null))?.mtimeMs! < modifiedSince) {
+      continue;
+    }
     try {
       out.push(runInfo(file, JSON.parse(await readFile(join(dir, file), "utf8")) as RunFile));
     } catch {

@@ -3,6 +3,7 @@
 // #/machine).
 import { Arena } from "./arena.js";
 import { showReplay, hideReplay } from "./replay.js";
+import { hideFleet, showFleet } from "./fleet.js";
 import { showRuns } from "./runs.js";
 import { $, FIGHTER_COLORS, esc, failed, fmtTime, modeOf, spellOf } from "./util.js";
 
@@ -413,19 +414,22 @@ function frame() {
 
 // ---------------------------------------------------------------- views
 
-let view = "live";
+let view = "fleet";
 let machineTimer = null;
 
 async function route() {
-  const [, name = "live", ...rest] = location.hash.split("/");
-  view = ["live", "runs", "replay", "machine"].includes(name) ? name : "live";
-  for (const v of ["live", "runs", "replay", "machine"]) $(`view-${v}`).hidden = v !== view;
+  const [, name = "fleet", ...rest] = location.hash.split("/");
+  const views = ["fleet", "live", "runs", "replay", "machine"];
+  view = views.includes(name) ? name : "fleet";
+  for (const v of views) $(`view-${v}`).hidden = v !== view;
   for (const a of $("nav").querySelectorAll("a")) a.classList.toggle("active", a.dataset.view === view);
   // Live-only controls leave the bar on other views, so it stays one line and covers nothing.
   for (const id of ["title-live", "source", "tabs", "follow"]) $(id).style.display = view === "live" ? "" : "none";
   clearInterval(machineTimer);
   if (view !== "replay") hideReplay();
-  if (view === "runs") await showRuns();
+  if (view === "fleet") await showFleet();
+  else hideFleet();
+  if (view === "runs") await showRuns(decodeURIComponent(rest.join("/")));
   if (view === "replay") await showReplay(decodeURIComponent(rest.join("/")));
   if (view === "machine") {
     const load = async () => ($("machine").textContent = (await (await fetch("/api/machine")).json()).report);

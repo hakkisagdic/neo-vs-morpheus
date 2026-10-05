@@ -12,6 +12,8 @@ import type { AddressInfo } from "node:net";
 import { extname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { checkRun } from "../eval/run-checks.ts";
+import { type InstanceInfo, loadFleet } from "../fleet/instances.ts";
+import { type Row, readRuns, tally } from "../fleet/results.ts";
 
 const PUBLIC = join(import.meta.dirname, "public");
 const RUNS = join(import.meta.dirname, "..", "..", "..", "runs");
@@ -230,6 +232,9 @@ export class PanelServer {
       if (path === "/api/machine") {
         return json(res, { report: await machineReport() });
       }
+      if (path === "/api/fleet") {
+        return json(res, await fleetSnapshot());
+      }
       const file = path === "/" ? "/index.html" : path;
       const type = TYPES[extname(file)];
       if (!type || file.includes("..")) {
@@ -295,4 +300,62 @@ function machineReport(): Promise<string> {
     };
   }
   return machine.text;
+}
+
+type FleetSnapshot = { at: number; since: number; instances: InstanceInfo[]; results: Row[]; runsToday: Record<string, number> };
+
+let fleet: { at: number; data: Promise<FleetSnapshot> } | null = null;
+let pulling = false;
+
+/**
+ * Brings the other machines' runs here every 10 minutes while the panel runs, so that today's
+ * numbers include them. One pull at a time; a machine that fails is tried again next round.
+ */
+export function startFleetPulls(everyMs = 600_000): NodeJS.Timeout {
+  const pull = async () => {
+    if (pulling) {
+      return;
+    }
+    pulling = true;
+    try {
+      for (const m of await loadFleet().catch(() => [])) {
+        if (m.name !== "mac") {
+          await m.pull().catch(() => "");
+        }
+      }
+      fleet = null; // the next snapshot reads the new runs
+    } finally {
+      pulling = false;
+    }
+  };
+  void pull();
+  return setInterval(() => void pull(), everyMs);
+}
+
+/** Every machine in fleet.json and today's results, at most every 45 s: ssh and the Kaggle CLI are slow. */
+function fleetSnapshot(): Promise<FleetSnapshot> {
+  if (!fleet || Date.now() - fleet.at > 45_000) {
+    fleet = { at: Date.now(), data: buildFleet() };
+  }
+  return fleet.data;
+}
+
+async function buildFleet(): Promise<FleetSnapshot> {
+  const since = new Date();
+  since.setHours(0, 0, 0, 0);
+  const machines = await loadFleet().catch(() => []);
+  const [instances, runs] = await Promise.all([
+    Promise.all(
+      machines.map((m) =>
+        m.info().catch((err: Error): InstanceInfo => ({ name: m.name, kind: "?", ok: false, error: err.message.slice(0, 300), summary: [], lanes: [] })),
+      ),
+    ),
+    readRuns(RUNS, since.getTime()),
+  ]);
+  const today = runs.filter((r) => r.startedAt >= since.getTime());
+  const runsToday: Record<string, number> = {};
+  for (const r of today) {
+    runsToday[r.instance] = (runsToday[r.instance] ?? 0) + 1;
+  }
+  return { at: Date.now(), since: since.getTime(), instances, results: tally(today), runsToday };
 }
