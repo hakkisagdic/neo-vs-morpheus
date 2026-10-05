@@ -340,6 +340,40 @@ class SshLab implements Instance {
     return run("rsync", ["-a", "-e", `ssh -o BatchMode=yes -p ${this.#c.port ?? 22}`, ...args], 600_000);
   }
 
+  /** Host pids of each lane's series ("laya-lane-<i> src/cli.ts series …"); an untagged series is lane 0's. */
+  async #lanesRunning(): Promise<Map<number, string[]>> {
+    const lanes = new Map<number, string[]>();
+    for (const line of (await this.#ssh(this.#seriesProcesses)).split("\n").filter(Boolean)) {
+      const [pid, ...args] = line.trim().split(/\s+/);
+      const lane = Number(args.join(" ").match(/laya-lane-(\d+)/)?.[1] ?? 0);
+      lanes.set(lane, [...(lanes.get(lane) ?? []), pid]);
+    }
+    return lanes;
+  }
+
+  /**
+   * Lane i plays on arena server i: lane 0 on the lab's laya-uo-server (172.30.0.10), the others on
+   * laya-uo-server-<i> (172.30.0.10+i), started here when missing, 1.5 CPU and 2.5 GB each, with the
+   * runner raised to 2 CPU and 3 GB: three lanes stay within the host's 6 CPU and 10 GB for the lab.
+   */
+  async #ensureServer(lane: number): Promise<void> {
+    if (lane === 0) {
+      return;
+    }
+    const name = `laya-uo-server-${lane}`;
+    const ip = `172.30.0.${10 + lane}`;
+    const r = this.#c.repo;
+    await this.#ssh(
+      `docker update --cpus 2 --memory 3g --memory-swap 3g ${this.#runner} >/dev/null; ` +
+        `docker ps --format '{{.Names}}' | grep -qx ${name} || { docker rm -f ${name} >/dev/null 2>&1; ` +
+        `docker run -d --name ${name} --network laya-net --ip ${ip} --cpus 1.5 --memory 2500m --memory-swap 2500m --cpu-shares 512 --init ` +
+        `--restart unless-stopped --env-file ${r}/lab/.env -e NEO_OWNER_USER=architect -e NEO_PUBLIC_ADDRESS=${ip} -e "NEO_SERVER_NAME=lab ${lane}" ` +
+        `-e NEO_EXPANSION=7 -e NEO_REAGENTS=200 -v ${name}-world:/app/World -v ${r}/server/client-files:/uodata:ro ` +
+        `-v ${r}/templates:/app/NeoTemplates:ro laya-modernuo:225c634 >/dev/null && sleep 30; }`,
+      240_000,
+    );
+  }
+
   async setup(): Promise<string> {
     return "set up by hand once: lab/compose.yml on the host (fleet start syncs the code each time)";
   }
@@ -352,19 +386,18 @@ class SshLab implements Instance {
         "free -g | awk 'NR==2{print \"memory: \" $7 \" GB available of \" $2}'",
         "docker ps --filter name=laya- --format '{{.Names}}: {{.Status}}'",
         `echo "series: $(${this.#seriesProcesses} | sed 's/.*cli.ts series //' | tr '\\n' ' ')"`,
-        `for f in ${r}/lab/logs/lane-*.log; do [ -f "$f" ] && awk -v f="$(basename $f)" '/^### /{n=0; h=$0} /^result:/{n++; last=$0} END{print f ": " n " results since " h "; last " last}' "$f"; done`,
+        `for f in ${r}/lab/logs/lane-*.log; do [ -f "$f" ] && awk -v f="$(basename $f)" '/^### /{n=0; h=$0; last=""} /^result:/{n++; last=$0} END{print f ": " n " results since " h "; last " last}' "$f"; done`,
         `echo "runs there: $(ls ${r}/runs | wc -l)"`,
       ].join("; "),
     );
   }
 
   async info(): Promise<InstanceInfo> {
-    const text = await this.status();
-    const running = /^series: \S/m.test(text);
+    const [text, running] = await Promise.all([this.status(), this.#lanesRunning()]);
     const lanes: LaneInfo[] = [...text.matchAll(/^lane-(\d+)\.log: (\d+) results since ### (\S+) (\S+); last (.*)$/gm)].map((m) => ({
       lane: Number(m[1]),
       model: "scripted bot (no GPU)",
-      running,
+      running: running.has(Number(m[1])),
       series: m[4],
       done: Number(m[2]),
       last: m[5].replace(/^result: /, "") || undefined,
@@ -383,8 +416,9 @@ class SshLab implements Instance {
     if (o.model) {
       throw new Error(`${this.name} has no GPU: Laya does not run there, only the scripted bot`);
     }
-    if ((await this.#ssh(this.#seriesProcesses)).trim()) {
-      throw new Error(`${this.name} is running a series already (one GM account per arena server); stop it first`);
+    const lane = o.lane ?? 0;
+    if ((await this.#lanesRunning()).has(lane)) {
+      throw new Error(`lane ${lane} is busy (one series per arena server); stop it first`);
     }
     // The runner mounts the repo there: the code, tactics and templates go over first.
     for (const dir of ["bot/src", "tactics", "templates"]) {
@@ -394,18 +428,20 @@ class SshLab implements Instance {
     const file = basename(local);
     await this.#ssh(`mkdir -p ${this.#c.repo}/lab/series ${this.#c.repo}/lab/logs`);
     await this.#rsync(local, `${this.#c.host}:${this.#c.repo}/lab/series/${file}`);
-    const lane = o.lane ?? 0;
+    await this.#ensureServer(lane);
     const parallel = o.parallel ?? 8;
     const log = `/work/lab/logs/lane-${lane}.log`;
     await this.#ssh(
-      `docker exec -d -e FLEET_INSTANCE=${this.name} -e FLEET_LANE=${lane} ${this.#runner} sh -c ` +
-        `"cd /work/bot && echo '### $(date -u +%FT%TZ) ${file}' >> ${log} && exec node src/cli.ts series ../lab/series/${file} --parallel ${parallel} >> ${log} 2>&1"`,
+      `docker exec -d -e FLEET_INSTANCE=${this.name} -e FLEET_LANE=${lane} -e UO_HOST=172.30.0.${10 + lane} -e MONITOR_PORT=${9000 + 100 * lane} ` +
+        `${this.#runner} bash -c "cd /work/bot && echo '### $(date -u +%FT%TZ) ${file}' >> ${log} && ` +
+        `exec -a laya-lane-${lane} node src/cli.ts series ../lab/series/${file} --parallel ${parallel} >> ${log} 2>&1"`,
     );
     return `started ${file} on lane ${lane} (${parallel} arenas)`;
   }
 
-  async stop(): Promise<string> {
-    const pids = (await this.#ssh(this.#seriesProcesses)).split("\n").map((l) => l.trim().split(/\s+/)[0]).filter(Boolean);
+  async stop(lane?: number): Promise<string> {
+    const lanes = await this.#lanesRunning();
+    const pids = lane === undefined ? [...lanes.values()].flat() : (lanes.get(lane) ?? []);
     if (!pids.length) {
       return "no series running";
     }

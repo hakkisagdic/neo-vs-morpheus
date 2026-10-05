@@ -5,7 +5,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { type Instance, loadFleet, pick } from "./instances.ts";
+import { type Instance, formatInfo, loadFleet, pick } from "./instances.ts";
 import { formatRows, readRuns, tally } from "./results.ts";
 
 const server = new McpServer({ name: "laya-fleet", version: "0.1.0" });
@@ -54,7 +54,7 @@ server.registerTool(
     inputSchema: { instance: instanceArg },
     annotations: { readOnlyHint: true },
   },
-  async ({ instance }) => each(instance, (i) => i.status()),
+  async ({ instance }) => each(instance, (i) => i.info().then(formatInfo)),
 );
 
 server.registerTool(

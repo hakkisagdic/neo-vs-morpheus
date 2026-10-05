@@ -1,0 +1,10 @@
+{
+  "mac": [
+    {"lane": 0, "series": "lab/series-explore12.json", "model": "neo-duel-v8"},
+    {"lane": 1, "series": "lab/series-matched12.json", "model": "neo-duel-v8", "parallel": 8},
+    {"lane": 6, "series": "lab/series-rules-variety.json"}
+  ],
+  "lab-server": [
+    {"lane": 0, "series": "lab/series-rules-variety.json"}
+  ]
+}

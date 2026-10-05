@@ -1,0 +1,402 @@
+[
+ {
+  "label": "mage balanced vs mage aggressive, open 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "mage cautious vs mage neutral, open 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "mage balanced vs mage aggressive, open 12",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "mage cautious vs mage neutral, open 12",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "mage balanced vs mage aggressive, pillars 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "mage cautious vs mage neutral, pillars 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "mage balanced vs mage aggressive, wall 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "mage cautious vs mage neutral, wall 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "mage balanced vs mage aggressive, ring 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "mage cautious vs mage neutral, ring 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "dexer balanced vs dexer aggressive, open 8",
+  "a": "Neo:rules:dexer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "dexer cautious vs dexer neutral, open 8",
+  "a": "Neo:rules:dexer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "dexer balanced vs dexer aggressive, open 12",
+  "a": "Neo:rules:dexer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "dexer cautious vs dexer neutral, open 12",
+  "a": "Neo:rules:dexer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "dexer balanced vs dexer aggressive, pillars 8",
+  "a": "Neo:rules:dexer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "dexer cautious vs dexer neutral, pillars 8",
+  "a": "Neo:rules:dexer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "dexer balanced vs dexer aggressive, wall 8",
+  "a": "Neo:rules:dexer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "dexer cautious vs dexer neutral, wall 8",
+  "a": "Neo:rules:dexer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "dexer balanced vs dexer aggressive, ring 8",
+  "a": "Neo:rules:dexer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "dexer cautious vs dexer neutral, ring 8",
+  "a": "Neo:rules:dexer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "mage balanced vs dexer aggressive, open 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "mage cautious vs dexer neutral, open 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "mage balanced vs dexer aggressive, open 12",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "mage cautious vs dexer neutral, open 12",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "mage balanced vs dexer aggressive, pillars 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "mage cautious vs dexer neutral, pillars 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "mage balanced vs dexer aggressive, wall 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "mage cautious vs dexer neutral, wall 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "mage balanced vs dexer aggressive, ring 8",
+  "a": "Neo:rules:mage:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "mage cautious vs dexer neutral, ring 8",
+  "a": "Neo:rules:mage:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "archer balanced vs mage aggressive, open 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "archer cautious vs mage neutral, open 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "archer balanced vs mage aggressive, open 12",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "archer cautious vs mage neutral, open 12",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "archer balanced vs mage aggressive, pillars 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "archer cautious vs mage neutral, pillars 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "archer balanced vs mage aggressive, wall 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "archer cautious vs mage neutral, wall 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "archer balanced vs mage aggressive, ring 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:mage:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "archer cautious vs mage neutral, ring 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:mage:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "archer balanced vs dexer aggressive, open 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "archer cautious vs dexer neutral, open 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "open"
+ },
+ {
+  "label": "archer balanced vs dexer aggressive, open 12",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "archer cautious vs dexer neutral, open 12",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 12,
+  "arena": "open"
+ },
+ {
+  "label": "archer balanced vs dexer aggressive, pillars 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "archer cautious vs dexer neutral, pillars 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "pillars"
+ },
+ {
+  "label": "archer balanced vs dexer aggressive, wall 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "archer cautious vs dexer neutral, wall 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "wall"
+ },
+ {
+  "label": "archer balanced vs dexer aggressive, ring 8",
+  "a": "Neo:rules:archer:balanced",
+  "b": "Morpheus:rules:dexer:aggressive",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ },
+ {
+  "label": "archer cautious vs dexer neutral, ring 8",
+  "a": "Neo:rules:archer:cautious",
+  "b": "Morpheus:rules:dexer:neutral",
+  "rounds": 4,
+  "distance": 8,
+  "arena": "ring"
+ }
+]

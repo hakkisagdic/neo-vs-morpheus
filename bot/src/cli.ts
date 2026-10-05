@@ -23,7 +23,7 @@ import { FORMAT, compositeQuestion, describeDuel, isOutOfReach, teleportTiles } 
 import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
-import { type Instance, loadFleet, pick } from "./fleet/instances.ts";
+import { type Instance, formatInfo, loadFleet, pick } from "./fleet/instances.ts";
 import { formatRows, readRuns, tally } from "./fleet/results.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
@@ -286,7 +286,7 @@ async function fleet(args: string[]): Promise<void> {
       case "setup":
         return i.setup();
       case "status":
-        return i.status();
+        return i.info().then(formatInfo);
       case "pull":
         return i.pull();
       case "start":
