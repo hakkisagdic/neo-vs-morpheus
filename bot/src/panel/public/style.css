@@ -792,3 +792,54 @@ table.results td.score {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------- scoreboard */
+
+.card h2 .seg {
+  float: right;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.seg button {
+  font: inherit;
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  padding: 2px 10px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.seg button.on {
+  color: var(--text);
+  background: #0f1a1f;
+}
+
+table.scoreboard td.cell {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+table.scoreboard td.cell:hover {
+  background: var(--panel-2);
+}
+
+table.scoreboard td.few {
+  opacity: 0.55;
+}
+
+.small {
+  font-size: 11px;
+}
+
+.collection {
+  margin: 10px 0 0;
+}

@@ -6,14 +6,15 @@
 // duels can publish at once (parallel arenas), each as its own source. Without a panel running a
 // duel serves its own page, as before (monitor/hub.ts).
 import { execFile } from "node:child_process";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { extname, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
-import { checkRun } from "../eval/run-checks.ts";
 import { type InstanceInfo, loadFleet } from "../fleet/instances.ts";
-import { type Row, readRuns, tally } from "../fleet/results.ts";
+import { type RunSummary, readRuns, tally } from "../fleet/results.ts";
+import { type Scoreboard, scoreboard } from "../fleet/scoreboard.ts";
+import { type TrainingJob, trainingJobs } from "../fleet/training.ts";
 
 const PUBLIC = join(import.meta.dirname, "public");
 const RUNS = join(import.meta.dirname, "..", "..", "..", "runs");
@@ -37,70 +38,11 @@ type Source = {
   since: number;
 };
 
-/** One recorded run, as the runs page lists it. */
-export type RunSummary = {
-  file: string;
-  startedAt: number;
-  title: string;
-  fighters: { name: string; brain: string; template?: string; tactics?: string }[];
-  rounds: number;
-  wins: Record<string, number>;
-  draws: number;
-  avgRoundS: number;
-  arena?: string;
-  distance?: number;
-  versions?: Record<string, unknown>;
-  problems: string[];
-  latencyMs: Record<string, number>;
-};
-
-type RunFile = {
-  versions?: Record<string, unknown>;
-  match: {
-    title: string;
-    fighters: RunSummary["fighters"];
-    rounds: number;
-    startedAt: number;
-    arena?: string;
-    distance?: number;
-    results: { winner: string | null; durationMs: number }[];
-  };
-  records: Parameters<typeof checkRun>[0];
-};
-
-export function summarise(file: string, run: RunFile): RunSummary {
-  const wins: Record<string, number> = {};
-  let draws = 0;
-  for (const r of run.match.results) {
-    if (r.winner) {
-      wins[r.winner] = (wins[r.winner] ?? 0) + 1;
-    } else {
-      draws++;
-    }
-  }
-  const checks = checkRun(run.records ?? [], run.match.fighters);
-  const total = run.match.results.reduce((s, r) => s + r.durationMs, 0);
-  return {
-    file,
-    startedAt: run.match.startedAt,
-    title: run.match.title,
-    fighters: run.match.fighters,
-    rounds: run.match.results.length,
-    wins,
-    draws,
-    avgRoundS: run.match.results.length ? Math.round(total / run.match.results.length / 1000) : 0,
-    arena: run.match.arena,
-    distance: run.match.distance,
-    versions: run.versions,
-    problems: checks.flatMap((c) => c.problems),
-    latencyMs: Object.fromEntries(checks.map((c) => [c.bot, c.latencyMs])),
-  };
-}
+export { type RunSummary, summarise } from "../fleet/results.ts";
 
 export class PanelServer {
   readonly #pages = new Set<WebSocket>();
   readonly #sources = new Map<string, Source>();
-  readonly #summaries = new Map<string, { mtimeMs: number; summary: RunSummary | null }>();
   #server: http.Server | null = null;
   #nextSource = 1;
 
@@ -255,28 +197,9 @@ export class PanelServer {
     void this.#runs().catch(() => {});
   }
 
-  /** Every run's summary, newest first; a file is read again only when it changed. */
+  /** Every run's summary, newest first (results.ts reads a file again only when it changed). */
   async #runs(): Promise<RunSummary[]> {
-    const files = (await readdir(RUNS)).filter((f) => f.endsWith(".json"));
-    const out: RunSummary[] = [];
-    for (const file of files) {
-      const { mtimeMs } = await stat(join(RUNS, file));
-      let cached = this.#summaries.get(file);
-      if (!cached || cached.mtimeMs !== mtimeMs) {
-        let summary: RunSummary | null = null;
-        try {
-          summary = summarise(file, JSON.parse(await readFile(join(RUNS, file), "utf8")) as RunFile);
-        } catch {
-          // A run being written, or an old layout: left out.
-        }
-        cached = { mtimeMs, summary };
-        this.#summaries.set(file, cached);
-      }
-      if (cached.summary) {
-        out.push(cached.summary);
-      }
-    }
-    return out.sort((a, b) => b.startedAt - a.startedAt);
+    return (await readRuns(RUNS)).map((r) => r.summary).sort((a, b) => b.startedAt - a.startedAt);
   }
 
   async stop(): Promise<void> {
@@ -307,7 +230,16 @@ function machineReport(): Promise<string> {
   return machine.text;
 }
 
-type FleetSnapshot = { at: number; since: number; instances: InstanceInfo[]; results: Row[]; runsToday: Record<string, number> };
+type FleetSnapshot = {
+  at: number;
+  since: number;
+  instances: InstanceInfo[];
+  training: TrainingJob[];
+  /** Each checkpoint against the scripted bot at matched speed: today, and the last seven days. */
+  scoreboard: { today: Scoreboard; week: Scoreboard };
+  runsToday: Record<string, number>;
+  roundsToday: number;
+};
 
 /** The newest snapshot, served at once while a fresher one is built: ssh and the Kaggle CLI take seconds. */
 let fleetLast: FleetSnapshot | null = null;
@@ -365,19 +297,30 @@ async function fleetSnapshot(): Promise<FleetSnapshot & { refreshing: boolean }>
 async function buildFleet(): Promise<FleetSnapshot> {
   const since = new Date();
   since.setHours(0, 0, 0, 0);
+  const weekAgo = since.getTime() - 6 * 86_400_000;
   const machines = await loadFleet().catch(() => []);
-  const [instances, runs] = await Promise.all([
+  const [instances, runs, training] = await Promise.all([
     Promise.all(
       machines.map((m) =>
         m.info().catch((err: Error): InstanceInfo => ({ name: m.name, kind: "?", ok: false, error: err.message.slice(0, 300), summary: [], lanes: [] })),
       ),
     ),
-    readRuns(RUNS, since.getTime()),
+    readRuns(RUNS, weekAgo),
+    trainingJobs().catch(() => []),
   ]);
   const today = runs.filter((r) => r.startedAt >= since.getTime());
   const runsToday: Record<string, number> = {};
   for (const r of today) {
     runsToday[r.instance] = (runsToday[r.instance] ?? 0) + 1;
   }
-  return { at: Date.now(), since: since.getTime(), instances, results: tally(today), runsToday };
+  const rows = tally(today);
+  return {
+    at: Date.now(),
+    since: since.getTime(),
+    instances,
+    training,
+    scoreboard: { today: scoreboard(rows), week: scoreboard(tally(runs.filter((r) => r.startedAt >= weekAgo))) },
+    runsToday,
+    roundsToday: rows.reduce((n, r) => n + r.wins[0] + r.wins[1] + r.draws, 0),
+  };
 }

@@ -1,6 +1,6 @@
-// Control panel page: live matches (every duel publishing to the panel is a source), recorded
-// runs, their replays and the machine's state, one view at a time (#/live, #/runs, #/replay/<file>,
-// #/machine).
+// Control panel page: the fleet (machines, training, models), recorded runs and their replays,
+// and live matches (every duel publishing to the panel is a source), one view at a time (#/fleet,
+// #/runs, #/replay/<file>, #/live). Live is in the menu only while a match publishes.
 import { Arena } from "./arena.js";
 import { showReplay, hideReplay } from "./replay.js";
 import { hideFleet, showFleet } from "./fleet.js";
@@ -52,6 +52,7 @@ function setConnected(on) {
   state.connected = on;
   $("live").classList.toggle("on", on);
   $("live").textContent = on ? (state.sources.size ? "● live" : "● idle") : "○ offline";
+  $("nav-live").hidden = !state.sources.size && view !== "live";
 }
 
 function chooseSource(id) {
@@ -79,6 +80,7 @@ function handle(msg) {
     state.sources.delete(msg.source);
     if (state.source === msg.source) chooseSource([...state.sources.keys()].at(-1) ?? null);
     renderSources();
+    setConnected(state.connected);
     return;
   }
   const s = sourceOf(msg.source);
@@ -86,6 +88,7 @@ function handle(msg) {
   switch (msg.type) {
     case "source":
       renderSources();
+      setConnected(state.connected);
       break;
     case "decision":
       s.decisions.push(msg.record);
@@ -417,33 +420,22 @@ function frame() {
 // ---------------------------------------------------------------- views
 
 let view = "fleet";
-let machineTimer = null;
 
 async function route() {
   const [, name = "fleet", ...rest] = location.hash.split("/");
-  const views = ["fleet", "live", "runs", "replay", "machine"];
+  const views = ["fleet", "live", "runs", "replay"];
   view = views.includes(name) ? name : "fleet";
   for (const v of views) $(`view-${v}`).hidden = v !== view;
-  for (const a of $("nav").querySelectorAll("a")) a.classList.toggle("active", a.dataset.view === view);
+  // A replay is one of the runs: the menu keeps Runs lit.
+  for (const a of $("nav").querySelectorAll("a")) a.classList.toggle("active", a.dataset.view === (view === "replay" ? "runs" : view));
+  setConnected(state.connected);
   // Live-only controls leave the bar on other views, so it stays one line and covers nothing.
   for (const id of ["title-live", "source", "tabs", "follow"]) $(id).style.display = view === "live" ? "" : "none";
-  clearInterval(machineTimer);
   if (view !== "replay") hideReplay();
   if (view === "fleet") await showFleet();
   else hideFleet();
   if (view === "runs") await showRuns(decodeURIComponent(rest.join("/")));
   if (view === "replay") await showReplay(decodeURIComponent(rest.join("/")));
-  if (view === "machine") {
-    const load = async () => {
-      try {
-        $("machine").textContent = (await (await fetch("/api/machine")).json()).report;
-      } catch {
-        $("machine").textContent = "the panel cannot read the machine report";
-      }
-    };
-    await load();
-    machineTimer = setInterval(load, 10_000);
-  }
 }
 
 // ---------------------------------------------------------------- interaction

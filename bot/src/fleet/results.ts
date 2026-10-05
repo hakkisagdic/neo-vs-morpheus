@@ -2,9 +2,10 @@
 // matchup. A side is described by what decides for it (the checkpoint, or the scripted bot and its
 // reaction time), the template and the tactics, so "laya first" and "laya second" entries, slots and
 // lanes all add up into one row.
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
-import { checkRun } from "../eval/run-checks.ts";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { type RunCheck, checkRun } from "../eval/run-checks.ts";
 
 type Fighter = { name: string; brain: string; template?: string; tactics?: string; reactionMs?: number };
 
@@ -13,11 +14,12 @@ export type RunFile = {
   match: {
     title: string;
     fighters: Fighter[];
+    rounds?: number;
     startedAt: number;
     arena?: string;
     distance?: number;
-    results: { winner: string | null }[];
-    checks?: { problems: string[] }[];
+    results: { winner: string | null; durationMs?: number }[];
+    checks?: Pick<RunCheck, "bot" | "latencyMs" | "problems">[];
   };
   records?: Parameters<typeof checkRun>[0];
 };
@@ -33,6 +35,25 @@ export type RunInfo = {
   wins: number[];
   draws: number;
   problems: string[];
+  /** The Runs page's line for it. */
+  summary: RunSummary;
+};
+
+/** One recorded run as the Runs page lists it: the score per fighter, round length, decision times, checks. */
+export type RunSummary = {
+  file: string;
+  startedAt: number;
+  title: string;
+  fighters: Fighter[];
+  rounds: number;
+  wins: Record<string, number>;
+  draws: number;
+  avgRoundS: number;
+  arena?: string;
+  distance?: number;
+  versions?: Record<string, unknown>;
+  problems: string[];
+  latencyMs: Record<string, number>;
 };
 
 export type Row = {
@@ -78,7 +99,8 @@ export function runInfo(file: string, run: RunFile): RunInfo {
   const sides = m.fighters.map((f) => describeSide(f, models[f.name]));
   const wins = m.fighters.map((f) => m.results.filter((r) => r.winner === f.name).length);
   // Checked again when the records are there, so that a run saved before a check was added gets it too.
-  const problems = (run.records ? checkRun(run.records, m.fighters) : (m.checks ?? [])).flatMap((c) => c.problems);
+  const checks = run.records ? checkRun(run.records, m.fighters) : (m.checks ?? []);
+  const problems = checks.flatMap((c) => c.problems);
   return {
     file,
     instance: instanceOf(file, run),
@@ -89,6 +111,34 @@ export function runInfo(file: string, run: RunFile): RunInfo {
     wins,
     draws: m.results.filter((r) => !r.winner).length,
     problems,
+    summary: summarise(file, run, checks),
+  };
+}
+
+/** The Runs page's line for a run; `checks` as runInfo found them (checked here when not given). */
+export function summarise(file: string, run: RunFile, checks: Pick<RunCheck, "bot" | "latencyMs" | "problems">[] = checkRun(run.records ?? [], run.match.fighters)): RunSummary {
+  const m = run.match;
+  const wins: Record<string, number> = {};
+  for (const r of m.results) {
+    if (r.winner) {
+      wins[r.winner] = (wins[r.winner] ?? 0) + 1;
+    }
+  }
+  const total = m.results.reduce((sum, r) => sum + (r.durationMs ?? 0), 0);
+  return {
+    file,
+    startedAt: m.startedAt,
+    title: m.title,
+    fighters: m.fighters,
+    rounds: m.results.length,
+    wins,
+    draws: m.results.filter((r) => !r.winner).length,
+    avgRoundS: m.results.length ? Math.round(total / m.results.length / 1000) : 0,
+    arena: m.arena,
+    distance: m.distance,
+    versions: run.versions,
+    problems: checks.flatMap((c) => c.problems),
+    latencyMs: Object.fromEntries(checks.flatMap((c) => (c.bot ? [[c.bot, c.latencyMs]] : []))),
   };
 }
 
@@ -134,20 +184,60 @@ export function formatRows(rows: Row[]): string {
 
 export const RUNS_DIR = join(import.meta.dirname, "..", "..", "..", "runs");
 
-/** Runs read so far, by path, while the file is unchanged: a run file is about a megabyte of JSON. */
-const parsed = new Map<string, { mtimeMs: number; info: RunInfo | null }>();
+/**
+ * Runs read so far, by path, while the file is unchanged: a run file is about a megabyte of JSON.
+ * The runs/ entries are also kept on disk, so that a new process (the panel after a restart) reads
+ * only the runs written since. The saved index belongs to the code that made it: a change to the
+ * sources below reads every run again.
+ */
+const INDEX = join(import.meta.dirname, "..", "..", "..", ".fleet", "cache", "runs-index.json");
+const SOURCES = ["results.ts", "../eval/run-checks.ts", "../game/caster.ts", "../uo/spells.ts"].map((f) => join(import.meta.dirname, f));
+type Entry = { mtimeMs: number; info: RunInfo | null };
+let index: Promise<{ version: string; entries: Map<string, Entry> }> | null = null;
+let saving: Promise<void> | null = null;
+
+function loadIndex(): Promise<{ version: string; entries: Map<string, Entry> }> {
+  index ??= (async () => {
+    const sources = await Promise.all(SOURCES.map((f) => readFile(f, "utf8").catch(() => "")));
+    const version = createHash("sha1").update(sources.join("\n")).digest("hex");
+    const entries = new Map<string, Entry>();
+    try {
+      const saved = JSON.parse(await readFile(INDEX, "utf8")) as { version: string; files: Record<string, Entry> };
+      if (saved.version === version) {
+        for (const [file, entry] of Object.entries(saved.files)) {
+          entries.set(join(RUNS_DIR, file), entry);
+        }
+      }
+    } catch {
+      // no index yet, or an unreadable one: every run is read once
+    }
+    return { version, entries };
+  })();
+  return index;
+}
+
+/** Writes runs/'s entries to disk, one write at a time (a write under way covers the newest state). */
+async function saveIndex(): Promise<void> {
+  const { version, entries } = await loadIndex();
+  const files = Object.fromEntries([...entries].filter(([path]) => dirname(path) === RUNS_DIR).map(([path, entry]) => [basename(path), entry]));
+  await mkdir(dirname(INDEX), { recursive: true });
+  await writeFile(`${INDEX}.tmp`, JSON.stringify({ version, files }));
+  await rename(`${INDEX}.tmp`, INDEX);
+}
 
 /** Every run in runs/, or only the files written since a time; a file is parsed again only when it changed. */
 export async function readRuns(dir = RUNS_DIR, modifiedSince = 0): Promise<RunInfo[]> {
+  const { entries } = await loadIndex();
   const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => f.endsWith(".json"));
   const out: RunInfo[] = [];
+  let changed = false;
   for (const file of files) {
     const path = join(dir, file);
     const st = await stat(path).catch(() => null);
     if (!st || st.mtimeMs < modifiedSince) {
       continue;
     }
-    let hit = parsed.get(path);
+    let hit = entries.get(path);
     if (!hit || hit.mtimeMs !== st.mtimeMs) {
       let info: RunInfo | null = null;
       try {
@@ -156,11 +246,17 @@ export async function readRuns(dir = RUNS_DIR, modifiedSince = 0): Promise<RunIn
         // a run still being written (its next write changes the time), or not a run file
       }
       hit = { mtimeMs: st.mtimeMs, info };
-      parsed.set(path, hit);
+      entries.set(path, hit);
+      changed ||= dir === RUNS_DIR;
     }
     if (hit.info) {
       out.push(hit.info);
     }
+  }
+  if (changed && !saving) {
+    saving = saveIndex()
+      .catch(() => {})
+      .finally(() => (saving = null));
   }
   return out;
 }

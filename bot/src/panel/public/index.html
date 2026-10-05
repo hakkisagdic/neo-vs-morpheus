@@ -10,10 +10,8 @@
     <header class="bar">
       <nav class="views" id="nav">
         <a href="#/fleet" data-view="fleet">Fleet</a>
-        <a href="#/live" data-view="live">Live</a>
         <a href="#/runs" data-view="runs">Runs</a>
-        <a href="#/replay" data-view="replay">Replay</a>
-        <a href="#/machine" data-view="machine">Machine</a>
+        <a href="#/live" data-view="live" id="nav-live" hidden>● Live</a>
       </nav>
       <div class="title" id="title-live">
         <span id="me" class="me">—</span>
@@ -95,13 +93,25 @@
             <thead><tr><th>lane</th><th>state</th><th>model</th><th>series</th><th>entries</th><th>last result</th></tr></thead>
             <tbody id="fleet-lanes"></tbody>
           </table>
+          <pre id="fleet-machine" class="machine-report" hidden></pre>
+        </article>
+        <article class="card accent-violet">
+          <h2>Training <small>fine-tunes on every machine; Kaggle shows its log only when a kernel ends</small></h2>
+          <table class="runs">
+            <thead><tr><th>model</th><th>where</th><th>state</th><th>progress</th><th>held-out agreement</th><th>started</th><th>done by</th></tr></thead>
+            <tbody id="fleet-training"></tbody>
+          </table>
         </article>
         <article class="card accent-green">
-          <h2>Today's results <small>round wins by matchup, every machine; a row opens its runs</small></h2>
-          <table class="runs results">
-            <thead><tr><th>side</th><th>score</th><th>share</th><th>against</th><th>runs</th></tr></thead>
-            <tbody id="fleet-results"></tbody>
+          <h2>
+            Models <small>round wins against the scripted bot at matched speed (rules@60 or quicker); a cell opens its runs</small>
+            <span id="score-range" class="seg"><button data-range="today">today</button><button data-range="week">7 days</button></span>
+          </h2>
+          <table class="runs scoreboard">
+            <thead id="score-head"></thead>
+            <tbody id="score-body"></tbody>
           </table>
+          <p id="score-collection" class="muted collection"></p>
         </article>
       </section>
 
@@ -145,9 +155,6 @@
         </aside>
       </section>
 
-      <section id="view-machine" class="view page" hidden>
-        <pre id="machine" class="machine-report"><span class="spinner"></span>reading the machine</pre>
-      </section>
     </main>
 
     <script src="/app.js" type="module"></script>
