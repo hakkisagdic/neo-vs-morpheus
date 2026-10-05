@@ -12,6 +12,8 @@ export type LabeledState = TrainingState & {
 
 const MIN_GAP_MS = 2_100;
 const MAX_FAILURES = 8;
+/** A rate limit (429) clears with time: waited out longer than other failures, up to about 2.5 hours. */
+const MAX_RATE_LIMITED = 30;
 
 export async function readJsonl<T>(path: string): Promise<T[]> {
   try {
@@ -68,17 +70,18 @@ export async function labelStates(
       const message = (err as Error).message.slice(0, 200);
       const status = /answered (\d{3})/.exec(message)?.[1];
       // Transient: a 5xx (the proxy gave up on a slow call, which FreeJev may still be running), a
-      // 409 (that call still runs) or no answer at all. FreeJev never hands back an answer for a
-      // repeated key, so back off (1, 2, 4, then 5 minutes) and go on with a new call; the state
-      // is left for the next run. Failed calls are not billed. Other errors stop the run.
-      const transient = status === undefined || status === "409" || status.startsWith("5");
-      if (!transient || failures >= MAX_FAILURES) {
+      // 409 (that call still runs), a 429 (the rate limit: FreeJev stopped a run after ~1,000 calls
+      // in an hour) or no answer at all. FreeJev never hands back an answer for a repeated key, so
+      // back off (1, 2, 4, then 5 minutes) and go on with a new call; the state is left for the next
+      // run. Failed calls are not billed. Other errors stop the run.
+      const transient = status === undefined || status === "409" || status === "429" || status.startsWith("5");
+      if (!transient || failures >= (status === "429" ? MAX_RATE_LIMITED : MAX_FAILURES)) {
         log(`stopping: ${message}`);
         break;
       }
       failures++;
       const pause = Math.min(60_000 * 2 ** (failures - 1), 300_000);
-      log(`${status ? `jev answered ${status}` : `no answer (${message})`}; going on in ${pause / 60_000} min (${failures}/${MAX_FAILURES} in a row)`);
+      log(`${status ? `jev answered ${status}` : `no answer (${message})`}; going on in ${pause / 60_000} min (${failures} in a row)`);
       await new Promise((r) => setTimeout(r, pause));
       continue;
     }
