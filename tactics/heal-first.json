@@ -1,0 +1,4 @@
+{
+  "description": "Neutral, except that healing comes first under 35% health: below it only Heal, Greater Heal and cures remain (cures because a heal does not take on a poisoned target). The model decides everything else. Random moves at low health in exploring runs did best after a Greater Heal (+15 health points of balance over 4 s, against +3 after an attack and +4 after a retreat).",
+  "heal": [35, 100]
+}

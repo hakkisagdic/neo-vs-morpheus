@@ -311,7 +311,7 @@ function renderMatch() {
 // that move is required, above the ceiling it is not offered, in between the model decides.
 const TACTIC_FIELDS = [
   { key: "aggression", label: "aggression", kind: "range", min: -1, max: 1, step: 0.1, hint: "-1 cautious · +1 aggressive" },
-  { key: "heal", label: "heal band %", kind: "band", hint: "heal under the floor · no heals above the ceiling" },
+  { key: "heal", label: "heal first under % health", kind: "floor", min: 0, max: 80, step: 5, hint: "under this health only heals and cures remain (0 off) · the box: no heals above this health" },
   { key: "retreat", label: "retreat band %", kind: "band" },
   { key: "chase.maxTiles", label: "chase up to (tiles)", kind: "number", min: 0, max: 60 },
   { key: "chase.giveUpSeconds", label: "give up a chase after (s)", kind: "number", min: 0, max: 600 },
@@ -340,6 +340,8 @@ function renderTactics() {
     const input =
       f.kind === "range"
         ? `<input id="${id}" type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${v}"><output>${v}</output>`
+        : f.kind === "floor"
+          ? `<input id="${id}-lo" type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${v[0]}"><output>${v[0]}</output> · above <input id="${id}-hi" type="number" min="0" max="100" value="${v[1]}">`
         : f.kind === "band"
           ? `<input id="${id}-lo" type="number" min="0" max="100" value="${v[0]}"> – <input id="${id}-hi" type="number" min="0" max="100" value="${v[1]}">`
           : f.kind === "check"
@@ -364,7 +366,7 @@ function sendTactics() {
   for (const f of TACTIC_FIELDS) {
     const id = `t-${f.key.replace(".", "-")}`;
     let v;
-    if (f.kind === "band") {
+    if (f.kind === "band" || f.kind === "floor") {
       const lo = $(`${id}-lo`);
       const hi = $(`${id}-hi`);
       if (!lo || !hi) continue;
