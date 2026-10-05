@@ -8,7 +8,8 @@
    model repo, and put on one of this Mac's candidate lanes against the scripted bot at matched
    speed (lab/evaluate.py), replacing the older candidate there.
 2. While fewer than two of the account's GPU sessions run (Kaggle's limit) and the weekly quota has
-   room for a training, the next version goes up: the runs played since the last labeling become
+   room for a training, the next version goes up, two at a time when two wait (a kernel has two
+   T4s, so both train in one session): the runs played since the last labeling become
    outcome rows (distill outcomes), the newest set plus those rows becomes the next set
    (build_set.py), and training/kaggle.py starts it. No DAgger rows: the scripted bot's labels made
    neo-duel-v8-dagger-all worse in every build.
@@ -92,8 +93,13 @@ def quota_left():
     return float(m.group(1)) if m and not code else None
 
 
+def kernel(state, name):
+    """The kernel that trains a version: its own, or the one it shares with its pair."""
+    return state.get("kernels", {}).get(name, f"{name}-train")
+
+
 def fetch(state, name):
-    code, out = sh([sys.executable, "training/kaggle.py", "fetch", "--name", name])
+    code, out = sh([sys.executable, "training/kaggle.py", "fetch", "--name", name, "--kernel", kernel(state, name)])
     log(f"{name}: fetched" if not code else f"{name}: fetch failed: {out[-300:]}")
     if code:
         return False
@@ -151,10 +157,14 @@ def round_once():
         return
     # 1. Finished trainings come home and go on the lanes.
     for name in list(state.get("pushed", [])):
-        st = kernels.get(f"{name}-train", "unknown")
-        if st == "complete" and fetch(state, name):
+        st = kernels.get(kernel(state, name), "unknown")
+        if st == "complete":
+            # A run that failed in a pair's kernel has no checkpoint to fetch: left out, not tried again.
             state["pushed"].remove(name)
-            evaluate(state, name)
+            if fetch(state, name):
+                evaluate(state, name)
+            else:
+                state.setdefault("failed", []).append(name)
         elif st in ("error", "cancelled", "cancelacknowledged"):
             log(f"{name}: the kernel ended with {st}; left out")
             state["pushed"].remove(name)
@@ -174,15 +184,21 @@ def round_once():
                 state.setdefault("queue", []).append(job)
                 save(state)
         if state.get("queue"):
-            job = state["queue"][0]
+            # Two versions share one session when two wait: a kernel has two T4s, one for each.
+            jobs = state["queue"][:2]
+            pair = ["--pair", jobs[1]["name"], "--pair-data", jobs[1]["data"]] if len(jobs) == 2 else []
             # train_args: kaggle.py options for every version (3 epochs: the fourth added 0.002 held-out agreement to v9a).
-            code, out = sh([sys.executable, "training/kaggle.py", "train", "--name", job["name"], "--data", job["data"], *state.get("train_args", [])])
+            code, out = sh([sys.executable, "training/kaggle.py", "train", "--name", jobs[0]["name"], "--data", jobs[0]["data"], *pair,
+                            *state.get("train_args", [])])
+            names = [j["name"] for j in jobs]
             if code:
-                log(f"{job['name']}: push failed: {out[-300:]}")
+                log(f"{' and '.join(names)}: push failed: {out[-300:]}")
             else:
-                log(f"{job['name']}: training on Kaggle ({left if left is not None else '?'} GPU hours left)")
-                state["queue"].pop(0)
-                state.setdefault("pushed", []).append(job["name"])
+                log(f"{' and '.join(names)}: training on Kaggle in one session ({left if left is not None else '?'} GPU hours left)")
+                del state["queue"][: len(jobs)]
+                state.setdefault("pushed", []).extend(names)
+                for n in names:
+                    state.setdefault("kernels", {})[n] = f"{names[0]}-train"
             save(state)
 
 

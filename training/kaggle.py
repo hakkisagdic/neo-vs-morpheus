@@ -13,7 +13,9 @@ Then, from the repo root (standard library only):
     python3 training/kaggle.py fetch  --name ...   # download the checkpoint, check every file
 
 Every run is its own private dataset (the labels, gzipped) and its own private script kernel, so
-several can run side by side. The kernel clones this repository at the local HEAD, so push first;
+several can run side by side. A kernel has two T4s, so `train --pair B --pair-data b.jsonl` trains
+a second run on the other GPU in the same session (one session's quota for two models); fetch it
+with `fetch --name B --kernel <first run>-train`. The kernel clones this repository at the local HEAD, so push first;
 it pip-installs Laya, trains with training/finetune.py, and leaves the checkpoint in
 /kaggle/working with a SHA-256 for every file in its log. Kaggle's T4 and P100 have no bf16, so
 the default is fp16 with loss scaling, and batch 16 with 4-step accumulation (64 per step).
@@ -62,37 +64,72 @@ def slug(name):
     return re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-")
 
 
-KERNEL = '''# neo-vs-morpheus: train {name} on a Kaggle GPU (written by training/kaggle.py)
-import glob, gzip, hashlib, os, subprocess, sys
+KERNEL = '''# neo-vs-morpheus: train {names} on a Kaggle GPU (written by training/kaggle.py)
+# A kernel has two T4s: two runs train at the same time, one on each, in one session of the quota.
+import glob, gzip, hashlib, os, subprocess, sys, threading
 
 repo = "/tmp/neo-vs-morpheus"
-out = "/kaggle/working/{name}"
+runs = {runs}  # (name, dataset, sha256 of the labels)
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "{laya}"], check=True)
 subprocess.run(["git", "clone", "-q", "{repo_url}", repo], check=True)
 subprocess.run("git fetch -q --depth 1 origin {commit} && git checkout -q FETCH_HEAD", shell=True, check=True, cwd=repo)
 os.makedirs(repo + "/training/data", exist_ok=True)
+print(subprocess.run(["git", "log", "--oneline", "-1"], capture_output=True, text=True, cwd=repo).stdout.strip(), flush=True)
+gpus = subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader", shell=True, capture_output=True, text=True).stdout.strip().splitlines()
+print("\\n".join(gpus), flush=True)
 # Where Kaggle mounts a dataset, and whether it unpacks the .gz, has changed over time: search.
 found = sorted(glob.glob("/kaggle/input/**/labels.jsonl*", recursive=True))
-print("labels file:", found, flush=True)
-if not found:
-    raise SystemExit("no labels under /kaggle/input: " + repr([p for p in glob.glob("/kaggle/input/**", recursive=True)][:20]))
-with (gzip.open if found[0].endswith(".gz") else open)(found[0], "rb") as f:
-    data = f.read()
-with open(repo + "/training/data/labeled.jsonl", "wb") as f:
-    f.write(data)
-print("labels", data.count(b"\\n"), "lines, checksum", "ok" if hashlib.sha256(data).hexdigest() == "{digest}" else "MISMATCH", flush=True)
-print(subprocess.run(["git", "log", "--oneline", "-1"], capture_output=True, text=True, cwd=repo).stdout.strip(), flush=True)
-print(subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader", shell=True, capture_output=True, text=True).stdout.strip(), flush=True)
-subprocess.run([sys.executable, "-u", "training/finetune.py", "--mode", "top", "--data", "training/data/labeled.jsonl",
-                "--out", out, *{args}], check=True, cwd=repo)
-for root, _, files in os.walk(out):
-    for f in sorted(files):
-        path = os.path.join(root, f)
-        h = hashlib.sha256()
-        with open(path, "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 24), b""):
-                h.update(chunk)
-        print("sha256", h.hexdigest(), os.path.relpath(path, out), flush=True)
+print("labels files:", found, flush=True)
+failed = []
+
+
+def train(gpu, name, dataset, digest):
+    mine = [p for p in found if "/" + dataset + "/" in p] or (found if len(runs) == 1 else [])
+    if not mine:
+        raise SystemExit("no labels for " + dataset + " under /kaggle/input")
+    with (gzip.open if mine[0].endswith(".gz") else open)(mine[0], "rb") as f:
+        data = f.read()
+    print("[" + name + "] labels", data.count(b"\\n"), "lines, checksum", "ok" if hashlib.sha256(data).hexdigest() == digest else "MISMATCH", flush=True)
+    path = repo + "/training/data/labeled-" + name + ".jsonl"
+    with open(path, "wb") as f:
+        f.write(data)
+    proc = subprocess.Popen([sys.executable, "-u", "training/finetune.py", "--mode", "top", "--data", path,
+                             "--out", "/kaggle/working/" + name, *{args}], cwd=repo, text=True,
+                            env=dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu)), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for line in proc.stdout:
+        print("[" + name + "] " + line.rstrip(), flush=True)
+    if proc.wait():
+        raise SystemExit(name + " failed")
+
+
+def guarded(gpu, run):
+    try:
+        train(gpu, *run)
+    except BaseException as err:
+        print("FAILED", run[0], repr(err), flush=True)
+        failed.append(run[0])
+
+
+if len(gpus) >= len(runs):
+    threads = [threading.Thread(target=guarded, args=(i, run)) for i, run in enumerate(runs)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+else:
+    for run in runs:
+        guarded(0, run)
+for name, _, _ in runs:
+    for root, _, files in os.walk("/kaggle/working/" + name):
+        for f in sorted(files):
+            path = os.path.join(root, f)
+            h = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 24), b""):
+                    h.update(chunk)
+            print("sha256", h.hexdigest(), os.path.relpath(path, "/kaggle/working"), flush=True)
+if len(failed) == len(runs):
+    raise SystemExit("every run failed: " + ", ".join(failed))
 '''
 
 
@@ -101,47 +138,51 @@ def train(args):
     if git("branch", "-r", "--contains", commit) == "":
         sys.exit(f"commit {commit[:9]} is not on GitHub yet; push first (the kernel clones it)")
     owner = user()
-    name = slug(args.name)
-    with open(os.path.join(ROOT, args.data), "rb") as f:
-        data = f.read()
-    archive(os.path.join(ROOT, args.data), name, args.data_repo)
+    pairs = [(slug(args.name), args.data)] + ([(slug(args.pair), args.pair_data)] if args.pair else [])
+    runs = []
     with tempfile.TemporaryDirectory(prefix="kaggle-") as tmp:
-        # The labels: a private dataset per run, so runs never race over one dataset's versions.
-        ds_dir = os.path.join(tmp, "dataset")
-        os.makedirs(ds_dir)
-        with gzip.open(os.path.join(ds_dir, "labels.jsonl.gz"), "wb", compresslevel=9) as f:
-            f.write(data)
-        dataset = f"{name}-labels"
-        with open(os.path.join(ds_dir, "dataset-metadata.json"), "w") as f:
-            json.dump({"title": dataset, "id": f"{owner}/{dataset}", "licenses": [{"name": "other"}]}, f)
-        exists = kaggle("datasets", "status", f"{owner}/{dataset}", check=False).strip() == "ready"
-        if exists:
-            kaggle("datasets", "version", "-p", ds_dir, "-m", f"labels for {name} at {commit[:9]}")
-        else:
-            kaggle("datasets", "create", "-p", ds_dir)
-        for _ in range(60):
-            if kaggle("datasets", "status", f"{owner}/{dataset}", check=False).strip() == "ready":
-                break
-            time.sleep(5)
-        else:
-            sys.exit(f"dataset {owner}/{dataset} is not ready after 5 minutes")
-        lines = data.count(b"\n")
-        print(f"labels: {lines} lines -> private dataset {owner}/{dataset}")
+        for name, path in pairs:
+            with open(os.path.join(ROOT, path), "rb") as f:
+                data = f.read()
+            archive(os.path.join(ROOT, path), name, args.data_repo)
+            # The labels: a private dataset per run, so runs never race over one dataset's versions.
+            ds_dir = os.path.join(tmp, f"dataset-{name}")
+            os.makedirs(ds_dir)
+            with gzip.open(os.path.join(ds_dir, "labels.jsonl.gz"), "wb", compresslevel=9) as f:
+                f.write(data)
+            dataset = f"{name}-labels"
+            with open(os.path.join(ds_dir, "dataset-metadata.json"), "w") as f:
+                json.dump({"title": dataset, "id": f"{owner}/{dataset}", "licenses": [{"name": "other"}]}, f)
+            exists = kaggle("datasets", "status", f"{owner}/{dataset}", check=False).strip() == "ready"
+            if exists:
+                kaggle("datasets", "version", "-p", ds_dir, "-m", f"labels for {name} at {commit[:9]}")
+            else:
+                kaggle("datasets", "create", "-p", ds_dir)
+            for _ in range(60):
+                if kaggle("datasets", "status", f"{owner}/{dataset}", check=False).strip() == "ready":
+                    break
+                time.sleep(5)
+            else:
+                sys.exit(f"dataset {owner}/{dataset} is not ready after 5 minutes")
+            lines = data.count(b"\n")
+            print(f"labels: {lines} lines -> private dataset {owner}/{dataset}")
+            runs.append((name, dataset, hashlib.sha256(data).hexdigest()))
 
-        # The kernel: a private GPU script that trains and leaves the checkpoint in its output.
+        # The kernel: a private GPU script that trains and leaves the checkpoints in its output.
         k_dir = os.path.join(tmp, "kernel")
         os.makedirs(k_dir)
         train_args = ["--train-top-layers", str(args.train_top_layers), "--epochs", str(args.epochs),
                       "--batch", str(args.batch), "--accum", str(args.accum), "--holdout", str(args.holdout),
                       "--precision", args.precision] + (["--no-checkpointing"] if args.no_checkpointing else [])
         with open(os.path.join(k_dir, "train.py"), "w") as f:
-            f.write(KERNEL.format(name=name, laya=LAYA, repo_url=REPO_URL, commit=commit, dataset=dataset,
-                                  digest=hashlib.sha256(data).hexdigest(), args=repr(train_args)))
+            f.write(KERNEL.format(names=" and ".join(r[0] for r in runs), runs=repr(runs), laya=LAYA, repo_url=REPO_URL,
+                                  commit=commit, args=repr(train_args)))
+        name = runs[0][0]
         kernel = f"{name}-train"
         with open(os.path.join(k_dir, "kernel-metadata.json"), "w") as f:
             json.dump({"id": f"{owner}/{kernel}", "title": kernel, "code_file": "train.py", "language": "python",
                        "kernel_type": "script", "is_private": True, "enable_gpu": True, "enable_internet": True,
-                       "dataset_sources": [f"{owner}/{dataset}"], "competition_sources": [], "kernel_sources": [],
+                       "dataset_sources": [f"{owner}/{r[1]}" for r in runs], "competition_sources": [], "kernel_sources": [],
                        "machine_shape": args.accelerator}, f)
         # Kaggle runs two GPU sessions at a time and answers a third push with an error on stdout
         # (exit code 0): wait for a slot rather than report a kernel that never started.
@@ -154,11 +195,16 @@ def train(args):
         print(out)
         if "error" in out.lower():
             sys.exit(f"kernel push failed: {out}")
-    print(f"kernel {owner}/{kernel} started at {commit[:9]} on {args.accelerator}: {' '.join(train_args)}")
+    print(f"kernel {owner}/{kernel} started at {commit[:9]} on {args.accelerator} for {', '.join(r[0] for r in runs)}: {' '.join(train_args)}")
+
+
+def kernel_of(args):
+    """The kernel that trains a run: its own, or its pair's (--kernel), which trained two runs in one session."""
+    return slug(args.kernel) if args.kernel else f"{slug(args.name)}-train"
 
 
 def status(args, quiet=False):
-    out = kaggle("kernels", "status", f"{user()}/{slug(args.name)}-train", check=False).strip()
+    out = kaggle("kernels", "status", f"{user()}/{kernel_of(args)}", check=False).strip()
     state = re.search(r'status "?([\w.]+)', out)
     if not quiet:
         print(out)
@@ -176,7 +222,7 @@ def wait(args):
 
 def fetch(args):
     name = slug(args.name)
-    kernel = f"{user()}/{name}-train"
+    kernel = f"{user()}/{kernel_of(args)}"
     local = os.path.join(ROOT, "training", "checkpoints", name)
     with tempfile.TemporaryDirectory(prefix="kaggle-out-", dir=os.path.join(ROOT, "training", "checkpoints")) as tmp:
         kaggle("kernels", "output", kernel, "-p", tmp)
@@ -188,6 +234,9 @@ def fetch(args):
         except (ValueError, AttributeError):
             pass
         digests = {rel: digest for digest, rel in re.findall(r"sha256 ([0-9a-f]{64}) (\S+)", log)}
+        # Kernels that train two runs list each file under its run's folder; older ones, the run's own.
+        mine = {rel[len(name) + 1:]: digest for rel, digest in digests.items() if rel.startswith(f"{name}/")}
+        digests = mine or digests
         src = os.path.join(tmp, name)
         if not digests or not os.path.isdir(src):
             tail = "\n".join(log.splitlines()[-30:])
@@ -214,6 +263,9 @@ def main():
     ap.add_argument("command", choices=["train", "status", "wait", "fetch", "all"])
     ap.add_argument("--name", required=True, help="run name; also names the dataset and the kernel")
     ap.add_argument("--data", default="training/data/train-all.jsonl")
+    ap.add_argument("--pair", help="a second run trained in the same session, on the kernel's other GPU")
+    ap.add_argument("--pair-data", help="the second run's training set")
+    ap.add_argument("--kernel", help="status/wait/fetch: the kernel that trained the run, when it was a pair's")
     ap.add_argument("--data-repo", default=DATA_REPO, help="private dataset that keeps each run's training set")
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--batch", type=int, default=16)
