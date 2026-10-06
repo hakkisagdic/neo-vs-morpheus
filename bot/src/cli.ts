@@ -81,8 +81,9 @@ const USAGE = `usage: npm run nvm -- <command>
                       range that labeled.jsonl lacks, plus n sampled ones (states-movement.jsonl)
   distill dagger [since]    the states Laya met in recorded runs (time stamps >= since), answered by the
                             scripted bot: DAgger rows (training/data/labeled-dagger-runs.jsonl)
-  distill outcomes [since]  decisions from recorded runs (time stamps >= since) that did clearly better
-                            than average, as training rows (training/data/labeled-outcome.jsonl)
+  distill outcomes [since] [--model NAME]  decisions from recorded runs (time stamps >= since) that did
+                            clearly better than average, as training rows (training/data/labeled-outcome.jsonl;
+                            with --model, one checkpoint's own against its own average, labeled-outcome-NAME.jsonl)
   distill convert           carry every mage label over to the current question
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
@@ -620,10 +621,17 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     }
   } else if (sub === "outcomes") {
     // What happened after every recorded decision, as training rows (see distill/outcomes.ts).
+    // --model NAME keeps one checkpoint's own decisions, scored against its own average: the moves
+    // that went better than its usual play, for improving that checkpoint itself.
+    const modelAt = rest.indexOf("--model");
+    const only = modelAt >= 0 ? rest[modelAt + 1] : undefined;
+    if (modelAt >= 0) {
+      rest.splice(modelAt, 2);
+    }
     const since = rest[0] ?? "";
-    const scored = await scoreRuns(join(import.meta.dirname, "..", "..", "runs"), since, (m) => console.log(m));
+    const scored = await scoreRuns(join(import.meta.dirname, "..", "..", "runs"), since, (m) => console.log(m), (d) => !only || d.model === only);
     const rows = outcomeLabels(scored);
-    const path = join(DATA, "labeled-outcome.jsonl");
+    const path = join(DATA, only ? `labeled-outcome-${only}.jsonl` : "labeled-outcome.jsonl");
     await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const byModule = Object.entries(Object.groupBy(rows, (r) => r.module ?? "mage")).map(([m, rs]) => `${m} ${rs?.length}`);
     console.log(`${scored.length} decisions scored, ${rows.length} clearly better than average (${byModule.join(", ")}) -> ${path}`);

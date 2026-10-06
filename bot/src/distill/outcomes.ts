@@ -74,6 +74,8 @@ export type Scored = {
   id: string;
   bot: string;
   brain: string;
+  /** The checkpoint that decided (laya), or the brain's name. */
+  model?: string;
   module: ModuleName;
   key: string;
   /** Damage dealt minus taken over the horizon, plus the round's result, in health points. */
@@ -103,7 +105,7 @@ export function scoreRun(file: string, run: Run): Scored[] {
         const ret = before.them - after.them - (before.us - after.us) + RESULT_POINTS * result * Math.exp(-(end - rec.at) / 10_000);
         // Runs from before modules existed are the mage's.
         const module = rec.decision.module ?? "mage";
-        out.push({ id: `outcome:${file}:${index.get(rec)}`, bot, brain: rec.decision.brain, module, key, ret, snapshot: rec.snapshot });
+        out.push({ id: `outcome:${file}:${index.get(rec)}`, bot, brain: rec.decision.brain, model: rec.decision.model, module, key, ret, snapshot: rec.snapshot });
       }
     }
   });
@@ -113,8 +115,11 @@ export function scoreRun(file: string, run: Run): Scored[] {
 /** A run file's time stamp, whichever machine played it ("alastyr--2026-10-05T…" or "2026-10-05T…"). */
 export const runStamp = (file: string): string => (file.includes("--") ? file.slice(file.lastIndexOf("--") + 2) : file);
 
-/** Scored decisions of every run since a time stamp, leaving out runs that fail the run checks. */
-export async function scoreRuns(runsDir: string, since = "", log: (m: string) => void = () => {}): Promise<Scored[]> {
+/**
+ * Scored decisions of every run since a time stamp, leaving out runs that fail the run checks;
+ * `keep` drops decisions as each run is read (a day of runs holds millions of decisions).
+ */
+export async function scoreRuns(runsDir: string, since = "", log: (m: string) => void = () => {}, keep: (d: Scored) => boolean = () => true): Promise<Scored[]> {
   const files = (await readdir(runsDir)).filter((f) => f.endsWith(".json") && runStamp(f) >= since).sort();
   const out: Scored[] = [];
   for (const file of files) {
@@ -125,7 +130,11 @@ export async function scoreRuns(runsDir: string, since = "", log: (m: string) =>
       log(`skipping ${file}: ${problems.join("; ")}`);
       continue;
     }
-    out.push(...scoreRun(file, run));
+    for (const d of scoreRun(file, run)) {
+      if (keep(d)) {
+        out.push(d);
+      }
+    }
   }
   return out;
 }
