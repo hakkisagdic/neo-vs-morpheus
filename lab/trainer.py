@@ -335,7 +335,10 @@ def round_once():
     state = load()
     kernels = sessions()
     if kernels is None:
-        log("the Kaggle CLI did not answer; next round")
+        # Kaggle is out of reach (or its login ran out): the Mac's own steps still run.
+        log("the Kaggle CLI did not answer (logged out?); only the gate and labeling this round")
+        gate(state)
+        label(state)
         return
     # 1. Finished trainings come home and go on the lanes.
     for name in list(state.get("pushed", [])):
