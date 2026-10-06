@@ -211,6 +211,8 @@ def main():
     ap.add_argument("--lr-head", type=float, default=1e-4)
     ap.add_argument("--holdout", type=float, default=0.1)
     ap.add_argument("--seed", type=int, default=20260927)
+    ap.add_argument("--init", help="start from this fine-tuned checkpoint (its model.safetensors) instead of the base model, "
+                                   "to improve a champion rather than learn from scratch; pair it with low learning rates")
     ap.add_argument("--precision", choices=["fp32", "bf16", "fp16"], default="fp32",
                     help="CUDA only: run the model in bf16 (Ampere and newer) or fp16 with loss scaling (T4, P100)")
     ap.add_argument("--no-checkpointing", action="store_true",
@@ -245,7 +247,8 @@ def main():
     print(f"device {device} | {args.precision} | mode {args.mode} | {len(items)} items ({skipped} skipped: options did not fit) | "
           f"train {len(train)} / held out {len(hold)} | tokens p50 {lengths[len(lengths) // 2]} max {lengths[-1]}")
 
-    base_weights = load_file(os.path.join(base, "model.safetensors"))
+    # The weights training starts from, and that the saved checkpoint keeps where nothing was trained.
+    base_weights = load_file(os.path.join(args.init or base, "model.safetensors"))
     model = build_model(cfg, encoder_dir=os.path.join(base, "encoder"))
     model.load_state_dict(base_weights, strict=True)
     pad = tok.pad_token_id
@@ -364,7 +367,8 @@ def main():
         "model_name": "laya-neo-duel",
         "temperature": [temperature, cfg["temperature"][1], cfg["temperature"][2]],
         "training": {"mode": args.mode, "epochs": args.epochs, "items": len(train), "teacher": "jev",
-                     "base": f"{BASE_REPO}/{BASE_SUBFOLDER}", "seconds": round(time.time() - t0),
+                     "base": f"{BASE_REPO}/{BASE_SUBFOLDER}", **({"init": os.path.basename(os.path.normpath(args.init))} if args.init else {}),
+                     "seconds": round(time.time() - t0),
                      "held_out_agreement": [round(agree0, 3), round(agree, 3)]},
     })
     cfg.pop("temperature_by_options", None)
