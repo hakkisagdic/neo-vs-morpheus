@@ -69,7 +69,7 @@ KERNEL = '''# neo-vs-morpheus: train {names} on a Kaggle GPU (written by trainin
 import glob, gzip, hashlib, os, subprocess, sys, threading
 
 repo = "/tmp/neo-vs-morpheus"
-runs = {runs}  # (name, dataset, sha256 of the labels)
+runs = {runs}  # (name, dataset, sha256 of the labels, the run's own extra finetune.py options)
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "{laya}"], check=True)
 subprocess.run(["git", "clone", "-q", "{repo_url}", repo], check=True)
 subprocess.run("git fetch -q --depth 1 origin {commit} && git checkout -q FETCH_HEAD", shell=True, check=True, cwd=repo)
@@ -83,7 +83,7 @@ print("labels files:", found, flush=True)
 failed = []
 
 
-def train(gpu, name, dataset, digest):
+def train(gpu, name, dataset, digest, extra):
     mine = [p for p in found if "/" + dataset + "/" in p] or (found if len(runs) == 1 else [])
     if not mine:
         raise SystemExit("no labels for " + dataset + " under /kaggle/input")
@@ -94,7 +94,7 @@ def train(gpu, name, dataset, digest):
     with open(path, "wb") as f:
         f.write(data)
     proc = subprocess.Popen([sys.executable, "-u", "training/finetune.py", "--mode", "top", "--data", path,
-                             "--out", "/kaggle/working/" + name, *{args}], cwd=repo, text=True,
+                             "--out", "/kaggle/working/" + name, *{args}, *extra], cwd=repo, text=True,
                             env=dict(os.environ, CUDA_VISIBLE_DEVICES=str(gpu)), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     for line in proc.stdout:
         print("[" + name + "] " + line.rstrip(), flush=True)
@@ -119,7 +119,7 @@ if len(gpus) >= len(runs):
 else:
     for run in runs:
         guarded(0, run)
-for name, _, _ in runs:
+for name, *_ in runs:
     for root, _, files in os.walk("/kaggle/working/" + name):
         for f in sorted(files):
             path = os.path.join(root, f)
@@ -138,10 +138,10 @@ def train(args):
     if git("branch", "-r", "--contains", commit) == "":
         sys.exit(f"commit {commit[:9]} is not on GitHub yet; push first (the kernel clones it)")
     owner = user()
-    pairs = [(slug(args.name), args.data)] + ([(slug(args.pair), args.pair_data)] if args.pair else [])
+    pairs = [(slug(args.name), args.data, [])] + ([(slug(args.pair), args.pair_data, (args.pair_args or "").split())] if args.pair else [])
     runs = []
     with tempfile.TemporaryDirectory(prefix="kaggle-") as tmp:
-        for name, path in pairs:
+        for name, path, extra in pairs:
             with open(os.path.join(ROOT, path), "rb") as f:
                 data = f.read()
             archive(os.path.join(ROOT, path), name, args.data_repo)
@@ -166,7 +166,7 @@ def train(args):
                 sys.exit(f"dataset {owner}/{dataset} is not ready after 5 minutes")
             lines = data.count(b"\n")
             print(f"labels: {lines} lines -> private dataset {owner}/{dataset}")
-            runs.append((name, dataset, hashlib.sha256(data).hexdigest()))
+            runs.append((name, dataset, hashlib.sha256(data).hexdigest(), extra))
 
         # The kernel: a private GPU script that trains and leaves the checkpoints in its output.
         k_dir = os.path.join(tmp, "kernel")
@@ -265,6 +265,7 @@ def main():
     ap.add_argument("--data", default="training/data/train-all.jsonl")
     ap.add_argument("--pair", help="a second run trained in the same session, on the kernel's other GPU")
     ap.add_argument("--pair-data", help="the second run's training set")
+    ap.add_argument("--pair-args", help='finetune.py options for the second run only, e.g. "--seed 2"')
     ap.add_argument("--kernel", help="status/wait/fetch: the kernel that trained the run, when it was a pair's")
     ap.add_argument("--data-repo", default=DATA_REPO, help="private dataset that keeps each run's training set")
     ap.add_argument("--epochs", type=int, default=4)
