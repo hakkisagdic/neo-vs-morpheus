@@ -164,9 +164,9 @@ export class RuleBrain implements DuelBrain {
   async decide(s: DuelSnapshot): Promise<Decision> {
     const started = performance.now();
     const decision = await this.#decideNow(s);
-    const wait = this.reactionMs - (performance.now() - started);
-    if (wait > 0) {
-      await new Promise((resolve) => setTimeout(resolve, wait));
+    // A timer can fire a millisecond early by performance.now(): wait out whatever is left.
+    for (let wait = this.reactionMs - (performance.now() - started); wait > 0; wait = this.reactionMs - (performance.now() - started)) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(1, wait)));
     }
     return { ...decision, latencyMs: performance.now() - started };
   }

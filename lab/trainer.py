@@ -119,9 +119,22 @@ def kernel(state, name):
     return state.get("kernels", {}).get(name, f"{name}-train")
 
 
+def track(*names):
+    """Records versions in the MLflow experiment (lab/track.py, in its own .mlflow environment)."""
+    py = os.path.join(ROOT, ".mlflow", "bin", "python")
+    if os.path.exists(py):
+        code, out = sh([py, "lab/track.py", "sync", *names], timeout=600)
+        if code:
+            log(f"MLflow record failed: {out[-200:]}")
+
+
 def fetch(state, name):
     code, out = sh([sys.executable, "training/kaggle.py", "fetch", "--name", name, "--kernel", kernel(state, name)])
     log(f"{name}: fetched" if not code else f"{name}: fetch failed: {out[-300:]}")
+    # The training's own lines (each epoch's held-out agreement), for the experiment record.
+    os.makedirs(os.path.join(ROOT, ".fleet", "kaggle-logs"), exist_ok=True)
+    with open(os.path.join(ROOT, ".fleet", "kaggle-logs", f"{name}.log"), "w") as f:
+        f.write(out)
     if code:
         return False
     code, out = sh([PY, "training/publish_hf.py", "model", os.path.join("training", "checkpoints", name), "--tag", name, "--card", "docs/hf/laya-neo-duel.md"])
@@ -136,6 +149,13 @@ def evaluate(state, name):
     order = state.setdefault("arrived", [])
     free = [l for l in lanes if str(l) not in candidates]
     lane = free[0] if free else min(lanes, key=lambda l: order.index(candidates[str(l)]) if candidates[str(l)] in order else -1)
+    if str(lane) in candidates:
+        # The older candidate leaves before its verdict: keep what it had played.
+        old = candidates[str(lane)]
+        results = duel_results(state.get("eval_since", {}).get(old, ""))
+        (w, l), (bw, bl) = results.get(old, (0, 0)), results.get(state.get("champion", "neo-duel-v8"), (0, 0))
+        state.setdefault("history", []).append({"replaced": old, "at": state.get("eval_since", {}).get(old),
+            "result": f"{old} {100 * w / max(1, w + l):.0f}% ({w}-{l}) against {state.get('champion')} {100 * bw / max(1, bw + bl):.0f}% ({bw}-{bl}), replaced before {GATE_ROUNDS} rounds"})
     code, out = sh([sys.executable, "lab/evaluate.py", "--model", name, "--lane", str(lane)])
     log(f"{name}: evaluating on lane {lane}" if not code else f"{name}: evaluation start failed: {out[-300:]}")
     candidates[str(lane)] = name
@@ -190,11 +210,13 @@ def gate(state):
             state.setdefault("history", []).append({"promoted": name, "over": champion, "at": since, "result": verdict})
             del state["candidates"][lane]
             log(f"promoted: {verdict}; lanes {moved} now play it")
+            track(name, champion)
         elif z < -GATE_Z:
             sh([sys.executable, "lab/evaluate.py", "--model", champion, "--lane", lane])
             state.setdefault("history", []).append({"dropped": name, "at": since, "result": verdict})
             del state["candidates"][lane]
             log(f"dropped: {verdict}; lane {lane} plays {champion} again")
+            track(name)
         else:
             log(f"undecided: {verdict}")
         save(state)
@@ -322,6 +344,7 @@ def round_once():
                 evaluate(state, name)
             else:
                 state.setdefault("failed", []).append(name)
+            track(name)
         elif st == "error" or st.startswith("cancel"):  # Kaggle says CANCEL_ACKNOWLEDGED
             log(f"{name}: the kernel ended with {st}; left out")
             state["pushed"].remove(name)
