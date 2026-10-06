@@ -10,7 +10,7 @@ import { type RunCheck, checkRun } from "../eval/run-checks.ts";
 type Fighter = { name: string; brain: string; template?: string; tactics?: string; reactionMs?: number };
 
 export type RunFile = {
-  versions?: { models?: Record<string, string>; where?: { instance?: string; lane?: string }; [k: string]: unknown };
+  versions?: { models?: Record<string, string>; where?: { instance?: string; lane?: string }; bench?: string; [k: string]: unknown };
   match: {
     title: string;
     fighters: Fighter[];
@@ -28,6 +28,8 @@ export type RunInfo = {
   file: string;
   instance: string;
   lane?: string;
+  /** The benchmark track that played it ("uo-bench/1:duel-ml"), if any. */
+  bench?: string;
   startedAt: number;
   arena: string;
   sides: string[];
@@ -105,6 +107,7 @@ export function runInfo(file: string, run: RunFile): RunInfo {
     file,
     instance: instanceOf(file, run),
     lane: run.versions?.where?.lane,
+    bench: run.versions?.bench,
     startedAt: m.startedAt,
     arena: `${m.arena ?? "open"} ${m.distance ?? 8}`,
     sides,
@@ -142,13 +145,15 @@ export function summarise(file: string, run: RunFile, checks: Pick<RunCheck, "bo
   };
 }
 
-export type TallyOptions = { since?: number; instance?: string; includeFlagged?: boolean; byArena?: boolean };
+/** bench: runs of that benchmark track only; false: no benchmark runs (selection keeps away from them). */
+export type TallyOptions = { since?: number; instance?: string; includeFlagged?: boolean; byArena?: boolean; bench?: string | false };
 
 /** Rows by matchup (sides sorted so that both seatings add up), most rounds first. */
 export function tally(runs: RunInfo[], o: TallyOptions = {}): Row[] {
   const rows = new Map<string, Row>();
   for (const run of runs) {
-    if ((o.since && run.startedAt < o.since) || (o.instance && run.instance !== o.instance) || run.sides.length !== 2) {
+    const benchOut = o.bench === false ? Boolean(run.bench) : o.bench !== undefined && run.bench !== o.bench;
+    if ((o.since && run.startedAt < o.since) || (o.instance && run.instance !== o.instance) || run.sides.length !== 2 || benchOut) {
       continue;
     }
     const order = run.sides[0] <= run.sides[1] ? [0, 1] : [1, 0];

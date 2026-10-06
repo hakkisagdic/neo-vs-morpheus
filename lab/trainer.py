@@ -174,7 +174,8 @@ def evaluate(state, name):
 def duel_results(since):
     """Mage-duel round wins and losses against the scripted bot at matched speed (rules@60 or quicker)
     on this Mac since a time, by checkpoint, its own play only (no tactics profile)."""
-    code, out = sh(["npm", "run", "-s", "nvm", "--", "fleet", "results", "--since", since, "--instance", "mac"], cwd=BOT, timeout=900)
+    # Benchmark runs stay out: a bench score must come from rounds no selection has seen.
+    code, out = sh(["npm", "run", "-s", "nvm", "--", "fleet", "results", "--since", since, "--instance", "mac", "--no-bench"], cwd=BOT, timeout=900)
     results = {}
     for m in re.finditer(r"^(neo-duel-\S+) mage vs rules@(\d+) mage: (\d+)-(\d+)", out, re.M):
         if int(m.group(2)) <= MATCHED_MS:

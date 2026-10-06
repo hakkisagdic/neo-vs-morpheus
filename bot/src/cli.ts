@@ -26,6 +26,7 @@ import { config, requireSetting } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
 import { type Instance, formatInfo, loadFleet, pick } from "./fleet/instances.ts";
 import { formatRows, readRuns, tally } from "./fleet/results.ts";
+import { leaderboard, leaderboardMarkdown } from "./bench/leaderboard.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
 import { loadTemplate } from "./game/templates.ts";
@@ -65,6 +66,9 @@ const USAGE = `usage: npm run nvm -- <command>
   fleet stop <instance> [--lane N]
   fleet logs <instance> [--lane N] [--lines N]
                       the same tools for an assistant: the MCP server in src/fleet/mcp.ts
+  leaderboard [--bench uo-bench/1] [--write]
+                      UO Bench's scores with 95% intervals (bench/<id>.json; lab/bench.py plays it);
+                      --write keeps them in bench/results/ and docs/BENCH.md
   panel               the control panel at localhost:MONITOR_PORT, up until Ctrl-C: live matches
                       (duels publish to it while it runs), every recorded run and its replay
   train <Name> [--partner Name] [--resist] [--minutes N] [--goal N]
@@ -182,7 +186,8 @@ const SLOT_NAMES = [
   ["Rama", "Zee"],
 ] as const;
 
-type SeriesEntry = { label: string; a: string; b: string; rounds?: number; distance?: number; arena?: ArenaLayout; timeout?: number };
+/** bench: the benchmark track the match belongs to ("uo-bench/1:ml/duel-mage"), recorded with the run. */
+type SeriesEntry = { label: string; a: string; b: string; rounds?: number; distance?: number; arena?: ArenaLayout; timeout?: number; bench?: string };
 
 /**
  * Several matches at once, one per arena slot, sharing one GM session. Each slot's bots take the
@@ -229,6 +234,7 @@ async function series(args: string[]): Promise<void> {
             arena: e.arena ?? "open",
             slot,
             gm,
+            bench: e.bench,
           },
           hub,
           (m) => {
@@ -268,6 +274,8 @@ async function fleet(args: string[]): Promise<void> {
       instance: { type: "string" },
       flagged: { type: "boolean" },
       "by-arena": { type: "boolean" },
+      bench: { type: "string" },
+      "no-bench": { type: "boolean" },
       lane: { type: "string" },
       parallel: { type: "string" },
       model: { type: "string" },
@@ -278,7 +286,8 @@ async function fleet(args: string[]): Promise<void> {
   const num = (v?: string) => (v === undefined ? undefined : Number(v));
   if (action === "results") {
     const since = values.since ? Date.parse(values.since) : undefined;
-    console.log(formatRows(tally(await readRuns(), { since, instance: values.instance, includeFlagged: values.flagged, byArena: values["by-arena"] })));
+    const bench = values["no-bench"] ? false : values.bench;
+    console.log(formatRows(tally(await readRuns(), { since, instance: values.instance, includeFlagged: values.flagged, byArena: values["by-arena"], bench })));
     return;
   }
   if (!["setup", "status", "pull", "start", "stop", "logs"].includes(action) || (["setup", "start", "stop", "logs"].includes(action) && !name)) {
@@ -307,6 +316,25 @@ async function fleet(args: string[]): Promise<void> {
     pick(await loadFleet(), name).map(async (i) => `== ${i.name}\n${await step(i).catch((err: Error) => `error: ${err.message}`)}`),
   );
   console.log(answers.join("\n\n"));
+}
+
+/** UO Bench's leaderboard from the runs tagged with a bench version (bench/<id>.json describes it). */
+async function leaderboardCommand(args: string[]): Promise<void> {
+  const { values } = parseArgs({ args, options: { bench: { type: "string", default: "uo-bench/1" }, write: { type: "boolean" } } });
+  const id = values.bench as string;
+  const root = join(import.meta.dirname, "..", "..");
+  const spec = JSON.parse(await readFile(join(root, "bench", `${id.replace("/", "-")}.json`), "utf8")) as {
+    half_width: number;
+    tracks: Record<string, { about: string }>;
+  };
+  const rows = leaderboard(await readRuns(), id, spec.half_width);
+  const markdown = leaderboardMarkdown(rows, id, Object.fromEntries(Object.entries(spec.tracks).map(([k, t]) => [k, t.about])));
+  console.log(markdown);
+  if (values.write) {
+    await mkdir(join(root, "bench", "results"), { recursive: true });
+    await writeFile(join(root, "bench", "results", `${id.replace("/", "-")}.json`), JSON.stringify({ bench: id, at: new Date().toISOString(), rows }, null, 1) + "\n");
+    await writeFile(join(root, "docs", "BENCH.md"), markdown + "\n");
+  }
 }
 
 async function panel(): Promise<void> {
@@ -708,6 +736,9 @@ try {
       break;
     case "panel":
       await panel();
+      break;
+    case "leaderboard":
+      await leaderboardCommand(args);
       break;
     case "series":
       await series(args);

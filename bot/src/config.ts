@@ -24,6 +24,8 @@ export const config = {
   /** Where matches run, for runs gathered from several machines (lab/vm, the fleet). */
   fleetInstance: env("FLEET_INSTANCE"),
   fleetLane: env("FLEET_LANE"),
+  /** The benchmark track a run belongs to ("uo-bench/1:duel-ml"); bench runs are kept apart from selection. */
+  bench: env("BENCH"),
   /** How long the scripted bot takes to act on a decision: a fair rival thinks too (Laya: 0.25 s). */
   rulesReactionMs: envInt("RULES_REACTION_MS", 100),
 };

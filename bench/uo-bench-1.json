@@ -1,0 +1,49 @@
+{
+  "id": "uo-bench/1",
+  "about": "UO Bench, version 1: decision models playing Ultima Online, by shard rules, profession and task. A player's score on a track is its share of points (a win 1, a draw 1/2) over the track's matches, with a 95% interval from a bootstrap over runs (the rounds of one run share its arena and seating, so they are not independent). A score counts as settled once that interval is within 3 points either way. Bench runs are kept apart from the training loop's selection, so that no score comes from rounds a selection has seen.",
+  "half_width": 0.03,
+  "tracks": {
+    "ml/duel-mage": {
+      "shard": "modernuo-ml",
+      "about": "Mage against the scripted mage at matched speed (it reacts in 40 ms), on five arenas, from both seats.",
+      "rounds": 10,
+      "player": "{player}:mage",
+      "opponent": "rules@40:mage",
+      "entries": [
+        { "label": "8 tiles", "distance": 8 },
+        { "label": "12 tiles", "distance": 12 },
+        { "label": "4 tiles", "distance": 4 },
+        { "label": "pillars", "arena": "pillars" },
+        { "label": "wall", "arena": "wall" }
+      ]
+    },
+    "ml/duel-dexer": {
+      "shard": "modernuo-ml",
+      "about": "Dexer (sword and shield) against the scripted dexer at matched speed, on five arenas, from both seats.",
+      "rounds": 10,
+      "player": "{player}:dexer",
+      "opponent": "rules@40:dexer",
+      "entries": [
+        { "label": "8 tiles", "distance": 8 },
+        { "label": "12 tiles", "distance": 12 },
+        { "label": "4 tiles", "distance": 4 },
+        { "label": "pillars", "arena": "pillars" },
+        { "label": "wall", "arena": "wall" }
+      ]
+    },
+    "ml/duel-archer": {
+      "shard": "modernuo-ml",
+      "about": "Archer against the scripted archer at matched speed, on five arenas, from both seats.",
+      "rounds": 10,
+      "player": "{player}:archer",
+      "opponent": "rules@40:archer",
+      "entries": [
+        { "label": "8 tiles", "distance": 8 },
+        { "label": "12 tiles", "distance": 12 },
+        { "label": "4 tiles", "distance": 4 },
+        { "label": "pillars", "arena": "pillars" },
+        { "label": "wall", "arena": "wall" }
+      ]
+    }
+  }
+}

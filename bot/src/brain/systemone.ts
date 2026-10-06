@@ -28,7 +28,8 @@ export type Decision = {
 };
 
 export type Backend = {
-  name: "laya" | "jev";
+  /** "random": no server; every legal option equally likely, one of them picked at random. */
+  name: "laya" | "jev" | "random";
   url: string;
   /** Defaults to /v1/systemone; FreeJev serves the same body at /api/v1/decisions. */
   path?: string;
@@ -52,6 +53,9 @@ export async function systemOne(
   idempotencyKey: string = crypto.randomUUID(),
 ): Promise<Decision> {
   const started = performance.now();
+  if (backend.name === "random") {
+    return randomDecision(questions, performance.now() - started);
+  }
   const response = await fetch(`${backend.url.replace(/\/$/, "")}${backend.path ?? "/v1/systemone"}`, {
     method: "POST",
     headers: {
@@ -102,3 +106,17 @@ export async function systemOne(
 
 const oneHot = (options: string[], choice: string) =>
   Object.fromEntries(options.map((o) => [o, o === choice ? 1 : 0]));
+
+/** Equal probabilities and a choice at random, for the random baseline. */
+function randomDecision(questions: Record<string, ChoiceQuestion>, latencyMs: number): Decision {
+  const answers: Record<string, ChoiceAnswer> = {};
+  for (const [id, question] of Object.entries(questions)) {
+    const options = Object.keys(question.criteria);
+    const choice = options[Math.floor(Math.random() * options.length)];
+    // The pick a hair above the rest, so that whatever takes the most likely option takes it.
+    const rest = (1 - 1e-6) / options.length;
+    const probabilities = Object.fromEntries(options.map((o) => [o, o === choice ? rest + 1e-6 : rest]));
+    answers[id] = { choice, probabilities, confidence: 1 / options.length };
+  }
+  return { model: "random", answers, usage: { inputTokens: 0, outputTokens: 0 }, latencyMs };
+}

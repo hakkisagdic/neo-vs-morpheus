@@ -16,7 +16,7 @@ import { type ArenaLayout, OBSTACLE_GRAPHICS } from "./arena.ts";
 import { loadTemplate, moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
-export type BrainKind = "laya" | "jev" | "rules";
+export type BrainKind = "laya" | "jev" | "rules" | "random";
 export type Fighter = {
   kind: "bot";
   name: string;
@@ -42,11 +42,13 @@ export type MatchOptions = {
   arena: ArenaLayout;
   /** Which of the server's arenas, side by side 80 tiles apart (0, the default: the configured one). */
   slot?: number;
+  /** The benchmark track this match plays for, recorded with the run (else BENCH, if set). */
+  bench?: string;
   /** A GM session shared by matches running at once; without one the match opens and closes its own. */
   gm?: Session;
 };
 
-const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules"] satisfies BrainKind[];
+const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules", "random"] satisfies BrainKind[];
 
 /**
  * A fighter's brain as a spec names it: "laya", "jev", "rules", or "rules@250" for the scripted bot
@@ -79,6 +81,9 @@ export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reaction
         model: "typed-decisions",
         timeoutMs: 20_000, // CPU-only in Docker on macOS: seconds, not milliseconds
       }, "composite", module);
+    case "random":
+      // A legal move at random, through the same guardrails as the models: the floor of the bench.
+      return new ModelBrain({ name: "random", url: "" }, "composite", module);
     case "jev":
       return new ModelBrain({
         name: "jev",
@@ -268,7 +273,7 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     for (const problem of match.checks.flatMap((c) => c.problems)) {
       log(`warning: ${problem}; this run is not comparable`);
     }
-    await saveRun(match, records).catch((err) => log(`could not save the run: ${err.message}`));
+    await saveRun(match, records, o.bench ?? config.bench).catch((err) => log(`could not save the run: ${err.message}`));
     // A shared GM session belongs to whoever shared it.
     for (const s of [o.gm ? null : gm, botA, botB]) {
       s?.close();
@@ -288,7 +293,7 @@ function codeVersion(): string {
   }
 }
 
-async function saveRun(match: MatchInfo, records: DecisionRecord[]): Promise<void> {
+async function saveRun(match: MatchInfo, records: DecisionRecord[], bench?: string): Promise<void> {
   const dir = join(import.meta.dirname, "..", "..", "..", "runs");
   await mkdir(dir, { recursive: true });
   const stamp = new Date(match.startedAt).toISOString().replace(/[:.]/g, "-");
@@ -299,7 +304,7 @@ async function saveRun(match: MatchInfo, records: DecisionRecord[]): Promise<voi
   );
   const where = config.fleetInstance ? { instance: config.fleetInstance, ...(config.fleetLane ? { lane: config.fleetLane } : {}) } : undefined;
   // run 3: decisions carry `module` and `parts` (per-mode distributions) instead of damage/interrupt/defense.
-  const versions = { run: 3, code: codeVersion(), mage: FORMAT, melee: MELEE_FORMAT, models, ...(where ? { where } : {}) };
+  const versions = { run: 3, code: codeVersion(), mage: FORMAT, melee: MELEE_FORMAT, models, ...(where ? { where } : {}), ...(bench ? { bench } : {}) };
   const name = where ? `${where.instance}--${stamp}` : stamp;
   await writeFile(join(dir, `${name}.json`), JSON.stringify({ versions, match, records }, null, 1));
 }
