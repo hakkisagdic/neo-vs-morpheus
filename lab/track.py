@@ -11,7 +11,8 @@ is on disk, so a sync can run any number of times:
 - metrics: held-out agreement with the teacher before and after training, each epoch's when the
   training log was kept (.fleet/kaggle-logs/NAME.log), training seconds, and the live result against
   the scripted bot at matched speed next to the champion over the same hours (lab/trainer.py's gate);
-- tags: the status (champion, candidate, promoted, dropped, failed) and the gate's verdict.
+- tags: the status (champion, candidate, promoted, dropped, replaced, dethroned, failed) and the
+  gate's verdict.
 
 MLflow lives in its own environment: uv venv .mlflow --python 3.12 && uv pip install --python
 .mlflow/bin/python mlflow
@@ -90,7 +91,7 @@ def epochs_from_log(name):
         return []
     with open(path) as f:
         text = f.read()
-    return [(int(m[1]), float(m[2]), float(m[3])) for m in re.findall(r"epoch (\d+)/\d+:.*held-out agreement ([\d.]+), soft CE ([\d.]+)", text)]
+    return [(int(e), float(a), float(c)) for e, a, c in re.findall(r"epoch (\d+)/\d+:.*held-out agreement ([\d.]+), soft CE ([\d.]+)", text)]
 
 
 def outcome(state, name):
@@ -105,6 +106,8 @@ def outcome(state, name):
         status = None
     verdict = None
     for h in state.get("history", []):
+        if h.get("over") == name and status is None:
+            status = "dethroned"  # a former champion, beaten by the version promoted over it
         if name in (h.get("promoted"), h.get("dropped"), h.get("replaced")):
             status = status or ("promoted" if h.get("promoted") == name else "dropped" if h.get("dropped") == name else "replaced")
             verdict = h.get("result")

@@ -39,8 +39,13 @@ share of rounds won against it unless stated otherwise.
   lost clearly. On its own states v8 picks the teacher's move only 56.5% of the time, against ~90%
   on its training labels: the states a model meets are not the states it learned from.
 - **Before blaming the data, reproduce the champion.** v8 trained in 9 minutes on an A100; every
-  version after it trained for hours on a T4 in fp16. Retraining v8's own set on today's pipeline,
-  twice with different seeds, tells data effects from pipeline effects. *(Result pending.)*
+  version after it trained for hours on a T4 in fp16. Retraining v8's own set on the T4 pipeline gave
+  the same held-out agreement to three decimals (0.424 to 0.843) and the same live play (67% against
+  v8's 66%): the pipeline was sound, so the losses above came from the data.
+- **The seed is a recipe's hidden variable.** The same set with another seed (another shuffle and
+  held-out split) won 74% against v8's 66% in the same hours (z +3.15) and became the champion, with
+  a *lower* held-out agreement (0.830). Train a good recipe several times and keep the best by live
+  play: the cheapest improvement we found.
 
 ## 3. Free and shared compute
 
@@ -63,6 +68,6 @@ share of rounds won against it unless stated otherwise.
 
 ## 5. Next
 
-- Train on hardware like v8's (an A100-class GPU), and check the reproduction first.
+- More seeds of the champion's recipe, and on a faster GPU, more of them per hour.
 - Improve the champion itself (fine-tune from v8's weights on its own games' outcomes) instead of
   re-imitating teachers from the base model each time.
