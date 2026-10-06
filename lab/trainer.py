@@ -19,6 +19,9 @@
    (build_set.py), and training/kaggle.py starts it. No DAgger rows: the scripted bot's labels made
    neo-duel-v8-dagger-all worse in every build.
 
+recipe "seeds" trains the champion's own set (state "set") again with two fresh seeds per session:
+the seed alone moved a model ten points live, and the gate keeps the best.
+
 recipe "jev" instead builds each version from a fixed base set (state "set") plus the Jev label
 files in extra, once 1,000 new labels have come: outcome rows made v9a lose to v8 (47% against
 62% in the mage duel), so the jev recipe adds none.
@@ -59,8 +62,8 @@ MIN_CREDITS = 300
 LABELER_PID = os.path.join(ROOT, ".fleet", "train", "labeler.pid")
 #: Downloads of a finished kernel's output tried before a version counts as failed.
 FETCH_TRIES = 3
-#: Hours of weekly GPU quota a training needs (a 50-70k row set takes 3-5 h on a T4).
-QUOTA_HOURS = 5.0
+#: Hours of weekly GPU quota a training session needs (v8's 16k-row set, two seeds: 1.5 h on the T4s).
+QUOTA_HOURS = 2.0
 #: Runs still playing when runs are labeled are picked up next time: the next labeling starts this much earlier.
 OVERLAP = datetime.timedelta(minutes=30)
 
@@ -253,8 +256,20 @@ def build_jev(state):
     return jobs
 
 
+def build_seeds(state):
+    """recipe "seeds": the champion's own training set again with two fresh seeds (a session's two
+    GPUs). The seed alone moved a model by ten points live; the gate keeps the best."""
+    seed = state.get("next_seed", 5)
+    prefix = state.get("seed_prefix", "neo-duel-v8s")
+    state["next_seed"] = seed + 2
+    log(f"{prefix}{seed} and {prefix}{seed + 1}: {state['set']} with seeds {seed} and {seed + 1}")
+    return [{"name": f"{prefix}{s}", "data": state["set"], "args": ["--seed", str(s)]} for s in (seed, seed + 1)]
+
+
 def build_next(state):
     """Labels the runs since the last labeling and builds the next version's set onto the newest one."""
+    if state.get("recipe") == "seeds":
+        return build_seeds(state)
     if state.get("recipe") == "jev":
         return build_jev(state)
     return [job] if (job := build_outcomes(state)) else []
@@ -301,7 +316,7 @@ def labeler_running():
 def label(state):
     """Keeps FreeJev answering the champion's own states while credits last, a mage batch and then a
     melee one, from the champion's clean runs since it took over (DAgger with Jev as the expert)."""
-    if labeler_running():
+    if state.get("recipe") != "jev" or labeler_running():
         return
     code, out = sh(["npm", "run", "-s", "nvm", "--", "distill", "credits"], cwd=BOT, timeout=120)
     try:
@@ -380,9 +395,11 @@ def round_once():
             # Two versions share one session when two wait: a kernel has two T4s, one for each.
             jobs = state["queue"][:2]
             pair = ["--pair", jobs[1]["name"], "--pair-data", jobs[1]["data"]] if len(jobs) == 2 else []
+            if len(jobs) == 2 and jobs[1].get("args"):
+                pair += ["--pair-args", " ".join(jobs[1]["args"])]
             # train_args: kaggle.py options for every version (3 epochs: the fourth added 0.002 held-out agreement to v9a).
             code, out = sh([sys.executable, "training/kaggle.py", "train", "--name", jobs[0]["name"], "--data", jobs[0]["data"], *pair,
-                            *state.get("train_args", [])])
+                            *jobs[0].get("args", []), *state.get("train_args", [])])
             names = [j["name"] for j in jobs]
             if code:
                 log(f"{' and '.join(names)}: push failed: {out[-300:]}")
