@@ -64,6 +64,8 @@ LABELER_PID = os.path.join(ROOT, ".fleet", "train", "labeler.pid")
 FETCH_TRIES = 3
 #: Hours of weekly GPU quota a training session needs (v8's 16k-row set, two seeds: 1.5 h on the T4s).
 QUOTA_HOURS = 2.0
+#: What a session under way is expected to take from the quota still.
+SESSION_HOURS = 1.6
 #: Runs still playing when runs are labeled are picked up next time: the next labeling starts this much earlier.
 OVERLAP = datetime.timedelta(minutes=30)
 
@@ -381,10 +383,12 @@ def round_once():
     # 3. A free GPU session trains the next version.
     busy = sum(1 for s in kernels.values() if s in ("running", "queued"))
     left = quota_left()
+    # The quota counts hours already used: a session running or waiting will take more of it.
+    projected = None if left is None else left - SESSION_HOURS * busy
     if busy >= 2:
         log(f"both GPU sessions busy ({', '.join(k for k, s in kernels.items() if s in ('running', 'queued'))})")
-    elif left is not None and left < QUOTA_HOURS:
-        log(f"{left:.1f} GPU hours left this week: not enough for a training")
+    elif projected is not None and projected < QUOTA_HOURS:
+        log(f"{left:.1f} GPU hours left this week, ~{max(0.0, projected):.1f} after the sessions under way: not enough for a training")
     else:
         if not state.get("queue"):
             jobs = build_next(state)
