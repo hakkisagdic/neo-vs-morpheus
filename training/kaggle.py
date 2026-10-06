@@ -224,36 +224,47 @@ def fetch(args):
     name = slug(args.name)
     kernel = f"{user()}/{kernel_of(args)}"
     local = os.path.join(ROOT, "training", "checkpoints", name)
-    with tempfile.TemporaryDirectory(prefix="kaggle-out-", dir=os.path.join(ROOT, "training", "checkpoints")) as tmp:
-        kaggle("kernels", "output", kernel, "-p", tmp)
-        logs = [f for f in os.listdir(tmp) if f.endswith(".log")]
-        log = open(os.path.join(tmp, logs[0])).read() if logs else ""
-        try:
-            # Kaggle keeps the log as JSON: [{"stream_name": "stdout", "time": ..., "data": "..."}, ...]
-            log = "".join(entry.get("data", "") for entry in json.loads(log))
-        except (ValueError, AttributeError):
-            pass
-        digests = {rel: digest for digest, rel in re.findall(r"sha256 ([0-9a-f]{64}) (\S+)", log)}
-        # Kernels that train two runs list each file under its run's folder; older ones, the run's own.
-        mine = {rel[len(name) + 1:]: digest for rel, digest in digests.items() if rel.startswith(f"{name}/")}
-        digests = mine or digests
-        src = os.path.join(tmp, name)
-        if not digests or not os.path.isdir(src):
-            tail = "\n".join(log.splitlines()[-30:])
-            sys.exit(f"no checkpoint in the kernel's output; the log ends with:\n{tail}")
-        for rel, digest in digests.items():
-            h = hashlib.sha256()
-            with open(os.path.join(src, rel), "rb") as f:
-                for chunk in iter(lambda: f.read(1 << 24), b""):
-                    h.update(chunk)
-            if h.hexdigest() != digest:
-                sys.exit(f"checksum mismatch for {rel}")
-        if os.path.exists(local):
-            shutil.rmtree(local)
-        shutil.move(src, local)
-        for line in log.splitlines():
-            if any(k in line for k in ("device", "before:", "epoch", "fitted")):
-                print(line.strip()[:200])
+    # Only this run's files and the kernel's log (a pair's kernel holds two checkpoints): an 800 MB
+    # download that breaks is tried again, whole (-o: a broken file must not pass for an up-to-date one).
+    tmp = os.path.join(ROOT, "training", "checkpoints", ".kaggle-out", kernel.split("/")[1])
+    os.makedirs(tmp, exist_ok=True)
+    for attempt in range(1, 4):
+        out = subprocess.run(["kaggle", "kernels", "output", kernel, "-p", tmp, "-o", "--file-pattern", f"^{re.escape(name)}/"],
+                             capture_output=True, text=True)
+        if out.returncode == 0:
+            break
+        print(f"download {attempt} of 3 broke: {(out.stderr or out.stdout).strip()[-200:]}", flush=True)
+        time.sleep(30)
+    else:
+        sys.exit(f"kaggle kernels output {kernel} broke three times")
+    logs = [f for f in os.listdir(tmp) if f.endswith(".log")]
+    log = open(os.path.join(tmp, logs[0])).read() if logs else ""
+    try:
+        # Kaggle keeps the log as JSON: [{"stream_name": "stdout", "time": ..., "data": "..."}, ...]
+        log = "".join(entry.get("data", "") for entry in json.loads(log))
+    except (ValueError, AttributeError):
+        pass
+    digests = {rel: digest for digest, rel in re.findall(r"sha256 ([0-9a-f]{64}) (\S+)", log)}
+    # Kernels that train two runs list each file under its run's folder; older ones, the run's own.
+    mine = {rel[len(name) + 1:]: digest for rel, digest in digests.items() if rel.startswith(f"{name}/")}
+    digests = mine or digests
+    src = os.path.join(tmp, name)
+    if not digests or not os.path.isdir(src):
+        tail = "\n".join(log.splitlines()[-30:])
+        sys.exit(f"no checkpoint in the kernel's output; the log ends with:\n{tail}")
+    for rel, digest in digests.items():
+        h = hashlib.sha256()
+        with open(os.path.join(src, rel), "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 24), b""):
+                h.update(chunk)
+        if h.hexdigest() != digest:
+            sys.exit(f"checksum mismatch for {rel}")
+    if os.path.exists(local):
+        shutil.rmtree(local)
+    shutil.move(src, local)
+    for line in log.splitlines():
+        if any(k in line for k in ("device", "before:", "epoch", "fitted")):
+            print(line.strip()[:200])
     print(f"checkpoint ready: training/checkpoints/{name}, {len(digests)} files checked "
           f"(serve it with scripts/laya-native.sh start training/checkpoints/{name})")
 

@@ -57,6 +57,8 @@ MATCHED_MS = 60
 LABEL_BATCH = 2000
 MIN_CREDITS = 300
 LABELER_PID = os.path.join(ROOT, ".fleet", "train", "labeler.pid")
+#: Downloads of a finished kernel's output tried before a version counts as failed.
+FETCH_TRIES = 3
 #: Hours of weekly GPU quota a training needs (a 50-70k row set takes 3-5 h on a T4).
 QUOTA_HOURS = 5.0
 #: Runs still playing when runs are labeled are picked up next time: the next labeling starts this much earlier.
@@ -136,7 +138,8 @@ def fetch(state, name):
     with open(os.path.join(ROOT, ".fleet", "kaggle-logs", f"{name}.log"), "w") as f:
         f.write(out)
     if code:
-        return False
+        # A broken download is tried again next round; an output without the checkpoint is final.
+        return False if "no checkpoint" in out else None
     code, out = sh([PY, "training/publish_hf.py", "model", os.path.join("training", "checkpoints", name), "--tag", name, "--card", "docs/hf/laya-neo-duel.md"])
     log(f"{name}: published" if not code else f"{name}: publish failed (kept here): {out[-200:]}")
     return True
@@ -338,11 +341,15 @@ def round_once():
     for name in list(state.get("pushed", [])):
         st = kernels.get(kernel(state, name), "unknown")
         if st == "complete":
-            # A run that failed in a pair's kernel has no checkpoint to fetch: left out, not tried again.
-            state["pushed"].remove(name)
-            if fetch(state, name):
+            fetched = fetch(state, name)
+            tries = state.setdefault("fetch_tries", {})
+            tries[name] = tries.get(name, 0) + 1
+            if fetched:
+                state["pushed"].remove(name)
                 evaluate(state, name)
-            else:
+            elif fetched is False or tries[name] >= FETCH_TRIES:
+                # No checkpoint in the output (its run failed in a pair's kernel), or the download kept breaking.
+                state["pushed"].remove(name)
                 state.setdefault("failed", []).append(name)
             track(name)
         elif st == "error" or st.startswith("cancel"):  # Kaggle says CANCEL_ACKNOWLEDGED
