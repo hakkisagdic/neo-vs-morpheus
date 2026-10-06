@@ -197,7 +197,8 @@ def train(args):
         os.makedirs(k_dir)
         train_args = ["--train-top-layers", str(args.train_top_layers), "--epochs", str(args.epochs),
                       "--batch", str(args.batch), "--accum", str(args.accum), "--holdout", str(args.holdout),
-                      "--precision", args.precision] + (["--no-checkpointing"] if args.no_checkpointing else [])
+                      "--precision", args.precision] + (["--no-checkpointing"] if args.no_checkpointing else []) \
+                     + (["--seed", str(args.seed)] if args.seed is not None else [])
         with open(os.path.join(k_dir, "train.py"), "w") as f:
             f.write(KERNEL.format(names=" and ".join(r[0] for r in runs), runs=repr(runs), laya=LAYA, repo_url=REPO_URL,
                                   commit=commit, args=repr(train_args)))
@@ -317,6 +318,7 @@ def main():
     ap.add_argument("--pair", help="a second run trained in the same session, on the kernel's other GPU")
     ap.add_argument("--pair-data", help="the second run's training set")
     ap.add_argument("--pair-args", help='finetune.py options for the second run only, e.g. "--seed 2"')
+    ap.add_argument("--seed", type=int, help="finetune.py's seed (its own default when left out); a pair's --pair-args can override it")
     ap.add_argument("--kernel", help="status/wait/fetch: the kernel that trained the run, when it was a pair's")
     ap.add_argument("--data-repo", default=DATA_REPO, help="private dataset that keeps each run's training set")
     ap.add_argument("--epochs", type=int, default=4)
