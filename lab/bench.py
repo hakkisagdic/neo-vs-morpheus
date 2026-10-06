@@ -56,7 +56,8 @@ def main():
     ap.add_argument("--bench", default="uo-bench-1", help="bench/<name>.json")
     ap.add_argument("--player", required=True, help="laya, random, jev or rules@N")
     ap.add_argument("--model", help="the checkpoint a laya player plays (served on each lane)")
-    ap.add_argument("--lanes", required=True, help="this Mac's lanes, comma-separated")
+    ap.add_argument("--lanes", required=True, help="the machine's lanes, comma-separated")
+    ap.add_argument("--machine", default="mac", help="a fleet machine: mac, or a CPU-only one (alastyr) for players without a model")
     ap.add_argument("--tracks", help="comma-separated; every track of the bench by default")
     ap.add_argument("--passes", type=int, default=4, help="times every match is played")
     ap.add_argument("--parallel", type=int, default=8)
@@ -64,6 +65,8 @@ def main():
     args = ap.parse_args()
     if args.player == "laya" and not args.model:
         sys.exit("a laya player needs --model")
+    if args.machine != "mac" and args.model:
+        sys.exit(f"{args.machine} has no GPU: only players without a model (random, rules) play there")
 
     with open(os.path.join(ROOT, "bench", f"{args.bench}.json")) as f:
         spec = json.load(f)
@@ -78,14 +81,14 @@ def main():
     failed = 0
     for k, lane in enumerate(lanes):
         share = plan[k :: len(lanes)]
-        path = os.path.join(SERIES, f"bench-{who}-lane{lane}.json")
+        path = os.path.join(SERIES, f"bench-{who}-{args.machine}-lane{lane}.json")
         with open(path, "w") as f:
             json.dump(share, f, indent=1)
         rounds = sum(m["rounds"] for m in share)
         print(f"lane {lane}: {len(share)} matches, {rounds} rounds of {', '.join(tracks)} -> {os.path.relpath(path, ROOT)}", flush=True)
         if args.command == "run":
-            fleet("stop", "mac", "--lane", str(lane))
-            failed |= fleet("start", "mac", path, "--lane", str(lane), "--parallel", str(args.parallel), *(["--model", args.model] if args.model else []))
+            fleet("stop", args.machine, "--lane", str(lane))
+            failed |= fleet("start", args.machine, path, "--lane", str(lane), "--parallel", str(args.parallel), *(["--model", args.model] if args.model else []))
     return failed
 
 

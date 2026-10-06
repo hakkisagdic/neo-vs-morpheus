@@ -9,17 +9,26 @@ export type BenchRow = {
   player: string;
   rounds: number;
   runs: number;
-  /** Runs a run check flagged (slow decisions, late casts, a silent model): left out. */
+  /** Runs a run check flagged (slow decisions, late casts, a silent model), or too slow for the bench: left out. */
   flagged: number;
   score: number;
   interval: [number, number];
   /** Wilson's interval for the same rounds taken as independent, narrower than the honest one. */
   wilson: [number, number];
-  /** The interval is within the bench's half-width either way. */
+  /** The interval is within the bench's half-width either way, over at least MIN_ROUNDS rounds. */
   settled: boolean;
 };
 
 const scripted = (side: string) => /^rules@\d+ /.test(side);
+
+/** Rounds below which no score counts as settled, however narrow its interval looks. */
+export const MIN_ROUNDS = 400;
+/**
+ * A player at its own pace must decide this quickly (median) for its run to count: past ~200 ms
+ * speed starts deciding duels (the scripted bot against slower copies of itself: no effect up to
+ * 200 ms, 69% at 250 ms), and the bench measures judgement at matched speed.
+ */
+export const BENCH_LATENCY_MS = 200;
 
 /** The rows of one bench version, by track and then best score first. */
 export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03): BenchRow[] {
@@ -37,7 +46,10 @@ export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03): B
     const key = `${track}|${run.sides[i]}`;
     const group = groups.get(key) ?? { track, player: run.sides[i], scores: [], flagged: 0 };
     groups.set(key, group);
-    if (run.problems.length) {
+    const name = run.summary?.fighters[i]?.name;
+    const latency = name !== undefined ? run.summary?.latencyMs[name] : undefined;
+    const paced = run.sides[i].split(" ")[0].includes("@");
+    if (run.problems.length || (!paced && latency !== undefined && latency > BENCH_LATENCY_MS)) {
       group.flagged++;
       continue;
     }
@@ -48,7 +60,11 @@ export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03): B
   }
   const rows = [...groups.values()].map(({ track, player, scores, flagged }): BenchRow => {
     const rounds = scores.reduce((n, s) => n + s.rounds, 0);
-    const interval = bootstrapInterval(scores);
+    const independent = wilson(scores.reduce((n, s) => n + s.points, 0), rounds);
+    // A bootstrap over few runs, or runs that all ended alike, can collapse to a point; the wider of
+    // it and Wilson's interval is the one reported.
+    const boot = bootstrapInterval(scores);
+    const interval: [number, number] = Number.isNaN(boot[0]) ? independent : [Math.min(boot[0], independent[0]), Math.max(boot[1], independent[1])];
     return {
       track,
       player,
@@ -57,8 +73,8 @@ export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03): B
       flagged,
       score: share(scores),
       interval,
-      wilson: wilson(scores.reduce((n, s) => n + s.points, 0), rounds),
-      settled: (interval[1] - interval[0]) / 2 <= halfWidth,
+      wilson: independent,
+      settled: rounds >= MIN_ROUNDS && (interval[1] - interval[0]) / 2 <= halfWidth,
     };
   });
   return rows.sort((a, b) => a.track.localeCompare(b.track) || (b.score || 0) - (a.score || 0));
