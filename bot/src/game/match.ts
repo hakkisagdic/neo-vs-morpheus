@@ -51,8 +51,10 @@ export type MatchOptions = {
 const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules", "random"] satisfies BrainKind[];
 
 /**
- * A fighter's brain as a spec names it: "laya", "jev", "rules", or "rules@250" for the scripted bot
- * with its own reaction time in milliseconds (0-5000). Null for anything else.
+ * A fighter's brain as a spec names it: "laya", "jev", "rules", "random", or with "@N" a time in
+ * milliseconds (0-10000) to act in: the scripted bot's reaction time ("rules@250"), or a model's
+ * decision time, which a quicker answer waits out ("laya@4000", the bench's equal-time tracks).
+ * Null for anything else.
  */
 export function parseBrain(spec: string): { brain: BrainKind; reactionMs?: number } | null {
   const [kind, at, ...rest] = spec.split("@");
@@ -63,16 +65,18 @@ export function parseBrain(spec: string): { brain: BrainKind; reactionMs?: numbe
     return { brain: kind as BrainKind };
   }
   const reactionMs = Number(at);
-  return kind === "rules" && /^\d+$/.test(at) && reactionMs <= 5_000 ? { brain: "rules", reactionMs } : null;
+  return /^\d+$/.test(at) && reactionMs <= 10_000 ? { brain: kind as BrainKind, reactionMs } : null;
 }
 
-/** The scripted bot's reaction time, recorded with the match it played. */
-const reaction = (f: Fighter) => (f.brain === "rules" ? { reactionMs: f.reactionMs ?? config.rulesReactionMs } : {});
+/** The scripted bot's reaction time, or a model's decision time when it has one, recorded with the match. */
+const reaction = (f: Fighter) =>
+  f.brain === "rules" ? { reactionMs: f.reactionMs ?? config.rulesReactionMs } : f.reactionMs !== undefined ? { reactionMs: f.reactionMs } : {};
 
-export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reactionMs = config.rulesReactionMs): DuelBrain {
+/** reactionMs: the scripted bot's reaction time (the configured one when left out), or a model's decision time. */
+export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reactionMs?: number): DuelBrain {
   switch (kind) {
     case "rules":
-      return new RuleBrain(module, reactionMs);
+      return new RuleBrain(module, reactionMs ?? config.rulesReactionMs);
     case "laya":
       return new ModelBrain({
         name: "laya",
@@ -80,10 +84,10 @@ export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reaction
         apiKey: config.layaApiKey || undefined,
         model: "typed-decisions",
         timeoutMs: 20_000, // CPU-only in Docker on macOS: seconds, not milliseconds
-      }, "composite", module);
+      }, "composite", module, reactionMs);
     case "random":
       // A legal move at random, through the same guardrails as the models: the floor of the bench.
-      return new ModelBrain({ name: "random", url: "" }, "composite", module);
+      return new ModelBrain({ name: "random", url: "" }, "composite", module, reactionMs);
     case "jev":
       return new ModelBrain({
         name: "jev",
@@ -92,7 +96,7 @@ export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reaction
         apiKey: requireSetting(config.jevApiKey, "JEV_API_KEY"),
         model: config.jevModel || undefined,
         timeoutMs: 15_000,
-      }, "composite", module);
+      }, "composite", module, reactionMs);
   }
 }
 

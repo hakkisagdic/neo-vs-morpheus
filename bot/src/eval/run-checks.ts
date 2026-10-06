@@ -45,17 +45,19 @@ const MODEL_BRAINS = new Set(["laya", "jev"]);
  * never did: when its server is down or every request times out it stands still and loses, which
  * leaves no decisions to check (this happened on a cloud node whose model ran without its GPU).
  */
-export function checkRun(records: Checked[], fighters: { name: string; brain: string }[] = []): RunCheck[] {
+export function checkRun(records: Checked[], fighters: { name: string; brain: string; reactionMs?: number }[] = []): RunCheck[] {
   const silent = fighters
     .filter((f) => MODEL_BRAINS.has(f.brain) && !records.some((r) => r.bot === f.name))
     .map((f) => ({
       bot: f.name, brain: f.brain, casts: 0, castDriftMs: null, slowCasts: 0, latencyMs: 0,
       problems: [`${f.name} (${f.brain}) made no decisions (its model server down, or every request timed out?)`],
     }));
-  return [...decided(records), ...silent];
+  // A model with a decision time of its own (the bench's equal-time tracks) is late past that time.
+  const budgets = new Map(fighters.filter((f) => f.brain !== "rules" && f.reactionMs !== undefined).map((f) => [f.name, f.reactionMs as number]));
+  return [...decided(records, budgets), ...silent];
 }
 
-function decided(records: Checked[]): RunCheck[] {
+function decided(records: Checked[], budgets: Map<string, number> = new Map()): RunCheck[] {
   return [...new Set(records.map((r) => r.bot))].map((bot) => {
     const mine = records.filter((r) => r.bot === bot);
     const drifts = mine.flatMap((r) => {
@@ -77,7 +79,8 @@ function decided(records: Checked[]): RunCheck[] {
     } else if (slowCasts >= 3 && slowCasts > SLOW_SHARE_LIMIT * drifts.length) {
       problems.push(`${slowCasts} of ${bot}'s ${drifts.length} casts were 0.3 s or more late (an effect left from an earlier round?)`);
     }
-    if (brain === "laya" && latencyMs > LATENCY_LIMIT_MS) {
+    const budget = budgets.get(bot);
+    if ((brain === "laya" || (budget !== undefined && MODEL_BRAINS.has(brain))) && latencyMs > (budget ?? 0) + LATENCY_LIMIT_MS) {
       problems.push(`${bot} took ${latencyMs} ms per decision (is another program using the GPU?)`);
     }
     return { bot, brain, casts: drifts.length, castDriftMs, slowCasts, latencyMs, problems };

@@ -10,11 +10,26 @@
       "player": "{player}:mage",
       "opponent": "rules@40:mage",
       "entries": [
-        { "label": "8 tiles", "distance": 8 },
-        { "label": "12 tiles", "distance": 12 },
-        { "label": "4 tiles", "distance": 4 },
-        { "label": "pillars", "arena": "pillars" },
-        { "label": "wall", "arena": "wall" }
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
       ]
     },
     "ml/duel-dexer": {
@@ -24,11 +39,26 @@
       "player": "{player}:dexer",
       "opponent": "rules@40:dexer",
       "entries": [
-        { "label": "8 tiles", "distance": 8 },
-        { "label": "12 tiles", "distance": 12 },
-        { "label": "4 tiles", "distance": 4 },
-        { "label": "pillars", "arena": "pillars" },
-        { "label": "wall", "arena": "wall" }
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
       ]
     },
     "ml/duel-archer": {
@@ -38,11 +68,116 @@
       "player": "{player}:archer",
       "opponent": "rules@40:archer",
       "entries": [
-        { "label": "8 tiles", "distance": 8 },
-        { "label": "12 tiles", "distance": 12 },
-        { "label": "4 tiles", "distance": 4 },
-        { "label": "pillars", "arena": "pillars" },
-        { "label": "wall", "arena": "wall" }
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
+      ]
+    },
+    "ml/equal-mage": {
+      "shard": "modernuo-ml",
+      "about": "Mage against the scripted mage, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone.",
+      "rounds": 10,
+      "timeout": 600,
+      "player": "{player}@4000:mage",
+      "opponent": "rules@4000:mage",
+      "entries": [
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
+      ]
+    },
+    "ml/equal-dexer": {
+      "shard": "modernuo-ml",
+      "about": "Dexer against the scripted dexer, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone.",
+      "rounds": 10,
+      "timeout": 600,
+      "player": "{player}@4000:dexer",
+      "opponent": "rules@4000:dexer",
+      "entries": [
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
+      ]
+    },
+    "ml/equal-archer": {
+      "shard": "modernuo-ml",
+      "about": "Archer against the scripted archer, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone.",
+      "rounds": 10,
+      "timeout": 600,
+      "player": "{player}@4000:archer",
+      "opponent": "rules@4000:archer",
+      "entries": [
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
       ]
     }
   }

@@ -43,7 +43,8 @@ def matches(spec, tracks, player, passes, seed):
             for first in (True, False):
                 a, b = (f"Neo:{me}", f"Morpheus:{them}") if first else (f"Neo:{them}", f"Morpheus:{me}")
                 out.append({"label": f"{name} {entry['label']}, the player {'first' if first else 'second'}", "a": a, "b": b,
-                            "rounds": track.get("rounds", 10), **extra, "bench": f"{spec['id']}:{name}"})
+                            "rounds": track.get("rounds", 10), **({"timeout": track["timeout"]} if "timeout" in track else {}),
+                            **extra, "bench": f"{spec['id']}:{name}"})
     out = out * passes
     random.Random(seed).shuffle(out)
     return out

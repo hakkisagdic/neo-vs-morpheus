@@ -73,12 +73,14 @@ export function describeSide(f: Fighter, model?: string): string {
   if (f.brain === "npc" || f.brain === "human") {
     return `${f.brain} ${f.name}`;
   }
+  // A model with a decision time of its own ("neo-duel-v8@4000") is kept apart from its usual pace.
+  const pace = f.brain !== "rules" && f.reactionMs !== undefined ? `@${f.reactionMs}` : "";
   const who =
     f.brain === "rules"
       ? `rules@${f.reactionMs ?? 0}`
-      : f.brain === "laya" || f.brain === "jev"
-        ? (model && model !== "laya-rl-agent" ? model : `${f.brain} (model not recorded)`)
-        : f.brain;
+      : (f.brain === "laya" || f.brain === "jev"
+          ? (model && model !== "laya-rl-agent" ? model : `${f.brain} (model not recorded)`)
+          : f.brain) + pace;
   return [who, f.template ?? "mage", ...(f.tactics && f.tactics !== "neutral" ? [f.tactics] : [])].join(" ");
 }
 

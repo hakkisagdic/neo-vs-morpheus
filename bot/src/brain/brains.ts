@@ -28,15 +28,33 @@ export class ModelBrain implements DuelBrain {
   readonly backend: Backend;
   readonly style: QuestionStyle;
   readonly module: ModuleName;
+  /**
+   * A decision time to act on, as the scripted bot's reaction time: a quicker answer waits it out,
+   * so that models of very different speeds (Jev's 3 s, Laya's 40 ms) can be compared at one pace.
+   */
+  readonly decisionMs?: number;
 
-  constructor(backend: Backend, style: QuestionStyle = "composite", module: ModuleName = "mage") {
+  constructor(backend: Backend, style: QuestionStyle = "composite", module: ModuleName = "mage", decisionMs?: number) {
     this.backend = backend;
     this.name = backend.name;
     this.style = style;
     this.module = module;
+    this.decisionMs = decisionMs;
   }
 
   async decide(s: DuelSnapshot, tactics: Tactics = NEUTRAL): Promise<Decision> {
+    const started = performance.now();
+    const decision = await this.#decideNow(s, tactics);
+    if (this.decisionMs === undefined) {
+      return decision;
+    }
+    for (let wait = this.decisionMs - (performance.now() - started); wait > 0; wait = this.decisionMs - (performance.now() - started)) {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(1, wait)));
+    }
+    return { ...decision, latencyMs: performance.now() - started };
+  }
+
+  async #decideNow(s: DuelSnapshot, tactics: Tactics): Promise<Decision> {
     if (this.module === "melee") {
       const d = await systemOne(this.backend, describeMelee(s), meleeQuestion(s, tactics));
       const answer = shapeAnswer(d.answers.move, tactics.aggression);
