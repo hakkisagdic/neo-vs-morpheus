@@ -88,3 +88,39 @@ export function holm(ps: number[]): number[] {
   });
   return adjusted;
 }
+
+/** Student's t for a two-sided 95% interval with df degrees of freedom (Cornish-Fisher past ten). */
+export function t975(df: number): number {
+  const table = [Number.NaN, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228];
+  if (df < table.length) {
+    return table[Math.max(0, Math.floor(df))];
+  }
+  const z = 1.959964;
+  return z + (z ** 3 + z) / (4 * df) + (5 * z ** 5 + 16 * z ** 3 + 3 * z) / (96 * df ** 2) + (3 * z ** 7 + 19 * z ** 5 + 17 * z ** 3 - 15 * z) / (384 * df ** 3);
+}
+
+/**
+ * The mean of independent values (one per session: a skill track's gain, or its time to the goal)
+ * with a 95% interval, the wider of Student's t and a bootstrap's: t assumes a normal mean, the
+ * bootstrap does not, and neither is trusted alone with few sessions.
+ */
+export function meanInterval(values: number[], iterations = 2000, seed = 20261006): { mean: number; interval: [number, number] } {
+  const n = values.length;
+  const mean = n ? values.reduce((a, b) => a + b, 0) / n : Number.NaN;
+  if (n < 2) {
+    return { mean, interval: [Number.NaN, Number.NaN] };
+  }
+  const sd = Math.sqrt(values.reduce((a, x) => a + (x - mean) ** 2, 0) / (n - 1));
+  const half = (t975(n - 1) * sd) / Math.sqrt(n);
+  const next = random(seed);
+  const means: number[] = [];
+  for (let k = 0; k < iterations; k++) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+      sum += values[Math.floor(next() * n)];
+    }
+    means.push(sum / n);
+  }
+  means.sort((x, y) => x - y);
+  return { mean, interval: [Math.min(mean - half, percentile(means, 0.025)), Math.max(mean + half, percentile(means, 0.975))] };
+}

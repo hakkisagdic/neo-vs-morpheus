@@ -124,6 +124,9 @@ export async function scoreRuns(runsDir: string, since = "", log: (m: string) =>
   const out: Scored[] = [];
   for (const file of files) {
     const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as Run;
+    if (!run.match) {
+      continue; // a skill-training session (runs/<stamp>-skill.json): no duel in it
+    }
     // Checked again rather than read from the file, so that runs from before the checks count too.
     const problems = checkRun(run.records, run.match.fighters).flatMap((c) => c.problems);
     if (problems.length) {

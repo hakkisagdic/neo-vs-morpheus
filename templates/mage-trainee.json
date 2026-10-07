@@ -1,0 +1,13 @@
+{
+  "id": "mage-trainee",
+  "title": "Mage in training (UO Bench skill tracks): Magery, Eval Int and Meditation at 50, Int 100",
+  "stats": { "str": 90, "dex": 35, "int": 100 },
+  "skills": { "Magery": 50, "EvalInt": 50, "Meditation": 50 },
+  "wear": [],
+  "pack": {
+    "BlackPearl": 1000, "Bloodmoss": 1000, "Garlic": 1000, "Ginseng": 1000,
+    "MandrakeRoot": 1000, "Nightshade": 1000, "SpidersSilk": 1000, "SulfurousAsh": 1000
+  },
+  "spellbook": true,
+  "modules": ["mage"]
+}

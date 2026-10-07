@@ -6,8 +6,8 @@
     python3 lab/bench.py run --player laya --model laya-base --lanes 2 --tracks ml/duel-mage
 
 A player is a brain as a fighter spec names it (laya, random, jev, rules@N); a laya player plays the
-checkpoint --model on the lane's Laya server. Every match of the chosen tracks, from both seats, is
-played --passes times; each is tagged with its track ("uo-bench/1:ml/duel-mage"), so its run counts
+checkpoint --model on the lane's Laya server. Every match of the chosen tracks, from both seats, and
+every training session of a skill track ("kind": "skill"), is played --passes times; each is tagged with its track ("uo-bench/1:ml/duel-mage"), so its run counts
 for the bench and stays out of the training loop's selection. The matches are shared out over the
 lanes; when a lane's bench series ends, the keeper puts the lane back on its planned work. The scores:
 npm run nvm -- leaderboard. Standard library only.
@@ -32,11 +32,16 @@ def fleet(*args):
 
 
 def matches(spec, tracks, player, passes, seed):
-    """Every entry of the tracks from both seats, `passes` times over, in a seeded order."""
+    """Every entry of the tracks from both seats (a skill track: its sessions), `passes` times over, in a seeded order."""
     out = []
     for name in tracks:
         track = spec["tracks"][name]
         me = track["player"].replace("{player}", player)
+        if track.get("kind") == "skill":
+            for k in range(track.get("sessions", 5)):
+                out.append({"label": f"{name} session {k + 1}", "kind": "skill", "a": f"Neo:{me}", "minutes": track["minutes"],
+                            "goal": track["goal"], "cap": track["cap"], "bench": f"{spec['id']}:{name}"})
+            continue
         them = track["opponent"]
         for entry in track["entries"]:
             extra = {k: v for k, v in entry.items() if k != "label"}
@@ -84,8 +89,10 @@ def main():
         path = os.path.join(SERIES, f"bench-{who}-{args.machine}-lane{lane}.json")
         with open(path, "w") as f:
             json.dump(share, f, indent=1)
-        rounds = sum(m["rounds"] for m in share)
-        print(f"lane {lane}: {len(share)} matches, {rounds} rounds of {', '.join(tracks)} -> {os.path.relpath(path, ROOT)}", flush=True)
+        rounds = sum(m.get("rounds", 0) for m in share)
+        sessions = sum(m.get("kind") == "skill" for m in share)
+        print(f"lane {lane}: {len(share) - sessions} matches, {rounds} rounds and {sessions} training sessions of {', '.join(tracks)}"
+              f" -> {os.path.relpath(path, ROOT)}", flush=True)
         if args.command == "run":
             fleet("stop", args.machine, "--lane", str(lane))
             failed |= fleet("start", args.machine, path, "--lane", str(lane), "--parallel", str(args.parallel), *(["--model", args.model] if args.model else []))

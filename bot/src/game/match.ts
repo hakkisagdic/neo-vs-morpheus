@@ -2,6 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { modelBackend } from "../brain/backends.ts";
 import { ModelBrain, RuleBrain } from "../brain/brains.ts";
 import { type Tactics, loadTactics } from "../brain/tactics.ts";
 import { FORMAT } from "../brain/duel-policy.ts";
@@ -9,7 +10,7 @@ import { MELEE_FORMAT } from "../brain/melee-policy.ts";
 import { checkRun } from "../eval/run-checks.ts";
 import { SCENARIOS } from "../eval/scenarios.ts";
 import type { DuelBrain, ModuleName } from "../brain/types.ts";
-import { config, requireSetting } from "../config.ts";
+import { config } from "../config.ts";
 import type { MatchInfo, MonitorHub, RoundResult } from "../monitor/hub.ts";
 import { type DecisionRecord, type DuelEnd, DuelController } from "./duel.ts";
 import { type ArenaLayout, OBSTACLE_GRAPHICS } from "./arena.ts";
@@ -78,25 +79,10 @@ export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reaction
     case "rules":
       return new RuleBrain(module, reactionMs ?? config.rulesReactionMs);
     case "laya":
-      return new ModelBrain({
-        name: "laya",
-        url: config.layaUrl,
-        apiKey: config.layaApiKey || undefined,
-        model: "typed-decisions",
-        timeoutMs: 20_000, // CPU-only in Docker on macOS: seconds, not milliseconds
-      }, "composite", module, reactionMs);
-    case "random":
-      // A legal move at random, through the same guardrails as the models: the floor of the bench.
-      return new ModelBrain({ name: "random", url: "" }, "composite", module, reactionMs);
     case "jev":
-      return new ModelBrain({
-        name: "jev",
-        url: config.jevUrl,
-        path: config.jevPath,
-        apiKey: requireSetting(config.jevApiKey, "JEV_API_KEY"),
-        model: config.jevModel || undefined,
-        timeoutMs: 15_000,
-      }, "composite", module, reactionMs);
+    case "random":
+      // random: a legal move at random, through the same guardrails as the models: the floor of the bench.
+      return new ModelBrain(modelBackend(kind), "composite", module, reactionMs);
   }
 }
 
@@ -288,7 +274,7 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
 
 /** Keeps every decision with its state: the raw material for evaluating and fine-tuning. */
 /** The commit the bot runs from, marked "+dirty" when the tree has changes; "unknown" outside git. */
-function codeVersion(): string {
+export function codeVersion(): string {
   const git = (...args: string[]) => execFileSync("git", args, { cwd: import.meta.dirname, encoding: "utf8" }).trim();
   try {
     return git("rev-parse", "--short", "HEAD") + (git("status", "--porcelain") ? "+dirty" : "");

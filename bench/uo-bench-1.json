@@ -1,6 +1,6 @@
 {
   "id": "uo-bench/1",
-  "about": "UO Bench, version 1: decision models playing Ultima Online, by shard rules, profession and task. A player's score on a track is its share of points (a win 1, a draw 1/2) over the track's matches, with a 95% interval from a bootstrap over runs (the rounds of one run share its arena and seating, so they are not independent). A score counts as settled once that interval is within 3 points either way. Bench runs are kept apart from the training loop's selection, so that no score comes from rounds a selection has seen.",
+  "about": "UO Bench, version 1: decision models playing Ultima Online, by shard rules, profession and task. A player's score on a track is its share of points (a win 1, a draw 1/2) over the track's matches, with a 95% interval from a bootstrap over runs (the rounds of one run share its arena and seating, so they are not independent). A score counts as settled once that interval is within 3 points either way. A skill track scores training sessions instead, each one an independent draw: the mean of a score over sessions, with a 95% interval (the wider of Student's t and a bootstrap). Bench runs are kept apart from the training loop's selection, so that no score comes from rounds a selection has seen.",
   "half_width": 0.03,
   "tracks": {
     "ml/duel-mage": {
@@ -177,6 +177,30 @@
         {
           "label": "wall",
           "arena": "wall"
+        }
+      ]
+    },
+    "ml/skill-magery": {
+      "shard": "modernuo-ml",
+      "kind": "skill",
+      "about": "A mage in training (templates/mage-trainee.json: Magery, Meditation and Eval Int 50, Int 100) alone in its arena, choosing every step: a practice spell of some circle (told its mana and its chance to succeed), meditation (told its chance of a trance), or Eval Int. It trains at least 20 minutes and until Magery 70, 90 minutes at most.",
+      "player": "{player}:mage-trainee",
+      "minutes": 20,
+      "goal": 70,
+      "cap": 90,
+      "sessions": 5,
+      "scores": [
+        {
+          "name": "ml/skill-magery: Magery gained in 20 min",
+          "metric": "gain",
+          "half_width": 0.5,
+          "about": "Magery points gained in the first 20 minutes, the mean over sessions; settled within \u00b10.5 points over at least 20 sessions."
+        },
+        {
+          "name": "ml/skill-magery: minutes from 50 to 70",
+          "metric": "time",
+          "half_width": 3,
+          "about": "Minutes from Magery 50 to 70, counted as 90 when not reached by then (a restricted mean, so that a player that never gets there still counts); settled within \u00b13 minutes over at least 20 sessions."
         }
       ]
     }

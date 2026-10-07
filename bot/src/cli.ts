@@ -27,11 +27,14 @@ import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, run
 import { type Instance, formatInfo, loadFleet, pick } from "./fleet/instances.ts";
 import { formatRows, readRuns, tally } from "./fleet/results.ts";
 import { leaderboard, leaderboardMarkdown } from "./bench/leaderboard.ts";
+import { type SkillTrack, readSkillRuns, skillLeaderboard, skillMarkdown } from "./bench/skill.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
 import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
+import { describeSkillResult, runSkillSession } from "./game/skill-session.ts";
 import { SkillTrainer } from "./game/train.ts";
+import { makeTrainBrain } from "./game/train-brain.ts";
 import { MonitorHub } from "./monitor/hub.ts";
 import { PanelServer, startFleetPulls } from "./panel/server.ts";
 
@@ -71,9 +74,10 @@ const USAGE = `usage: npm run nvm -- <command>
                       --write keeps them in bench/results/ and docs/BENCH.md
   panel               the control panel at localhost:MONITOR_PORT, up until Ctrl-C: live matches
                       (duels publish to it while it runs), every recorded run and its replay
-  train <Name> [--partner Name] [--resist] [--minutes N] [--goal N]
-                      level a bot: Magery at the best circle, Meditation and Eval Int;
-                      with --partner and --resist they also curse each other for Resisting Spells
+  train <Name> [--partner Name] [--resist] [--minutes N] [--goal N] [--brain rules|laya|jev|random[@ms]]
+                      level a bot: Magery, Meditation and Eval Int, every step chosen by --brain
+                      (the scripted trainer by default); with --partner and --resist they also
+                      curse each other for Resisting Spells
   login <Name>        log a bot in (creates account and character) and report
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
   eval [laya] [jev] [--suite duel|movement|sight|melee]
@@ -186,8 +190,25 @@ const SLOT_NAMES = [
   ["Rama", "Zee"],
 ] as const;
 
-/** bench: the benchmark track the match belongs to ("uo-bench/1:ml/duel-mage"), recorded with the run. */
-type SeriesEntry = { label: string; a: string; b: string; rounds?: number; distance?: number; arena?: ArenaLayout; timeout?: number; bench?: string };
+/**
+ * bench: the benchmark track the match belongs to ("uo-bench/1:ml/duel-mage"), recorded with the run.
+ * kind "skill": a training session for `a` alone (no `b`): at least `minutes`, up to Magery `goal`,
+ * `cap` minutes at most.
+ */
+type SeriesEntry = {
+  label: string;
+  kind?: "duel" | "skill";
+  a: string;
+  b?: string;
+  rounds?: number;
+  distance?: number;
+  arena?: ArenaLayout;
+  timeout?: number;
+  bench?: string;
+  minutes?: number;
+  goal?: number;
+  cap?: number;
+};
 
 /**
  * Several matches at once, one per arena slot, sharing one GM session. Each slot's bots take the
@@ -205,7 +226,9 @@ async function series(args: string[]): Promise<void> {
       throw new Error(`${e.label}: unknown arena ${e.arena}`);
     }
     fighter(e.a);
-    opponent(e.b); // fail before any match starts
+    if (e.kind !== "skill") {
+      opponent(e.b ?? ""); // fail before any match starts
+    }
   }
   const parallel = Math.max(1, Math.min(SLOT_NAMES.length, Number(values.parallel) || 2));
   const clock = (d: Date) => d.toTimeString().slice(0, 5);
@@ -214,10 +237,29 @@ async function series(args: string[]): Promise<void> {
   const play = async (slot: number) => {
     const names = SLOT_NAMES[slot];
     for (let e = queue.shift(); e; e = queue.shift()) {
-      const original = [e.a.split(":")[0], e.b.split(":")[0]];
+      const original = [e.a.split(":")[0], (e.b ?? "").split(":")[0]];
       const rename = (spec: string, i: number) =>
         spec.startsWith("npc:") || spec.startsWith("human:") ? spec : [names[i], ...spec.split(":").slice(1)].join(":");
-      const back = (text: string) => text.replaceAll(names[0], original[0]).replaceAll(names[1], original[1]);
+      const back = (text: string) => original.reduce((t, name, i) => (name ? t.replaceAll(names[i], name) : t), text);
+      if (e.kind === "skill") {
+        const started = new Date();
+        const lines: string[] = [];
+        try {
+          const r = await runSkillSession(
+            { trainee: fighter(rename(e.a, 0)), minutes: e.minutes ?? 20, goal: e.goal ?? 70, cap: e.cap ?? 60, slot, gm, bench: e.bench },
+            (m) => {
+              if (/warning|rror|failed/.test(m)) {
+                lines.push(back(m));
+              }
+            },
+          );
+          lines.push(`result: ${describeSkillResult(r)}`);
+        } catch (err) {
+          lines.push(`error: ${(err as Error).message}`);
+        }
+        console.log([`== ${e.label} (slot ${slot}, ${clock(started)}-${clock(new Date())})`, ...lines].join("\n"));
+        continue;
+      }
       const lines: string[] = [];
       const started = new Date();
       const hub = new MonitorHub();
@@ -226,7 +268,7 @@ async function series(args: string[]): Promise<void> {
         const results = await runMatch(
           {
             a: fighter(rename(e.a, 0)),
-            b: opponent(rename(e.b, 1)),
+            b: opponent(rename(e.b ?? "", 1)),
             rounds: e.rounds ?? 5,
             distance: e.distance ?? 8,
             template: true,
@@ -325,14 +367,21 @@ async function leaderboardCommand(args: string[]): Promise<void> {
   const root = join(import.meta.dirname, "..", "..");
   const spec = JSON.parse(await readFile(join(root, "bench", `${id.replace("/", "-")}.json`), "utf8")) as {
     half_width: number;
-    tracks: Record<string, { about: string }>;
+    tracks: Record<string, { kind?: "duel" | "skill"; about: string }>;
   };
+  const duels = Object.entries(spec.tracks).filter(([, t]) => t.kind !== "skill");
+  const skills = Object.fromEntries(Object.entries(spec.tracks).filter(([, t]) => t.kind === "skill")) as Record<string, SkillTrack>;
   const rows = leaderboard(await readRuns(), id, spec.half_width);
-  const markdown = leaderboardMarkdown(rows, id, Object.fromEntries(Object.entries(spec.tracks).map(([k, t]) => [k, t.about])));
+  const skillRows = skillLeaderboard(await readSkillRuns(), id, skills);
+  const about = Object.fromEntries(Object.values(skills).flatMap((t) => t.scores.map((s) => [s.name, s.about ?? t.about ?? ""])));
+  const markdown = [leaderboardMarkdown(rows, id, Object.fromEntries(duels.map(([k, t]) => [k, t.about]))), skillMarkdown(skillRows, about)].join("\n");
   console.log(markdown);
   if (values.write) {
     await mkdir(join(root, "bench", "results"), { recursive: true });
-    await writeFile(join(root, "bench", "results", `${id.replace("/", "-")}.json`), JSON.stringify({ bench: id, at: new Date().toISOString(), rows }, null, 1) + "\n");
+    await writeFile(
+      join(root, "bench", "results", `${id.replace("/", "-")}.json`),
+      JSON.stringify({ bench: id, at: new Date().toISOString(), rows, skills: skillRows }, null, 1) + "\n",
+    );
     await writeFile(join(root, "docs", "BENCH.md"), markdown + "\n");
   }
 }
@@ -357,9 +406,14 @@ async function train(args: string[]): Promise<void> {
       resist: { type: "boolean", default: false },
       minutes: { type: "string", default: "30" },
       goal: { type: "string", default: "100" },
+      brain: { type: "string", default: "rules" },
     },
   });
   const name = positionals[0] ?? "Neo";
+  const brain = parseBrain(values.brain);
+  if (!brain) {
+    throw new Error(`bad --brain ${values.brain}; expected laya|jev|rules|random[@ms]`);
+  }
   const gm = await Session.gm();
   const sessions = [await Session.bot(name)];
   if (values.partner) {
@@ -374,7 +428,8 @@ async function train(args: string[]): Promise<void> {
 
   const ac = new AbortController();
   const deadline = setTimeout(() => ac.abort(), Number(values.minutes) * 60_000);
-  const trainers = sessions.map((s) => new SkillTrainer(s));
+  // The scripted trainer keeps practising Eval Int while it waits for mana; a model chooses for itself.
+  const trainers = sessions.map((s) => new SkillTrainer(s, brain.brain === "rules" ? undefined : makeTrainBrain(brain.brain, brain.reactionMs)));
   if (trainers.length === 2) {
     trainers[0].partner = sessions[1].world.playerSerial;
     trainers[1].partner = sessions[0].world.playerSerial;
@@ -396,7 +451,7 @@ async function train(args: string[]): Promise<void> {
   }
   try {
     await Promise.all(
-      trainers.map((t) => t.run(ac.signal, Number(values.goal), async () => void (await gm.command(`[NeoPrep ${t.session.name}`)))),
+      trainers.map((t) => t.run(ac.signal, (s) => s.magery >= Number(values.goal), async () => void (await gm.command(`[NeoPrep ${t.session.name}`)))),
     );
   } finally {
     clearTimeout(deadline);
