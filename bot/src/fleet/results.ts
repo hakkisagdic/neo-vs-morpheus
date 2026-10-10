@@ -78,7 +78,7 @@ export function describeSide(f: Fighter, model?: string): string {
   const who =
     f.brain === "rules"
       ? `rules@${f.reactionMs ?? 0}`
-      : (f.brain === "laya" || f.brain === "laya-b" || f.brain === "jev"
+      : (f.brain === "laya" || f.brain === "laya-b" || f.brain === "jev" || f.brain === "clef"
           ? (model && model !== "laya-rl-agent" ? model : `${f.brain} (model not recorded)`)
           : f.brain) + pace;
   return [who, f.template ?? "mage", ...(f.tactics && f.tactics !== "neutral" ? [f.tactics] : [])].join(" ");

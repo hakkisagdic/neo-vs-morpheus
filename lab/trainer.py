@@ -423,8 +423,13 @@ def round_once():
             state.setdefault("failed", []).append(name)
         save(state)
     # 2. Candidates that played enough rounds are promoted or dropped; Jev labels the champion's states.
-    gate(state)
-    label(state)
+    # Either can fail on a loaded Mac (reading the results timed out once); the GPUs must not wait for them.
+    for step in (gate, label):
+        try:
+            step(state)
+        except Exception as err:
+            log(f"{step.__name__} failed this round: {err!r}")
+            state = load()
     # 3. A free GPU session trains the next version.
     busy = sum(1 for s in kernels.values() if s in ("running", "queued"))
     left = quota_left()

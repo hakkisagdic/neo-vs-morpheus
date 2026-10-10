@@ -17,6 +17,9 @@ export function modelBackend(kind: Backend["name"] | "laya-b"): Backend {
       };
     case "random":
       return { name: "random", url: "" };
+    case "clef":
+      // A 9B (Clef-flash) or 27B (Clef) model on this Mac's GPU: hundreds of milliseconds, not tens.
+      return { name: "clef", url: config.clefUrl, timeoutMs: 30_000 };
     case "jev":
       return {
         name: "jev",

@@ -28,8 +28,8 @@ export type Decision = {
 };
 
 export type Backend = {
-  /** "random": no server; every legal option equally likely, one of them picked at random. */
-  name: "laya" | "jev" | "random";
+  /** "random": no server; every legal option equally likely, one of them picked at random. "clef": Cloudflare's Clef (lab/clef/serve.py). */
+  name: "laya" | "jev" | "random" | "clef";
   url: string;
   /** Defaults to /v1/systemone; FreeJev serves the same body at /api/v1/decisions. */
   path?: string;

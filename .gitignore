@@ -34,3 +34,6 @@ __pycache__/
 
 # MLflow client environment (lab/track.py); its store lives in .fleet/mlflow
 /.mlflow/
+
+# Cloudflare Clef: its own Python env and weights (lab/clef)
+.clef/

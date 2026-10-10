@@ -17,6 +17,8 @@ export const config = {
   layaUrl: env("LAYA_URL", "http://127.0.0.1:8000"),
   /** A second Laya server, for a fighter spec "laya-b": another checkpoint in the same match (lab/mac/lane.sh: 8101+i). */
   layaUrlB: env("LAYA_URL_B", "http://127.0.0.1:8100"),
+  /** Cloudflare's Clef or Clef-flash on this Mac (lab/clef/serve.py), Jev's API. */
+  clefUrl: env("CLEF_URL", "http://127.0.0.1:8200"),
   layaApiKey: env("LAYA_API_KEY"),
   jevUrl: env("JEV_URL", "https://api.typesafe.ai"),
   jevPath: env("JEV_PATH", "/v1/systemone"),
