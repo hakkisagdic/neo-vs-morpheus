@@ -327,6 +327,7 @@ async function fleet(args: string[]): Promise<void> {
       lane: { type: "string" },
       parallel: { type: "string" },
       model: { type: "string" },
+      "model-b": { type: "string" },
       lines: { type: "string" },
     },
   });
@@ -353,7 +354,7 @@ async function fleet(args: string[]): Promise<void> {
         if (!seriesFile) {
           throw new Error("fleet start <instance> <series.json>");
         }
-        return i.start({ series: seriesFile, lane: num(values.lane), parallel: num(values.parallel), model: values.model });
+        return i.start({ series: seriesFile, lane: num(values.lane), parallel: num(values.parallel), model: values.model, modelB: values["model-b"] });
       case "stop":
         return i.stop(num(values.lane));
       default:
@@ -373,11 +374,15 @@ async function leaderboardCommand(args: string[]): Promise<void> {
   const root = join(import.meta.dirname, "..", "..");
   const spec = JSON.parse(await readFile(join(root, "bench", `${id.replace("/", "-")}.json`), "utf8")) as {
     half_width: number;
-    tracks: Record<string, { kind?: "duel" | "skill"; about: string }>;
+    tracks: Record<string, { kind?: "duel" | "skill"; about: string; opponent?: string; opponent_model?: string }>;
   };
   const duels = Object.entries(spec.tracks).filter(([, t]) => t.kind !== "skill");
   const skills = Object.fromEntries(Object.entries(spec.tracks).filter(([, t]) => t.kind === "skill")) as Record<string, SkillTrack>;
-  const rows = leaderboard(await readRuns(), id, spec.half_width);
+  // A sparring model's side reads as its checkpoint and the build ("laya-b:mage" -> "neo-duel-v8r-s2 mage").
+  const opponents = Object.fromEntries(
+    duels.filter(([, t]) => t.opponent_model && t.opponent).map(([k, t]) => [k, `${t.opponent_model} ${(t.opponent ?? "").split(":")[1] ?? "mage"}`]),
+  );
+  const rows = leaderboard(await readRuns(), id, spec.half_width, opponents);
   const skillRows = skillLeaderboard(await readSkillRuns(), id, skills);
   const about = Object.fromEntries(Object.values(skills).flatMap((t) => t.scores.map((s) => [s.name, s.about ?? t.about ?? ""])));
   const markdown = [leaderboardMarkdown(rows, id, Object.fromEntries(duels.map(([k, t]) => [k, t.about]))), skillMarkdown(skillRows, about)].join("\n");

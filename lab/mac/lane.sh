@@ -20,6 +20,7 @@ if ! up; then
   echo "arena server $i up on $port"
 fi
 cd "$ROOT/bot"
-export UO_HOST=127.0.0.1 UO_PORT=$port LAYA_URL=http://127.0.0.1:${LAYA_PORT:-$((8001 + i))} RULES_REACTION_MS=${RULES_REACTION_MS:-100} \
+export UO_HOST=127.0.0.1 UO_PORT=$port LAYA_URL=http://127.0.0.1:${LAYA_PORT:-$((8001 + i))} LAYA_URL_B=http://127.0.0.1:$((8101 + i)) \
+  RULES_REACTION_MS=${RULES_REACTION_MS:-100} \
   MONITOR_PORT=$((9000 + 100 * i)) FLEET_INSTANCE=mac FLEET_LANE=$i
 exec -a "mac-series-$i" node src/cli.ts series "$series" "$@"

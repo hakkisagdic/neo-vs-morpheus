@@ -37,7 +37,8 @@ export type InstanceConfig =
       modelsRepo: string;
     };
 
-export type StartOptions = { series: string; lane?: number; parallel?: number; model?: string };
+/** modelB: a second checkpoint for "laya-b" fighters (Mac lanes: its server on 8101+lane). */
+export type StartOptions = { series: string; lane?: number; parallel?: number; model?: string; modelB?: string };
 
 /** One lane as the dashboard shows it. */
 /** One lane; `updatedAt` (ms) is when its log last changed, where that can be seen. */
@@ -267,19 +268,11 @@ class Local implements Instance {
       throw new Error(`lane ${lane} is busy; stop it first`);
     }
     const said: string[] = [];
-    const port = 8001 + lane;
-    if (o.model && (await this.#servers()).get(port) !== o.model) {
-      const checkpoint = join(ROOT, "training", "checkpoints", o.model);
-      if (!existsSync(join(checkpoint, "rl_agent_config.json"))) {
-        await run(hfCli(), ["download", "hakkisagdic/laya-neo-duel", "--revision", o.model, "--local-dir", checkpoint, "--quiet"], 3_600_000);
-      }
-      await run("pkill", ["-f", `mac-laya-${port} `]).catch(() => "");
-      await new Promise((r) => setTimeout(r, 2_000));
-      detach(join(ROOT, "lab", "mac", "model.sh"), [String(port), checkpoint], join(this.#dir, `laya-${port}.log`));
-      for (let i = 0; i < 90 && !(await laya(port)); i++) {
-        await new Promise((r) => setTimeout(r, 2_000));
-      }
+    if (o.model && (await this.#serve(8001 + lane, o.model))) {
       said.push(`lane ${lane} now plays ${o.model}`);
+    }
+    if (o.modelB && (await this.#serve(8101 + lane, o.modelB))) {
+      said.push(`its laya-b fighters play ${o.modelB}`);
     }
     await mkdir(join(this.#dir, "series"), { recursive: true });
     const series = join(this.#dir, "series", basename(o.series));
@@ -289,6 +282,24 @@ class Local implements Instance {
     detach(join(ROOT, "lab", "mac", "lane.sh"), [String(lane), series, "--parallel", String(o.parallel ?? 8)], log);
     said.push(`started ${basename(series)} on lane ${lane} (${o.parallel ?? 8} arenas)`);
     return said.join("; ");
+  }
+
+  /** A Laya server on the port with the checkpoint (fetched from the hub if missing); false if it already served it. */
+  async #serve(port: number, model: string): Promise<boolean> {
+    if ((await this.#servers()).get(port) === model) {
+      return false;
+    }
+    const checkpoint = join(ROOT, "training", "checkpoints", model);
+    if (!existsSync(join(checkpoint, "rl_agent_config.json"))) {
+      await run(hfCli(), ["download", "hakkisagdic/laya-neo-duel", "--revision", model, "--local-dir", checkpoint, "--quiet"], 3_600_000);
+    }
+    await run("pkill", ["-f", `mac-laya-${port} `]).catch(() => "");
+    await new Promise((r) => setTimeout(r, 2_000));
+    detach(join(ROOT, "lab", "mac", "model.sh"), [String(port), checkpoint], join(this.#dir, `laya-${port}.log`));
+    for (let i = 0; i < 90 && !(await laya(port)); i++) {
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+    return true;
   }
 
   async stop(lane?: number): Promise<string> {

@@ -66,7 +66,7 @@ export async function readSkillRuns(dir = RUNS_DIR): Promise<SkillRun[]> {
 /** "neo-duel-v8s4 mage-trainee", "random@4000 mage-trainee", "rules mage-trainee". */
 export function skillPlayer(r: SkillResult): string {
   const { brain, template, decisionMs } = r.trainee;
-  const who = brain === "laya" || brain === "jev" ? (r.model ?? `${brain} (model not recorded)`) : brain;
+  const who = brain === "laya" || brain === "laya-b" || brain === "jev" ? (r.model ?? `${brain} (model not recorded)`) : brain;
   return `${who}${decisionMs !== undefined ? `@${decisionMs}` : ""} ${template}`;
 }
 

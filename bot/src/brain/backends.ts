@@ -3,12 +3,14 @@
 import { config, requireSetting } from "../config.ts";
 import type { Backend } from "./systemone.ts";
 
-export function modelBackend(kind: Backend["name"]): Backend {
+/** "laya-b": the second Laya server, which serves another checkpoint (a sparring partner, a ladder). */
+export function modelBackend(kind: Backend["name"] | "laya-b"): Backend {
   switch (kind) {
     case "laya":
+    case "laya-b":
       return {
         name: "laya",
-        url: config.layaUrl,
+        url: kind === "laya-b" ? config.layaUrlB : config.layaUrl,
         apiKey: config.layaApiKey || undefined,
         model: "typed-decisions",
         timeoutMs: 20_000, // CPU-only in Docker on macOS: seconds, not milliseconds

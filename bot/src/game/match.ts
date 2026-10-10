@@ -18,7 +18,7 @@ import { loadTemplate, moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
 /** "oracle": the skill trainer worked out from ModernUO's formulas (src/game/train-brain.ts); it plays no duels. */
-export type BrainKind = "laya" | "jev" | "rules" | "random" | "oracle";
+export type BrainKind = "laya" | "laya-b" | "jev" | "rules" | "random" | "oracle";
 export type Fighter = {
   kind: "bot";
   name: string;
@@ -52,7 +52,7 @@ export type MatchOptions = {
   tellPace?: boolean;
 };
 
-const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules", "random", "oracle"] satisfies BrainKind[];
+const BRAIN_KINDS: readonly string[] = ["laya", "laya-b", "jev", "rules", "random", "oracle"] satisfies BrainKind[];
 
 /**
  * A fighter's brain as a spec names it: "laya", "jev", "rules", "random", or with "@N" a time in
@@ -85,6 +85,7 @@ export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reaction
     case "rules":
       return new RuleBrain(module, reactionMs ?? config.rulesReactionMs);
     case "laya":
+    case "laya-b":
     case "jev":
     case "random":
       // random: a legal move at random, through the same guardrails as the models: the floor of the bench.

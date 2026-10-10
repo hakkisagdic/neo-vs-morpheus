@@ -38,7 +38,7 @@ const median = (xs: number[]): number => {
 type Checked = Pick<DecisionRecord, "bot" | "decision" | "outcome"> & { snapshot: { us: { protection?: boolean } } };
 
 /** Brains that ask a model server, and so can fail to answer at all. */
-const MODEL_BRAINS = new Set(["laya", "jev"]);
+const MODEL_BRAINS = new Set(["laya", "laya-b", "jev"]);
 
 /**
  * The checks of each bot that decided, and, given the match's fighters, of each model fighter that

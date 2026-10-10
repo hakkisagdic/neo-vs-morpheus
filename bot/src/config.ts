@@ -15,6 +15,8 @@ export const config = {
   ownerAccount: env("NEO_OWNER_USER", "architect"),
   ownerPassword: env("NEO_OWNER_PASS"),
   layaUrl: env("LAYA_URL", "http://127.0.0.1:8000"),
+  /** A second Laya server, for a fighter spec "laya-b": another checkpoint in the same match (lab/mac/lane.sh: 8101+i). */
+  layaUrlB: env("LAYA_URL_B", "http://127.0.0.1:8100"),
   layaApiKey: env("LAYA_API_KEY"),
   jevUrl: env("JEV_URL", "https://api.typesafe.ai"),
   jevPath: env("JEV_PATH", "/v1/systemone"),

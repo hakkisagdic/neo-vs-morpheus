@@ -42,3 +42,17 @@ describe("UO Bench leaderboard", () => {
     expect(leaderboardMarkdown(rows, "uo-bench/1")).toContain("| 1 | neo-duel-v8 mage | 62.5 |");
   });
 });
+
+describe("a sparring model as the opponent", () => {
+  it("scores the side that is not the track's opponent model, and leaves out a model against itself", () => {
+    const run = (sides: string[], wins: number[], bench = "uo-bench/1:ml/spar-mage") =>
+      ({ bench, sides, wins, draws: 0, problems: [], summary: { fighters: [], latencyMs: {} } }) as unknown as RunInfo;
+    const runs = [
+      run(["neo-duel-v8s4 mage", "neo-duel-v8r-s2 mage"], [6, 4]),
+      run(["neo-duel-v8r-s2 mage", "neo-duel-v8s4 mage"], [3, 7]),
+      run(["neo-duel-v8r-s2 mage", "neo-duel-v8r-s2 mage"], [5, 5]),
+    ];
+    const rows = leaderboard(runs, "uo-bench/1", 0.03, { "ml/spar-mage": "neo-duel-v8r-s2 mage" });
+    expect(rows.map((r) => [r.player, r.rounds, r.score])).toEqual([["neo-duel-v8s4 mage", 20, 0.65]]);
+  });
+});

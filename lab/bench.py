@@ -80,6 +80,13 @@ def main():
     unknown = [t for t in tracks if t not in spec["tracks"]]
     if unknown:
         sys.exit(f"no such tracks in {args.bench}: {', '.join(unknown)}")
+    # A sparring partner (a track's opponent_model) is served beside the player: one per run.
+    sparring = {spec["tracks"][t].get("opponent_model") for t in tracks} - {None}
+    if len(sparring) > 1:
+        sys.exit(f"tracks with different sparring models in one run: {', '.join(sorted(sparring))}")
+    if sparring and args.machine != "mac":
+        sys.exit("a sparring model needs a GPU lane: --machine mac")
+    model_b = next(iter(sparring), None)
     lanes = [int(x) for x in args.lanes.split(",")]
     plan = matches(spec, tracks, args.player, args.passes, args.seed)
     who = args.model or args.player.replace("@", "-at-")
@@ -96,7 +103,8 @@ def main():
               f" -> {os.path.relpath(path, ROOT)}", flush=True)
         if args.command == "run":
             fleet("stop", args.machine, "--lane", str(lane))
-            failed |= fleet("start", args.machine, path, "--lane", str(lane), "--parallel", str(args.parallel), *(["--model", args.model] if args.model else []))
+            failed |= fleet("start", args.machine, path, "--lane", str(lane), "--parallel", str(args.parallel), *(["--model", args.model] if args.model else []),
+                            *(["--model-b", model_b] if model_b else []))
     return failed
 
 

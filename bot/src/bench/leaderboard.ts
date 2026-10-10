@@ -30,19 +30,24 @@ export const MIN_ROUNDS = 400;
  */
 export const BENCH_LATENCY_MS = 200;
 
-/** The rows of one bench version, by track and then best score first. */
-export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03): BenchRow[] {
+/**
+ * The rows of one bench version, by track and then best score first. opponents: a track's opponent
+ * as a side reads ("neo-duel-v8r-s2 mage") when it is not the scripted bot (a sparring model).
+ */
+export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03, opponents: Record<string, string> = {}): BenchRow[] {
   const groups = new Map<string, { track: string; player: string; scores: RunScore[]; flagged: number }>();
   for (const run of runs) {
     if (!run.bench?.startsWith(`${bench}:`) || run.sides.length !== 2) {
       continue;
     }
-    // The player is the side that is not the bench's scripted opponent; a ladder (two players) is not a duel track.
-    const i = scripted(run.sides[1]) && !scripted(run.sides[0]) ? 0 : scripted(run.sides[0]) && !scripted(run.sides[1]) ? 1 : -1;
+    // The player is the side that is not the track's opponent (the scripted bot, or a sparring
+    // model); a model against itself, or two players (a ladder), is not a duel track's run.
+    const track = run.bench.slice(bench.length + 1);
+    const opponent = (side: string) => (opponents[track] ? side === opponents[track] : scripted(side));
+    const i = opponent(run.sides[1]) && !opponent(run.sides[0]) ? 0 : opponent(run.sides[0]) && !opponent(run.sides[1]) ? 1 : -1;
     if (i < 0) {
       continue;
     }
-    const track = run.bench.slice(bench.length + 1);
     const key = `${track}|${run.sides[i]}`;
     const group = groups.get(key) ?? { track, player: run.sides[i], scores: [], flagged: 0 };
     groups.set(key, group);
