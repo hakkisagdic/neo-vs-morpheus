@@ -30,6 +30,11 @@ export type InstanceConfig =
       bridge?: string[];
       /** The Colab CLI session (colab new -s NAME). */
       session?: string;
+      /**
+       * "fetch": runs come back packed through the bridge's fetch instead of the VM shipping them to
+       * Hugging Face (an account without the HF_TOKEN Colab secret).
+       */
+      pull?: "ship" | "fetch";
       /** HOME for the Colab CLI: one folder per Google account, each with its own login. */
       home?: string;
       dir?: string;
@@ -513,8 +518,14 @@ class Colab implements Instance {
     return this.#c.home ? { ...process.env, HOME: this.#c.home.replace(/^~(?=\/|$)/, homedir()) } : undefined;
   }
 
-  /** A file to or from the VM through the Colab CLI. */
+  /** A file to or from the VM through the Colab CLI; through the bridge, downloads only (its fetch). */
   #copy(direction: "upload" | "download", from: string, to: string): Promise<string> {
+    if (!this.#cli) {
+      if (direction === "upload") {
+        throw new Error(`${this.name}: the bridge cannot upload; put the file where the VM can download it`);
+      }
+      return run("colab-bridge", [...(this.#c.bridge ?? []), "fetch", from, to], 3_600_000);
+    }
     return run("colab", [direction, "-s", this.#session, from, to], 3_600_000, this.#cliEnv);
   }
 
@@ -599,7 +610,7 @@ print("FLEET>>>" + "\\n".join(lines))`,
   }
 
   async pull(): Promise<string> {
-    if (this.#cli) {
+    if (this.#cli || this.#c.pull === "fetch") {
       return this.#pullThroughCli();
     }
     const shipped = await this.#cell(
@@ -715,7 +726,7 @@ print("FLEET>>>" + ("ok" if os.path.exists(f"{A}/models/{tag}/rl_agent_config.js
     JSON.parse(entries); // fail here, not there
     return this.#cell(
       "start",
-      `A, name, lane, model = ${JSON.stringify(this.#dir)}, ${JSON.stringify(this.name)}, ${lane}, ${JSON.stringify(o.model ?? "")}
+      `A, name, lane, model, model_b = ${JSON.stringify(this.#dir)}, ${JSON.stringify(this.name)}, ${lane}, ${JSON.stringify(o.model ?? "")}, ${JSON.stringify(o.modelB ?? "")}
 if sh(f"pgrep -f '[a]rena-series-{lane} '"):
     print(f"FLEET>>>lane {lane} is busy; stop it first"); return
 os.makedirs(f"{A}/series", exist_ok=True)
@@ -723,10 +734,14 @@ path = f"{A}/series/${file}"
 with open(path, "w") as fh:
     fh.write(${JSON.stringify(entries)})
 said = []
-port = 8001 + lane
-if model and laya_servers().get(port, (0, ""))[1] != model:
-    if ${this.#cli ? "True" : "False"}:
-        ckpt = f"{A}/models/{model}"  # sent over from the Mac
+
+def serve(port, model):
+    """A Laya server on the port with the checkpoint; False if it already served it, None if it did not come up."""
+    if laya_servers().get(port, (0, ""))[1] == model:
+        return False
+    ckpt = f"{A}/models/{model}"
+    if ${this.#cli ? "True" : "False"} or os.path.exists(f"{ckpt}/rl_agent_config.json"):
+        pass  # sent over from the Mac, or already here
     else:
         from google.colab import userdata
         from huggingface_hub import snapshot_download
@@ -739,13 +754,21 @@ if model and laya_servers().get(port, (0, ""))[1] != model:
     for _ in range(120):
         try:
             if "typed-decisions" in json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=2))["loaded"]:
-                break
+                return True
         except Exception:
             pass
         time.sleep(2)
-    else:
-        print(f"FLEET>>>the Laya server for {model} did not come up; see {A}/laya-{port}.log"); return
-    said.append(f"lane {lane} now plays {model}")
+    return None
+
+# The lane's model on 8001+lane; a sparring partner for "laya-b" fighters on 8101+lane.
+for port, m, note in ((8001 + lane, model, f"lane {lane} now plays {model}"), (8101 + lane, model_b, f"its laya-b fighters play {model_b}")):
+    if not m:
+        continue
+    up = serve(port, m)
+    if up is None:
+        print(f"FLEET>>>the Laya server for {m} did not come up; see {A}/laya-{port}.log"); return
+    if up:
+        said.append(note)
 # Runs go to the runs dataset every 10 minutes, whoever is watching: a recycled VM takes its disk along.
 # (Through the CLI there are no secrets to push with; the Mac's pull fetches instead.)
 if ${this.#cli ? "False" : "True"} and not sh("pgrep -f '[s]hip.py'"):

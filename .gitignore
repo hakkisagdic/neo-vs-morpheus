@@ -37,3 +37,6 @@ __pycache__/
 
 # Cloudflare Clef: its own Python env and weights (lab/clef)
 .clef/
+
+# Agents' git worktrees
+.claude/worktrees/

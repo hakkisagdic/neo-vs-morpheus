@@ -1,6 +1,7 @@
 #!/bin/bash
 # lane.sh <i> <series.json> [series options]: arena server i on 127.0.0.1:2593+i, started if it is
-# not running, then the series on it with Laya server i (127.0.0.1:8001+i, see model.sh). The owner
+# not running, then the series on it with Laya server i (127.0.0.1:8001+i, see model.sh), a
+# sparring model for "laya-b" fighters on 8101+i, and Clef (lab/clef/serve.py) on 8300. The owner
 # and bot passwords (and LAYA_API_KEY, if the model servers want one) come from secrets.env.
 #   lane.sh 0 /content/arena/nvm/lab/series-mage12.json --parallel 8
 set -euo pipefail
@@ -29,7 +30,8 @@ if ! up; then
   echo "arena server $i up on $port"
 fi
 cd "$A/nvm/bot"
-export UO_HOST=127.0.0.1 UO_PORT=$port LAYA_URL=http://127.0.0.1:$((8001 + i)) NEO_OWNER_USER=architect \
+export UO_HOST=127.0.0.1 UO_PORT=$port LAYA_URL=http://127.0.0.1:$((8001 + i)) LAYA_URL_B=http://127.0.0.1:$((8101 + i)) \
+  CLEF_URL=${CLEF_URL:-http://127.0.0.1:8300} NEO_OWNER_USER=architect \
   RULES_REACTION_MS=${RULES_REACTION_MS:-100} MONITOR_PORT=$((9000 + 100 * i)) \
   FLEET_INSTANCE=${FLEET_INSTANCE:-$(hostname)} FLEET_LANE=$i
 exec -a "arena-series-$i" node src/cli.ts series "$series" "$@"

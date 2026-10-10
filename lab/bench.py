@@ -31,6 +31,15 @@ def fleet(*args):
     return out.returncode
 
 
+def machine_kind(name):
+    """The fleet's kind of machine (fleet.json): local (this Mac), ssh-lab, colab, kaggle, camber."""
+    try:
+        with open(os.path.join(ROOT, "fleet.json")) as f:
+            return json.load(f)["instances"][name]["kind"]
+    except (OSError, KeyError, ValueError):
+        return "local" if name == "mac" else "unknown"
+
+
 def matches(spec, tracks, player, passes, seed):
     """Every entry of the tracks from both seats (a skill track: its sessions), `passes` times over, in a seeded order."""
     out = []
@@ -70,8 +79,10 @@ def main():
     args = ap.parse_args()
     if args.player == "laya" and not args.model:
         sys.exit("a laya player needs --model")
-    if args.machine != "mac" and args.model:
-        sys.exit(f"{args.machine} has no GPU: only players without a model (random, rules) play there")
+    # A CPU-only machine (an ssh lab such as alastyr) plays only players without a model.
+    kind = machine_kind(args.machine)
+    if kind == "ssh-lab" and args.model:
+        sys.exit(f"{args.machine} has no GPU: only players without a model (random, rules, oracle) play there")
 
     with open(os.path.join(ROOT, "bench", f"{args.bench}.json")) as f:
         spec = json.load(f)
@@ -84,8 +95,8 @@ def main():
     sparring = {spec["tracks"][t].get("opponent_model") for t in tracks} - {None}
     if len(sparring) > 1:
         sys.exit(f"tracks with different sparring models in one run: {', '.join(sorted(sparring))}")
-    if sparring and args.machine != "mac":
-        sys.exit("a sparring model needs a GPU lane: --machine mac")
+    if sparring and kind not in ("local", "colab"):
+        sys.exit("a sparring model needs a lane with a second Laya server: a Mac or Colab lane")
     model_b = next(iter(sparring), None)
     lanes = [int(x) for x in args.lanes.split(",")]
     plan = matches(spec, tracks, args.player, args.passes, args.seed)

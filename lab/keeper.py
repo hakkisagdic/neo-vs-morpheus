@@ -65,6 +65,8 @@ def round_once():
             args = ["start", machine, lane["series"], "--lane", str(n)]
             if lane.get("model"):
                 args += ["--model", lane["model"]]
+            if lane.get("model_b"):  # a sparring partner for the series' "laya-b" fighters
+                args += ["--model-b", lane["model_b"]]
             if lane.get("parallel"):
                 args += ["--parallel", str(lane["parallel"])]
             code, out = fleet(*args)
