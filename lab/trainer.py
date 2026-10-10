@@ -177,7 +177,7 @@ def duel_results(since):
     # Benchmark runs stay out: a bench score must come from rounds no selection has seen.
     code, out = sh(["npm", "run", "-s", "nvm", "--", "fleet", "results", "--since", since, "--instance", "mac", "--no-bench"], cwd=BOT, timeout=900)
     results = {}
-    for m in re.finditer(r"^(neo-duel-\S+) mage vs rules@(\d+) mage: (\d+)-(\d+)", out, re.M):
+    for m in re.finditer(r"^(neo-\S+) mage vs rules@(\d+) mage: (\d+)-(\d+)", out, re.M):
         if int(m.group(2)) <= MATCHED_MS:
             wins, losses = results.get(m.group(1), (0, 0))
             results[m.group(1)] = (wins + int(m.group(3)), losses + int(m.group(4)))
@@ -202,6 +202,16 @@ def gate(state):
         since = state.get("eval_since", {}).get(name)
         if not since or name == champion:
             continue
+        skilled = state.get("skills", [])
+        if champion in skilled and name not in skilled:
+            # The champion trains skills too; a version that cannot would lose that, however it duels.
+            sh([sys.executable, "lab/evaluate.py", "--model", champion, "--lane", lane])
+            state.setdefault("history", []).append({"dropped": name, "at": since, "result": f"{name} cannot train skills; {champion} can"})
+            del state["candidates"][lane]
+            log(f"dropped: {name} cannot train skills; lane {lane} plays {champion} again")
+            track(name)
+            save(state)
+            continue
         results = duel_results(since)
         (cw, cl), (bw, bl) = results.get(name, (0, 0)), results.get(champion, (0, 0))
         n1, n2 = cw + cl, bw + bl
@@ -210,8 +220,12 @@ def gate(state):
             continue
         pooled = (cw + bw) / (n1 + n2)
         se = math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2)) or 1.0
-        z = (cw / n1 - bw / n2) / se
-        verdict = f"{name} {100 * cw / n1:.0f}% ({cw}-{cl}) against {champion} {100 * bw / n2:.0f}% ({bw}-{bl}), z {z:+.2f}"
+        # A candidate that brings something new (skill training) needs only to be no worse at duels:
+        # a non-inferiority test, its share plus the margin against the champion's.
+        margin = state.get("margins", {}).get(name, 0.0)
+        z = (cw / n1 - bw / n2 + margin) / se
+        verdict = (f"{name} {100 * cw / n1:.0f}% ({cw}-{cl}) against {champion} {100 * bw / n2:.0f}% ({bw}-{bl}), z {z:+.2f}"
+                   + (f" (no worse by {100 * margin:.0f} points)" if margin else ""))
         if z > GATE_Z:
             moved = switch_lanes(champion, name)
             state["champion"] = name
@@ -266,7 +280,10 @@ def build_seeds(state):
     prefix = state.get("seed_prefix", "neo-duel-v8s")
     state["next_seed"] = seed + 2
     log(f"{prefix}{seed} and {prefix}{seed + 1}: {state['set']} with seeds {seed} and {seed + 1}")
-    return [{"name": f"{prefix}{s}", "data": state["set"], "args": ["--seed", str(s)]} for s in (seed, seed + 1)]
+    jobs = [{"name": f"{prefix}{s}", "data": state["set"], "args": ["--seed", str(s)]} for s in (seed, seed + 1)]
+    if state.get("set_trains_skills"):
+        state.setdefault("skills", []).extend(j["name"] for j in jobs)
+    return jobs
 
 
 def build_next(state):
@@ -349,8 +366,35 @@ def label(state):
     save(state)
 
 
+def read_inbox(state):
+    """Orders left in .fleet/trainer-inbox.json between rounds, applied once and then removed, so that
+    nothing edits the state while a round has it: {"candidates": [{"name": N, "margin": 0.05}],
+    "set": PATH, "queue": [...], "seed_prefix": P, "next_seed": N, "skills": [names that train skills]}."""
+    path = os.path.join(ROOT, ".fleet", "trainer-inbox.json")
+    if not os.path.exists(path):
+        return
+    with open(path) as f:
+        orders = json.load(f)
+    os.remove(path)
+    for name in orders.get("skills", []):
+        if name not in state.setdefault("skills", []):
+            state["skills"].append(name)
+            log(f"inbox: {name} trains skills")
+    for key in ("set", "set_trains_skills", "queue", "seed_prefix", "next_seed", "recipe", "train_args"):
+        if key in orders:
+            state[key] = orders[key]
+            log(f"inbox: {key} = {json.dumps(orders[key])[:200]}")
+    for c in orders.get("candidates", []):
+        if c.get("margin"):
+            state.setdefault("margins", {})[c["name"]] = c["margin"]
+        evaluate(state, c["name"])
+        log(f"inbox: {c['name']} is a candidate" + (f", no worse by {100 * c['margin']:.0f} points" if c.get("margin") else ""))
+    save(state)
+
+
 def round_once():
     state = load()
+    read_inbox(state)
     kernels = sessions()
     if kernels is None:
         # Kaggle is out of reach (or its login ran out): the Mac's own steps still run.

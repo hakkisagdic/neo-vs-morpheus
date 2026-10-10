@@ -807,8 +807,20 @@ class Kaggle implements Instance {
         notes.push(`${kernel}: ${state}, nothing to fetch yet`);
         continue;
       }
-      const out = await run("python3", [join(ROOT, "lab", "kaggle_arena.py"), "fetch", "--name", kernel], 1_800_000).catch((e: Error) => e.message);
-      notes.push(`${kernel}: ${out.split("\n").at(-1)}`);
+      // A finished kernel's output never changes: fetched once, it is not downloaded again.
+      const marker = join(CACHE, this.name, `${kernel}.fetched`);
+      if (existsSync(marker)) {
+        notes.push(`${kernel}: fetched already`);
+        continue;
+      }
+      try {
+        const out = await run("python3", [join(ROOT, "lab", "kaggle_arena.py"), "fetch", "--name", kernel], 1_800_000);
+        await mkdir(join(CACHE, this.name), { recursive: true });
+        await writeFile(marker, `${new Date().toISOString()}\n`);
+        notes.push(`${kernel}: ${out.split("\n").at(-1)}`);
+      } catch (err) {
+        notes.push(`${kernel}: ${(err as Error).message.split("\n").at(-1)}`);
+      }
     }
     return notes.join("\n");
   }

@@ -40,8 +40,15 @@ REPO_URL = "https://github.com/hakkisagdic/neo-vs-morpheus.git"
 LAYA = "laya==0.3.20"
 
 
-def kaggle(*args, check=True):
-    out = subprocess.run(["kaggle", *args], capture_output=True, text=True)
+def kaggle(*args, check=True, timeout=900):
+    """The Kaggle CLI. A call that hangs (it does when its login lapses) fails after `timeout` seconds,
+    so that no caller waits on it for hours or leaves it running behind."""
+    try:
+        out = subprocess.run(["kaggle", *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        if check:
+            sys.exit(f"kaggle {' '.join(args)} gave no answer in {timeout} s")
+        return ""
     if check and out.returncode != 0:
         sys.exit(f"kaggle {' '.join(args)} failed: {(out.stderr or out.stdout).strip()[-1500:]}")
     return out.stdout

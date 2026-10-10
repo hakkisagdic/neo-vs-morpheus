@@ -164,7 +164,7 @@ def fetch(args):
     sys.path.insert(0, ROOT)
     kernel = f"{user()}/{slug(args.name)}-arena-run"
     with tempfile.TemporaryDirectory(prefix="kaggle-arena-out-") as tmp:
-        kaggle("kernels", "output", kernel, "-p", tmp)
+        kaggle("kernels", "output", kernel, "-p", tmp, timeout=1500)  # under the fleet's 30 minutes
         found = [p for p in (os.path.join(r, f) for r, _, fs in os.walk(tmp) for f in fs) if p.endswith(".json") and "/runs/" in p]
         os.makedirs(RUNS, exist_ok=True)
         added = 0
