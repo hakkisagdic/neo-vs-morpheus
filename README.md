@@ -227,6 +227,13 @@ folder to `server/client-files/` (or set `UO_DATA_DIR`), and the server uses the
 same folder lets ClassicUO connect to watch or play. The files are EA's copyright and are never
 committed or baked into an image.
 
+## A Sphere shard
+
+`server/sphere` runs a local SphereServer-X shard (Scripts-X pack) in Docker on 127.0.0.1:2700,
+for playing under Sphere's rules: `server/sphere/sphere.sh start`, then
+`server/sphere/sphere.sh bot login Neo`. The bots log in; the arena commands are not ported yet.
+See [server/sphere/README.md](server/sphere/README.md).
+
 ## Dependencies and backups
 
 Upstream sources are pinned by commit in `deps.lock`. `scripts/deps.sh backup` writes full-history
@@ -235,6 +242,7 @@ git bundles to `backups/`; `scripts/deps.sh sync` restores from them if an upstr
 ## Licenses
 
 The bot and scripts are MIT (see `LICENSE`). `server/overlay` is compiled into ModernUO and is
-therefore GPL-3.0-or-later like ModernUO. Laya is Apache-2.0. Ultima Online is a trademark of
+therefore GPL-3.0-or-later like ModernUO. Laya is Apache-2.0, and so are SphereServer-X and
+Scripts-X, which `server/sphere` builds and runs unmodified. Ultima Online is a trademark of
 Electronic Arts; this project is not affiliated with EA, TypeSafe AI or Convai Innovations.
 Use bots only on servers you run or that allow them.
