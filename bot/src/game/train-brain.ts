@@ -4,8 +4,10 @@
 // a goal. The model is told what a player would see: its skills and mana, and for every circle the
 // practice spell, its mana and its chance to succeed.
 //
-// ModernUO (AOS rules): a spell of circle c succeeds with chance (skill - min) / 40 where
-// min = (c - 1) * 100 / 7 - 20. A cast can raise Magery only while that chance is between 0 and 1.
+// ModernUO (ML rules, MagerySpell.GetCastSkills): a spell of circle c succeeds with chance
+// (skill - min) / 40, min from a table (-18, -4, 10, 24, 38, 52, 66, 80), not RunUO's
+// (c - 1) * 100 / 7 - 20. Below min a cast is "too difficult" and never gains; at or above min + 40
+// it is "no challenge"; in between it can gain whether it succeeds or fizzles.
 // Meditation puts you in a trance with chance (50 + 2 × (skill − mana missing)) %, and every try
 // keeps the next skill waiting 10 s; in a trance mana comes back faster, and a cast ends it.
 import { modelBackend } from "../brain/backends.ts";
@@ -25,7 +27,9 @@ export const PRACTICE: Record<number, string> = {
   8: "earthquake",
 };
 
-export const circleMin = (circle: number) => ((circle - 1) * 100) / 7 - 20;
+/** The least Magery a circle can gain from (ModernUO's table for ML, from Core.ML's _requiredSkill). */
+const CIRCLE_MIN = [-18, -4, 10, 24, 38, 52, 66, 80];
+export const circleMin = (circle: number) => CIRCLE_MIN[circle - 1];
 export const successChance = (skill: number, circle: number) => Math.min(1, Math.max(0, (skill - circleMin(circle)) / 40));
 
 /** The chance that Meditation puts you in a trance now. */
@@ -82,6 +86,8 @@ export interface TrainBrain {
 }
 
 export const TRAIN_QUESTION = "Which move raises your Magery the fastest from here?";
+/** The training state and question as models read them; recorded with every session. */
+export const TRAIN_FORMAT = "skill-3";
 
 /** The moves open in a state, as option -> what a player would know about it. */
 export function trainOptions(s: TrainState): Record<string, string> {
@@ -101,7 +107,7 @@ export function trainOptions(s: TrainState): Record<string, string> {
         ? `Rest until skills can be used (${wait} s), then meditate`
         : `Meditate: about ${Math.round(100 * tranceChance(s.meditation, s.manaMax - s.mana))}% to enter a trance`;
   }
-  options.evalInt = `Use Evaluating Intelligence${wait ? ` in ${wait} s` : ""}: trains Eval Int, not Magery`;
+  options.evalInt = `Use Evaluating Intelligence${wait ? ` in ${wait} s` : ""}: trains only Eval Int`;
   return options;
 }
 
@@ -111,6 +117,7 @@ export function describeTraining(s: TrainState): string {
     "Ultima Online skill training: raise Magery as fast as you can.",
     `Skills: Magery ${s.magery.toFixed(1)}, Meditation ${s.meditation.toFixed(1)}, Evaluating Intelligence ${s.evalInt.toFixed(1)}.`,
     `Mana ${s.mana} of ${s.manaMax}, ${s.meditating ? "in a meditative trance" : "not meditating"}. Mana comes back ${manaPerSecond(s.int, s.meditation, false).toFixed(1)} a second, ${manaPerSecond(s.int, s.meditation, true).toFixed(1)} in a trance; a cast or a skill use ends a trance.`,
+    "A cast can raise Magery whether it succeeds or fizzles, as long as its chance is above 0% and below 100%; a fizzle uses reagents but no mana.",
     `Skills ${wait ? `can be used again in ${wait} s` : "can be used now"}: a try at Meditation keeps the next one waiting 10 s, Eval Int 1 s.`,
     `So far: ${s.casts} casts, ${s.fizzles} fizzled; Magery ${s.gained >= 0 ? "+" : ""}${s.gained.toFixed(1)} in ${Math.round(s.seconds / 60)} minutes.`,
   ].join("\n");
@@ -164,6 +171,67 @@ export class RuleTrainBrain implements TrainBrain {
   }
 }
 
+/** Seconds from the start of a cast to the next one: its delay, then the recovery. */
+const castSeconds = (circle: number) => (2 + circle) * 0.25 + 1.5;
+
+/**
+ * Expected Magery gains a second from practising a circle (ModernUO, AOS rules): a cast gains with
+ * chance g/2 + p(1 - p)/4, where g = ((700 - all skills)/700 + (100 - Magery)/100)/2 and p is the
+ * circle's success chance (no gain at p = 0 or 1); only a success costs mana, and while casting
+ * drains mana faster than it comes back, part of the time goes to meditation.
+ */
+export function castScore(s: TrainState, circle: number): number {
+  const p = successChance(s.magery, circle);
+  if (p <= 0 || p >= 1) {
+    return 0;
+  }
+  const g = ((700 - (s.magery + s.meditation + s.evalInt)) / 700 + (100 - s.magery) / 100) / 2;
+  const seconds = castSeconds(circle);
+  const drain = (p * spell(PRACTICE[circle]).mana) / seconds - manaPerSecond(s.int, s.meditation, false);
+  const trance = manaPerSecond(s.int, s.meditation, true);
+  return ((g / 2 + (p * (1 - p)) / 4) / seconds) * (drain > 0 ? trance / (drain + trance) : 1);
+}
+
+/**
+ * The trainer worked out from ModernUO's formulas: the circle with the most expected gains a
+ * second (castScore: often the hardest one it can cast, since fizzles gain too and cost no mana),
+ * meditation only when that circle spends mana faster than it comes back, or when it runs out.
+ */
+export class OracleTrainBrain implements TrainBrain {
+  readonly name = "oracle";
+  readonly decisionMs?: number;
+
+  constructor(decisionMs?: number) {
+    this.decisionMs = decisionMs;
+  }
+
+  /** The circle to practise now, with its score. */
+  static best(s: TrainState): { circle: number; score: number } {
+    let best = { circle: bestCircle(s.magery), score: 0 };
+    for (let circle = 1; circle <= 8; circle++) {
+      const score = castScore(s, circle);
+      if (score > best.score) {
+        best = { circle, score };
+      }
+    }
+    return best;
+  }
+
+  async decide(s: TrainState): Promise<TrainChoice> {
+    const started = performance.now();
+    const { circle } = OracleTrainBrain.best(s);
+    const p = successChance(s.magery, circle);
+    const cost = spell(PRACTICE[circle]).mana;
+    const draining = (p * cost) / castSeconds(circle) > manaPerSecond(s.int, s.meditation, false);
+    // While casting spends mana, a trance pays: try one once the odds come down to about even
+    // (below 30% a try mostly wastes its 10 s, so cast on until the mana runs out), stay in it to 90%.
+    const trance = tranceChance(s.meditation, s.manaMax - s.mana);
+    const meditate = s.mana < cost || (draining && (s.meditating ? s.mana < s.manaMax * 0.9 : trance >= 0.3 && trance <= 0.5));
+    await pace(started, this.decisionMs);
+    return { key: meditate ? "meditate" : `cast:${circle}`, model: "oracle", latencyMs: performance.now() - started };
+  }
+}
+
 /** A System One backend (Laya, Jev, or the random pick) answering the training question. */
 export class ModelTrainBrain implements TrainBrain {
   readonly backend: Backend;
@@ -200,5 +268,8 @@ export class ModelTrainBrain implements TrainBrain {
 
 /** The trainer for a brain as a fighter spec names it ("laya", "rules@4000"), with its decision time. */
 export function makeTrainBrain(kind: BrainKind, decisionMs?: number): TrainBrain {
-  return kind === "rules" ? new RuleTrainBrain(decisionMs) : new ModelTrainBrain(modelBackend(kind), decisionMs);
+  if (kind === "rules") {
+    return new RuleTrainBrain(decisionMs);
+  }
+  return kind === "oracle" ? new OracleTrainBrain(decisionMs) : new ModelTrainBrain(modelBackend(kind), decisionMs);
 }

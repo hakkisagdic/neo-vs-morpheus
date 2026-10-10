@@ -22,6 +22,10 @@ import {
  */
 export type QuestionStyle = "composite" | "split";
 
+/** What a paced player is told: it acts once every decisionMs, on the state that much older. */
+export const paceLine = (decisionMs: number) =>
+  `Pace: you decide once every ${decisionMs / 1000} s, and each move is carried out ${decisionMs / 1000} s after the state it answers.`;
+
 /** Asks a System One backend the duel questions, then applies the guardrails. */
 export class ModelBrain implements DuelBrain {
   readonly name: string;
@@ -33,13 +37,21 @@ export class ModelBrain implements DuelBrain {
    * so that models of very different speeds (Jev's 3 s, Laya's 40 ms) can be compared at one pace.
    */
   readonly decisionMs?: number;
+  /** Tell the model its decision time in the state it reads (UO Bench's paced tracks). */
+  readonly tellPace: boolean;
 
-  constructor(backend: Backend, style: QuestionStyle = "composite", module: ModuleName = "mage", decisionMs?: number) {
+  constructor(backend: Backend, style: QuestionStyle = "composite", module: ModuleName = "mage", decisionMs?: number, tellPace = false) {
     this.backend = backend;
     this.name = backend.name;
     this.style = style;
     this.module = module;
     this.decisionMs = decisionMs;
+    this.tellPace = tellPace;
+  }
+
+  /** The state text, with the pace when the model is to be told it. */
+  #describe(text: string): string {
+    return this.tellPace && this.decisionMs !== undefined ? `${text}\n${paceLine(this.decisionMs)}` : text;
   }
 
   async decide(s: DuelSnapshot, tactics: Tactics = NEUTRAL): Promise<Decision> {
@@ -56,7 +68,7 @@ export class ModelBrain implements DuelBrain {
 
   async #decideNow(s: DuelSnapshot, tactics: Tactics): Promise<Decision> {
     if (this.module === "melee") {
-      const d = await systemOne(this.backend, describeMelee(s), meleeQuestion(s, tactics));
+      const d = await systemOne(this.backend, this.#describe(describeMelee(s)), meleeQuestion(s, tactics));
       const answer = shapeAnswer(d.answers.move, tactics.aggression);
       const { mode, parts } = splitByMode(answer);
       const overrides: string[] = [];
@@ -88,7 +100,7 @@ export class ModelBrain implements DuelBrain {
     const d =
       composite && options.length <= 1
         ? forced(options[0])
-        : await systemOne(this.backend, describeDuel(s), questions);
+        : await systemOne(this.backend, this.#describe(describeDuel(s)), questions);
     const a = d.answers;
     const shaped = composite ? shapeAnswer(a.move, tactics.aggression) : null;
     const parts = shaped

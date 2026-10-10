@@ -29,6 +29,8 @@ STORE = os.path.join(ROOT, ".fleet", "mlflow")
 CHECKPOINTS = os.path.join(ROOT, "training", "checkpoints")
 DATA = os.path.join(ROOT, "training", "data")
 LOGS = os.path.join(ROOT, ".fleet", "kaggle-logs")
+#: Logs of the trainings run on this Mac's GPU (training/finetune.py's output, kept by hand or by a lab script).
+LOCAL_LOGS = os.path.join(ROOT, ".fleet", "train")
 STATE = os.path.join(ROOT, ".fleet", "trainer.json")
 EXPERIMENT = "laya-neo-duel"
 #: Sets whose file name does not follow train-<short>.jsonl (short: the name without "neo-duel-").
@@ -37,6 +39,7 @@ SETS = {
     "neo-duel-v8-dagger-all": "composite-4/train-v8-dagger-all.jsonl",
     "neo-duel-v8r": "composite-4/train-v8.jsonl",
     "neo-duel-v8r-s2": "composite-4/train-v8.jsonl",
+    "neo-skill-v1": "skill-mix-v1.jsonl",
 }
 #: Recipes in words, for the versions before the trainer kept them.
 RECIPES = {
@@ -48,6 +51,8 @@ RECIPES = {
     "neo-duel-v10": "v9a's outcome rows + 20k newer outcome rows, no DAgger (cancelled)",
     "neo-duel-v10b": "v8 + Laya's own outcome rows only (outcome:laya)",
     "neo-duel-v11j": "v8 + Jev's answers on v8's own states (DAgger with Jev)",
+    "neo-skill-v1": "from v8s4: 8000 sampled skill-training states answered by the oracle trainer (RunUO's Magery odds), "
+                    "4000 of v8's duel rows against forgetting",
 }
 
 
@@ -84,9 +89,15 @@ def composition(path):
     return teachers, modules
 
 
+def local_log(name):
+    """The log of a training run on this Mac, if it was one."""
+    path = os.path.join(LOCAL_LOGS, f"{name}.log")
+    return path if os.path.exists(path) else None
+
+
 def epochs_from_log(name):
     """Each epoch's held-out agreement and soft CE from a kept training log (pairs prefix lines with [name])."""
-    path = os.path.join(LOGS, f"{name}.log")
+    path = local_log(name) or os.path.join(LOGS, f"{name}.log")
     if not os.path.exists(path):
         return []
     with open(path) as f:
@@ -106,11 +117,12 @@ def outcome(state, name):
         status = None
     verdict = None
     for h in state.get("history", []):
-        if h.get("over") == name and status is None:
-            status = "dethroned"  # a former champion, beaten by the version promoted over it
         if name in (h.get("promoted"), h.get("dropped"), h.get("replaced")):
             status = status or ("promoted" if h.get("promoted") == name else "dropped" if h.get("dropped") == name else "replaced")
             verdict = h.get("result")
+    # A former champion, beaten by a version promoted over it, whatever got it there.
+    if status in (None, "promoted") and any(h.get("over") == name for h in state.get("history", [])):
+        status = "dethroned"
     numbers = {}
     m = re.search(r"(\d+)% \((\d+)-(\d+)\) against (\S+) (\d+)% \((\d+)-(\d+)\)(?:, z ([-+.\d]+))?", verdict or "")
     if m:
@@ -140,8 +152,9 @@ def sync(names):
                 params.update({f"module.{k}": v for k, v in modules.items()})
             if training:
                 seconds, items = training.get("seconds", 0), training.get("items", 0)
-                params.update({"epochs": training.get("epochs"), "items": items, "mode": training.get("mode"),
-                               "hardware": "A100 (Colab)" if items and seconds / items < 0.1 else "T4 (Kaggle)"})
+                hardware = "M5 Max (MPS, this Mac)" if local_log(name) else "A100 (Colab)" if items and seconds / items < 0.1 else "T4 (Kaggle)"
+                params.update({"epochs": training.get("epochs"), "items": items, "mode": training.get("mode"), "hardware": hardware,
+                               **({"init": training["init"]} if training.get("init") else {})})
             if name in RECIPES:
                 params["recipe"] = RECIPES[name]
             if name in state.get("kernels", {}):
@@ -172,7 +185,7 @@ def show():
 def main():
     command, *names = sys.argv[1:] or ["show"]
     if command == "sync":
-        names = names or sorted(d for d in os.listdir(CHECKPOINTS) if d.startswith("neo-duel-"))
+        names = names or sorted(d for d in os.listdir(CHECKPOINTS) if d.startswith(("neo-duel-", "neo-skill-")))
         state = json.load(open(STATE)) if os.path.exists(STATE) else {}
         names = sorted(set(names) | set(state.get("failed", [])) if not sys.argv[2:] else set(names))
         sync(names)

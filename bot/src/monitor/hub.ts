@@ -32,6 +32,8 @@ export type MatchInfo = {
   obstacles?: { x: number; y: number }[];
   /** Sanity checks on the recorded decisions (cast times, decision times), set when the match ends. */
   checks?: RunCheck[];
+  /** Paced models were told their pace in the state they read. */
+  tellPace?: boolean;
 };
 
 const PUBLIC = join(import.meta.dirname, "public");

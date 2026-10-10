@@ -17,7 +17,8 @@ import { type ArenaLayout, OBSTACLE_GRAPHICS } from "./arena.ts";
 import { loadTemplate, moduleOf } from "./templates.ts";
 import { Session } from "./session.ts";
 
-export type BrainKind = "laya" | "jev" | "rules" | "random";
+/** "oracle": the skill trainer worked out from ModernUO's formulas (src/game/train-brain.ts); it plays no duels. */
+export type BrainKind = "laya" | "jev" | "rules" | "random" | "oracle";
 export type Fighter = {
   kind: "bot";
   name: string;
@@ -47,9 +48,11 @@ export type MatchOptions = {
   bench?: string;
   /** A GM session shared by matches running at once; without one the match opens and closes its own. */
   gm?: Session;
+  /** Paced models read their pace in the state (UO Bench's paced tracks). */
+  tellPace?: boolean;
 };
 
-const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules", "random"] satisfies BrainKind[];
+const BRAIN_KINDS: readonly string[] = ["laya", "jev", "rules", "random", "oracle"] satisfies BrainKind[];
 
 /**
  * A fighter's brain as a spec names it: "laya", "jev", "rules", "random", or with "@N" a time in
@@ -73,8 +76,11 @@ export function parseBrain(spec: string): { brain: BrainKind; reactionMs?: numbe
 const reaction = (f: Fighter) =>
   f.brain === "rules" ? { reactionMs: f.reactionMs ?? config.rulesReactionMs } : f.reactionMs !== undefined ? { reactionMs: f.reactionMs } : {};
 
-/** reactionMs: the scripted bot's reaction time (the configured one when left out), or a model's decision time. */
-export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reactionMs?: number): DuelBrain {
+/**
+ * reactionMs: the scripted bot's reaction time (the configured one when left out), or a model's
+ * decision time; tellPace: a model reads that decision time in its state.
+ */
+export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reactionMs?: number, tellPace = false): DuelBrain {
   switch (kind) {
     case "rules":
       return new RuleBrain(module, reactionMs ?? config.rulesReactionMs);
@@ -82,7 +88,9 @@ export function makeBrain(kind: BrainKind, module: ModuleName = "mage", reaction
     case "jev":
     case "random":
       // random: a legal move at random, through the same guardrails as the models: the floor of the bench.
-      return new ModelBrain(modelBackend(kind), "composite", module, reactionMs);
+      return new ModelBrain(modelBackend(kind), "composite", module, reactionMs, tellPace);
+    case "oracle":
+      throw new Error("the oracle trains skills; it plays no duels");
   }
 }
 
@@ -122,8 +130,8 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     }
     throw err;
   }
-  const brainA = makeBrain(o.a.brain, moduleOf(o.a.template), o.a.reactionMs);
-  const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain, moduleOf(o.b.template), o.b.reactionMs) : null;
+  const brainA = makeBrain(o.a.brain, moduleOf(o.a.template), o.a.reactionMs, o.tellPace);
+  const brainB = o.b.kind === "bot" ? makeBrain(o.b.brain, moduleOf(o.b.template), o.b.reactionMs, o.tellPace) : null;
   let tacticsA = await loadTactics(o.a.tactics);
   let tacticsB = o.b.kind === "bot" ? await loadTactics(o.b.tactics) : null;
 
@@ -141,6 +149,7 @@ export async function runMatch(o: MatchOptions, hub: MonitorHub, log: (m: string
     rounds: o.rounds,
     arena: o.arena,
     distance: o.distance,
+    ...(o.tellPace ? { tellPace: true } : {}),
     results: [],
     startedAt: Date.now(),
   };

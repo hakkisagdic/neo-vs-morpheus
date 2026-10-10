@@ -33,6 +33,9 @@ export async function daggerLabels(runsDir: string, since = "", log: (m: string)
     if (!run.match) {
       continue; // a skill-training session (runs/<stamp>-skill.json): no duel in it
     }
+    if (run.versions?.bench) {
+      continue; // UO Bench's: no model may learn from the states it is scored on
+    }
     const problems = checkRun(run.records, run.match.fighters).flatMap((c) => c.problems);
     if (problems.length) {
       log(`skipping ${file}: ${problems.join("; ")}`);

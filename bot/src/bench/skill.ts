@@ -5,12 +5,14 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RUNS_DIR } from "../fleet/results.ts";
-import { type SkillResult, mageryAt } from "../game/skill-session.ts";
+import { type SkillResult, longestStep, mageryAt } from "../game/skill-session.ts";
+import { TRAIN_FORMAT } from "../game/train-brain.ts";
 import type { TrainStep } from "../game/train.ts";
 import { BENCH_LATENCY_MS } from "./leaderboard.ts";
 import { meanInterval } from "./stats.ts";
 
-export type SkillRun = { file: string; bench?: string; result: SkillResult };
+/** format: the training prompt and odds of the session (TRAIN_FORMAT); none before "skill-2". */
+export type SkillRun = { file: string; bench?: string; format?: string; result: SkillResult };
 
 export type SkillScore = {
   /** The leaderboard's name for it ("ml/skill-magery: gain in 20 min"). */
@@ -38,6 +40,9 @@ export type SkillRow = {
   settled: boolean;
 };
 
+/** Seconds beyond its decision time that no step should take (a rest waits 10 s at most). */
+export const STALL_S = 30;
+
 /** Sessions below which no skill score counts as settled. */
 export const MIN_SESSIONS = 20;
 
@@ -47,8 +52,10 @@ export async function readSkillRuns(dir = RUNS_DIR): Promise<SkillRun[]> {
   const out: SkillRun[] = [];
   for (const file of files) {
     try {
-      const run = JSON.parse(await readFile(join(dir, file), "utf8")) as { versions?: { bench?: string }; skill: SkillResult; steps?: TrainStep[] };
-      out.push({ file, bench: run.versions?.bench, result: run.skill });
+      const run = JSON.parse(await readFile(join(dir, file), "utf8")) as { versions?: { bench?: string; format?: string }; skill: SkillResult; steps?: TrainStep[] };
+      // Sessions saved before the field: the longest step from their steps.
+      const result = run.skill.longestStepS === undefined && run.steps ? { ...run.skill, longestStepS: longestStep(run.steps) } : run.skill;
+      out.push({ file, bench: run.versions?.bench, format: run.versions?.format, result });
     } catch {
       // still being written
     }
@@ -78,6 +85,11 @@ export function skillProblems(r: SkillResult): string[] {
   if (r.seconds < r.minutes * 60 - 30) {
     problems.push(`trained ${Math.round(r.seconds / 60)} of ${r.minutes} minutes`);
   }
+  // A step is a decision and a cast, a rest or a skill use: seconds, a decision time more at most.
+  const allowed = (r.trainee.decisionMs ?? 0) / 1000 + STALL_S;
+  if ((r.longestStepS ?? 0) > allowed) {
+    problems.push(`a step took ${r.longestStepS} s (the machine or the server froze)`);
+  }
   return problems;
 }
 
@@ -96,9 +108,11 @@ export function skillLeaderboard(runs: SkillRun[], bench: string, tracks: Record
     const sessions = runs.filter((r) => r.bench === `${bench}:${name}`);
     const players = new Map<string, SkillResult[]>();
     const flagged = new Map<string, number>();
-    for (const { result } of sessions) {
+    for (const { result, format } of sessions) {
       const player = skillPlayer(result);
-      if (skillProblems(result).length) {
+      // An older format is another test: models read another prompt, scripted players knew other odds.
+      const stale = format !== TRAIN_FORMAT;
+      if (stale || skillProblems(result).length) {
         flagged.set(player, (flagged.get(player) ?? 0) + 1);
         continue;
       }

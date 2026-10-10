@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { type SkillTrack, skillLeaderboard, skillPlayer, skillProblems, skillValue } from "../src/bench/skill.ts";
 import { meanInterval, t975 } from "../src/bench/stats.ts";
-import { type SkillResult, mageryAt } from "../src/game/skill-session.ts";
+import { type SkillResult, longestStep, mageryAt } from "../src/game/skill-session.ts";
+import { TRAIN_FORMAT } from "../src/game/train-brain.ts";
 
 const session = (over: Partial<SkillResult> = {}): SkillResult => ({
   trainee: { name: "Neo", brain: "rules", template: "mage-trainee" },
@@ -64,17 +65,23 @@ describe("UO Bench skill tracks", () => {
     expect(skillProblems(session({ trainee: { name: "Neo", brain: "laya", template: "mage-trainee" }, latencyMs: 350 }))).toHaveLength(1);
     expect(skillProblems(session({ trainee: { name: "Neo", brain: "laya", template: "mage-trainee", decisionMs: 4000 }, latencyMs: 3900 }))).toEqual([]);
     expect(skillProblems(session({ seconds: 600 }))).toHaveLength(1);
+    expect(skillProblems(session({ longestStepS: 900 }))).toEqual(["a step took 900 s (the machine or the server froze)"]);
+    expect(skillProblems(session({ longestStepS: 33, trainee: { name: "Neo", brain: "jev", template: "mage-trainee", decisionMs: 4000 } }))).toEqual([]);
+    const steps = [0, 3, 6.5, 970, 973].map((seconds) => ({ state: { seconds } })) as Parameters<typeof longestStep>[0];
+    expect(longestStep(steps)).toBe(964);
   });
 
   it("ranks gains high to low and times low to high, and settles only with enough sessions", () => {
     const runs = [
-      ...Array.from({ length: 30 }, (_, i) => ({ file: `a${i}`, bench: "uo-bench/1:ml/skill-magery", result: session({ progress: [[600, 54 + (i % 3) * 0.1]] }) })),
+      ...Array.from({ length: 30 }, (_, i) => ({ file: `a${i}`, bench: "uo-bench/1:ml/skill-magery", format: TRAIN_FORMAT, result: session({ progress: [[600, 54 + (i % 3) * 0.1]] }) })),
       ...Array.from({ length: 5 }, (_, i) => ({
         file: `b${i}`,
         bench: "uo-bench/1:ml/skill-magery",
+        format: TRAIN_FORMAT,
         result: session({ trainee: { name: "Neo", brain: "random", template: "mage-trainee" }, progress: [[600, 51]], reachedAt: i ? null : 1800 }),
       })),
-      { file: "c", bench: "uo-bench/1:ml/skill-magery", result: session({ restocks: 2 }) },
+      { file: "c", bench: "uo-bench/1:ml/skill-magery", format: TRAIN_FORMAT, result: session({ restocks: 2 }) },
+      { file: "e", bench: "uo-bench/1:ml/skill-magery", format: "skill-2", result: session() }, // an older test
       { file: "d", bench: "uo-bench/1:ml/duel-mage", result: session() },
     ];
     const rows = skillLeaderboard(runs, "uo-bench/1", TRACKS);
@@ -82,7 +89,7 @@ describe("UO Bench skill tracks", () => {
     expect(gain.map((r) => r.player)).toEqual(["rules mage-trainee", "random mage-trainee"]);
     expect(gain[0].score).toBeCloseTo(4.1);
     expect(gain[0].sessions).toBe(30);
-    expect(gain[0].flagged).toBe(1);
+    expect(gain[0].flagged).toBe(2);
     expect(gain[0].settled).toBe(true);
     expect(gain[1].settled).toBe(false); // 5 sessions
     const time = rows.filter((r) => r.track === "time");

@@ -49,7 +49,7 @@ def matches(spec, tracks, player, passes, seed):
                 a, b = (f"Neo:{me}", f"Morpheus:{them}") if first else (f"Neo:{them}", f"Morpheus:{me}")
                 out.append({"label": f"{name} {entry['label']}, the player {'first' if first else 'second'}", "a": a, "b": b,
                             "rounds": track.get("rounds", 10), **({"timeout": track["timeout"]} if "timeout" in track else {}),
-                            **extra, "bench": f"{spec['id']}:{name}"})
+                            **({"tellPace": True} if track.get("tell_pace") else {}), **extra, "bench": f"{spec['id']}:{name}"})
     out = out * passes
     random.Random(seed).shuffle(out)
     return out
@@ -63,7 +63,7 @@ def main():
     ap.add_argument("--model", help="the checkpoint a laya player plays (served on each lane)")
     ap.add_argument("--lanes", required=True, help="the machine's lanes, comma-separated")
     ap.add_argument("--machine", default="mac", help="a fleet machine: mac, or a CPU-only one (alastyr) for players without a model")
-    ap.add_argument("--tracks", help="comma-separated; every track of the bench by default")
+    ap.add_argument("--tracks", help="comma-separated; every track of the bench but the retired ones by default")
     ap.add_argument("--passes", type=int, default=4, help="times every match is played")
     ap.add_argument("--parallel", type=int, default=8)
     ap.add_argument("--seed", type=int, default=20261006)
@@ -75,7 +75,8 @@ def main():
 
     with open(os.path.join(ROOT, "bench", f"{args.bench}.json")) as f:
         spec = json.load(f)
-    tracks = args.tracks.split(",") if args.tracks else list(spec["tracks"])
+    # A retired track keeps its scores but is played only when named.
+    tracks = args.tracks.split(",") if args.tracks else [k for k, t in spec["tracks"].items() if not t.get("retired")]
     unknown = [t for t in tracks if t not in spec["tracks"]]
     if unknown:
         sys.exit(f"no such tracks in {args.bench}: {', '.join(unknown)}")

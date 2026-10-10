@@ -92,7 +92,7 @@
     },
     "ml/equal-mage": {
       "shard": "modernuo-ml",
-      "about": "Mage against the scripted mage, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone.",
+      "about": "Mage against the scripted mage, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone. Retired on 7 October 2026: the models were not told the pace, and at 4 s a move a different game wins (big spells over quick ones); ml/paced-* replaces it.",
       "rounds": 10,
       "timeout": 600,
       "player": "{player}@4000:mage",
@@ -118,11 +118,43 @@
           "label": "wall",
           "arena": "wall"
         }
-      ]
+      ],
+      "retired": true
+    },
+    "ml/paced-mage": {
+      "shard": "modernuo-ml",
+      "about": "Mage against the scripted mage, both deciding at one pace: every move acts 4 s after the state it answers, and a model reads its pace in the state, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement, knowing the game they play.",
+      "rounds": 10,
+      "timeout": 600,
+      "player": "{player}@4000:mage",
+      "opponent": "rules@4000:mage",
+      "entries": [
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
+      ],
+      "tell_pace": true
     },
     "ml/equal-dexer": {
       "shard": "modernuo-ml",
-      "about": "Dexer against the scripted dexer, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone.",
+      "about": "Dexer against the scripted dexer, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone. Retired on 7 October 2026: the models were not told the pace, and at 4 s a move a different game wins (big spells over quick ones); ml/paced-* replaces it.",
       "rounds": 10,
       "timeout": 600,
       "player": "{player}@4000:dexer",
@@ -148,11 +180,43 @@
           "label": "wall",
           "arena": "wall"
         }
-      ]
+      ],
+      "retired": true
+    },
+    "ml/paced-dexer": {
+      "shard": "modernuo-ml",
+      "about": "Dexer against the scripted dexer, both deciding at one pace: every move acts 4 s after the state it answers, and a model reads its pace in the state, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement, knowing the game they play.",
+      "rounds": 10,
+      "timeout": 600,
+      "player": "{player}@4000:dexer",
+      "opponent": "rules@4000:dexer",
+      "entries": [
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
+      ],
+      "tell_pace": true
     },
     "ml/equal-archer": {
       "shard": "modernuo-ml",
-      "about": "Archer against the scripted archer, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone.",
+      "about": "Archer against the scripted archer, both deciding at one pace: every move acts 4 s after the state it answers, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement alone. Retired on 7 October 2026: the models were not told the pace, and at 4 s a move a different game wins (big spells over quick ones); ml/paced-* replaces it.",
       "rounds": 10,
       "timeout": 600,
       "player": "{player}@4000:archer",
@@ -178,7 +242,39 @@
           "label": "wall",
           "arena": "wall"
         }
-      ]
+      ],
+      "retired": true
+    },
+    "ml/paced-archer": {
+      "shard": "modernuo-ml",
+      "about": "Archer against the scripted archer, both deciding at one pace: every move acts 4 s after the state it answers, and a model reads its pace in the state, so that models of very different speeds (Jev's 3 s, Laya's 40 ms) are compared on judgement, knowing the game they play.",
+      "rounds": 10,
+      "timeout": 600,
+      "player": "{player}@4000:archer",
+      "opponent": "rules@4000:archer",
+      "entries": [
+        {
+          "label": "8 tiles",
+          "distance": 8
+        },
+        {
+          "label": "12 tiles",
+          "distance": 12
+        },
+        {
+          "label": "4 tiles",
+          "distance": 4
+        },
+        {
+          "label": "pillars",
+          "arena": "pillars"
+        },
+        {
+          "label": "wall",
+          "arena": "wall"
+        }
+      ],
+      "tell_pace": true
     },
     "ml/skill-magery": {
       "shard": "modernuo-ml",

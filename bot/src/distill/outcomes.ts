@@ -13,7 +13,11 @@ import { checkRun } from "../eval/run-checks.ts";
 import type { LabeledState } from "./label.ts";
 
 export type RunRecord = { at: number; bot: string; decision: Decision; snapshot: DuelSnapshot; outcome?: { result: string; castMs?: number } };
-export type Run = { match: { results: { winner: string | null }[]; fighters?: { name: string; brain: string }[] }; records: RunRecord[] };
+export type Run = {
+  versions?: { bench?: string };
+  match: { results: { winner: string | null }[]; fighters?: { name: string; brain: string }[] };
+  records: RunRecord[];
+};
 
 /** How long after a decision its damage balance is measured. */
 export const HORIZON_MS = 4_000;
@@ -126,6 +130,9 @@ export async function scoreRuns(runsDir: string, since = "", log: (m: string) =>
     const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as Run;
     if (!run.match) {
       continue; // a skill-training session (runs/<stamp>-skill.json): no duel in it
+    }
+    if (run.versions?.bench) {
+      continue; // UO Bench's: no model may learn from the states it is scored on
     }
     // Checked again rather than read from the file, so that runs from before the checks count too.
     const problems = checkRun(run.records, run.match.fighters).flatMap((c) => c.problems);

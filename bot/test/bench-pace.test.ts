@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { ModelBrain } from "../src/brain/brains.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ModelBrain, paceLine } from "../src/brain/brains.ts";
 import { checkRun } from "../src/eval/run-checks.ts";
 import { describeSide } from "../src/fleet/results.ts";
 import { parseBrain } from "../src/game/match.ts";
@@ -41,5 +41,28 @@ describe("a decision time of one's own (the bench's equal-time tracks)", () => {
     expect(checkRun(late as never, fighters).flatMap((c) => c.problems)[0]).toMatch(/took 5200 ms/);
     // Without a decision time Jev's usual 3 s is not held against it.
     expect(checkRun(Array.from({ length: 5 }, () => record(3300)) as never, [{ name: "Neo", brain: "jev" }]).flatMap((c) => c.problems)).toEqual([]);
+  });
+});
+
+describe("paced tracks", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("tells a paced model its pace in the state it reads, and only when asked to", async () => {
+    const sent: string[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { state: string; questions: { move: { criteria: Record<string, string> } } };
+      sent.push(body.state);
+      return new Response(JSON.stringify({ model: "m", answers: { move: { choice: Object.keys(body.questions.move.criteria)[0] } } }), { status: 200 });
+    });
+    const backend = { name: "laya" as const, url: "http://x" };
+    await new ModelBrain(backend, "composite", "mage", 20, true).decide(SCENARIOS[0].snapshot);
+    await new ModelBrain(backend, "composite", "mage", 20).decide(SCENARIOS[0].snapshot);
+    await new ModelBrain(backend, "composite", "mage", undefined, true).decide(SCENARIOS[0].snapshot);
+    expect(sent[0].endsWith(paceLine(20))).toBe(true);
+    expect(paceLine(4000)).toBe("Pace: you decide once every 4 s, and each move is carried out 4 s after the state it answers.");
+    expect(sent[1]).not.toContain("Pace:");
+    expect(sent[2]).not.toContain("Pace:"); // no decision time, nothing to tell
   });
 });

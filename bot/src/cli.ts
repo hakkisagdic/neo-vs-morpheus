@@ -10,6 +10,7 @@ import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from ".
 import { daggerLabels } from "./distill/dagger.ts";
 import { outcomeLabels, scoreRuns } from "./distill/outcomes.ts";
 import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
+import { skillRows } from "./distill/skill.ts";
 import {
   type TrainingState,
   isMovementState,
@@ -96,6 +97,8 @@ const USAGE = `usage: npm run nvm -- <command>
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
   distill credits           the FreeJev credits left (states --set laya + label --set laya use them)
+  distill skill [n] [seed]  n sampled skill-training states answered by the oracle trainer
+                            -> training/data/labeled-skill.jsonl
                             (default training/data/test.jsonl, written by training/split.py)
 `;
 
@@ -208,6 +211,8 @@ type SeriesEntry = {
   minutes?: number;
   goal?: number;
   cap?: number;
+  /** Paced models read their pace in the state (UO Bench's paced tracks). */
+  tellPace?: boolean;
 };
 
 /**
@@ -277,6 +282,7 @@ async function series(args: string[]): Promise<void> {
             slot,
             gm,
             bench: e.bench,
+            tellPace: e.tellPace,
           },
           hub,
           (m) => {
@@ -737,6 +743,14 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     const teacher = { ...brain.backend, timeoutMs: 120_000 };
     const n = await labelStates(teacher, statesPath, labeledPath, Number(rest[0] ?? 1e9), (m) => console.log(m));
     console.log(`labeled ${n} states`);
+  } else if (sub === "skill") {
+    // Sampled skill-training states with the oracle trainer's answers (see distill/skill.ts).
+    const n = Number(rest[0] ?? 8000);
+    const rows = await skillRows(n, Number(rest[1] ?? 20261007));
+    const path = join(DATA, "labeled-skill.jsonl");
+    await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const chosen = Object.entries(Object.groupBy(rows, (r) => Object.entries(r.teacher.probabilities).reduce((a, b) => (b[1] > a[1] ? b : a))[0]));
+    console.log(`${rows.length} skill states -> ${path}; the oracle chose ${chosen.map(([k, rs]) => `${k} ${rs?.length}`).join(", ")}`);
   } else if (sub === "credits") {
     // FreeJev's remaining credits (its usage endpoint is free); the key is sent, never printed.
     const res = await fetch(new URL("/api/v1/usage", config.jevUrl), { headers: { Authorization: `Bearer ${requireSetting(config.jevApiKey, "JEV_API_KEY")}` } });

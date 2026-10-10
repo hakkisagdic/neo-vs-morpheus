@@ -174,8 +174,12 @@ export async function statesFromRuns(
   }
   for (const file of files) {
     const run = JSON.parse(await readFile(join(runsDir, file), "utf8")) as {
+      versions?: { bench?: string };
       records?: { snapshot: DuelSnapshot; decision?: { module?: ModuleName } }[];
     };
+    if (run.versions?.bench) {
+      continue; // UO Bench's: no model may learn from the states it is scored on
+    }
     for (const [i, rec] of (run.records ?? []).entries()) {
       if ((rec.decision?.module ?? "mage") !== module || !keep(rec.snapshot)) {
         continue;
@@ -209,7 +213,8 @@ export async function layaStates(runsDir: string, module: ModuleName, since: str
     } catch {
       continue;
     }
-    if (!run.records?.length || checkRun(run.records, run.match.fighters).some((c) => c.problems.length)) {
+    // A bench run is UO Bench's: no model may learn from the states it is scored on.
+    if (!run.records?.length || run.versions?.bench || checkRun(run.records, run.match.fighters).some((c) => c.problems.length)) {
       continue;
     }
     const index = new Map(run.records.map((r, k) => [r, k]));

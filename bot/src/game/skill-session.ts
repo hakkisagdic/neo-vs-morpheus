@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { config } from "../config.ts";
 import { type Fighter, codeVersion } from "./match.ts";
 import { Session } from "./session.ts";
-import { makeTrainBrain } from "./train-brain.ts";
+import { TRAIN_FORMAT, makeTrainBrain } from "./train-brain.ts";
 import { SkillTrainer, type TrainStep } from "./train.ts";
 
 export type SkillSessionOptions = {
@@ -47,6 +47,8 @@ export type SkillResult = {
   decisions: number;
   /** Median decision time, ms. */
   latencyMs: number;
+  /** The longest step, s: a step takes seconds, so minutes mean the machine or the server froze. */
+  longestStepS?: number;
   /** How often each option was taken ("cast:4", "meditate", "evalInt"). */
   choices: Record<string, number>;
 };
@@ -69,6 +71,15 @@ export function describeSkillResult(r: SkillResult): string {
   const goal = r.reachedAt === null ? `${r.goal} not reached in ${Math.round(r.seconds / 60)} min` : `${r.goal} in ${(r.reachedAt / 60).toFixed(1)} min`;
   const trouble = [r.errors ? `${r.errors} failed decisions` : "", r.restocks ? `${r.restocks} restocks` : ""].filter(Boolean);
   return `Magery ${r.start.Magery.toFixed(1)} -> ${r.end.Magery.toFixed(1)} (+${at.toFixed(1)} in ${r.minutes} min; ${goal}), ${r.casts} casts, ${r.decisions} decisions at ${r.latencyMs} ms${trouble.length ? `; ${trouble.join(", ")}` : ""}`;
+}
+
+/** The longest time between one step's state and the next's, s. */
+export function longestStep(steps: Pick<TrainStep, "state">[]): number {
+  let longest = 0;
+  for (let i = 1; i < steps.length; i++) {
+    longest = Math.max(longest, steps[i].state.seconds - steps[i - 1].state.seconds);
+  }
+  return Math.round(longest);
 }
 
 const median = (xs: number[]) => {
@@ -131,6 +142,7 @@ export async function runSkillSession(o: SkillSessionOptions, log: (m: string) =
       errors: trainer.errors,
       decisions: trainer.steps.length,
       latencyMs: Math.round(median(trainer.steps.map((s) => s.choice.latencyMs))),
+      longestStepS: longestStep(trainer.steps),
       choices,
     };
     await saveSkillRun(result, trainer.steps, o.bench);
@@ -145,7 +157,7 @@ async function saveSkillRun(result: SkillResult, steps: TrainStep[], bench?: str
   await mkdir(dir, { recursive: true });
   const stamp = new Date(result.startedAt).toISOString().replace(/[:.]/g, "-");
   const where = config.fleetInstance ? { instance: config.fleetInstance, ...(config.fleetLane ? { lane: config.fleetLane } : {}) } : undefined;
-  const versions = { run: 1, kind: "skill", code: codeVersion(), ...(where ? { where } : {}), ...(bench ? { bench } : {}) };
+  const versions = { run: 1, kind: "skill", format: TRAIN_FORMAT, code: codeVersion(), ...(where ? { where } : {}), ...(bench ? { bench } : {}) };
   const name = where ? `${where.instance}--${stamp}-skill` : `${stamp}-skill`;
   await writeFile(join(dir, `${name}.json`), JSON.stringify({ versions, skill: result, steps }));
 }
