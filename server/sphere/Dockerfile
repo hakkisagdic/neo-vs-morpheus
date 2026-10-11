@@ -45,8 +45,9 @@ RUN case "$(dpkg --print-architecture)" in \
 
 FROM debian:${DEBIAN_VERSION}-slim
 
+# jq turns the character templates (JSON) into Sphere script at every start (generate.sh).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libmariadb3 \
+ && apt-get install -y --no-install-recommends libmariadb3 jq \
  && rm -rf /var/lib/apt/lists/* \
  && groupadd --gid 10001 sphere \
  && useradd --uid 10001 --gid sphere --no-create-home --home-dir /sphere sphere \
@@ -56,6 +57,16 @@ RUN apt-get update \
 # /opt/sphere is read-only for the server: the binary, upstream's ini templates and scripts.
 COPY --from=build /out/ /opt/sphere/
 COPY --from=scripts-x --exclude=.git --exclude=.github . /opt/sphere/scripts/
+
+# Our arena scripts go next to Scripts-X's spheretables.scp: Sphere loads the .scp files there
+# after everything spheretables.scp lists, so Scripts-X's definitions are known and its files stay
+# as they are. neo_generated.scp is written at every start (generate.sh); the link points at it.
+# The synthetic world's tiledata.mul (tiledata.sh) is made here, as server/Dockerfile does for
+# ModernUO; the entrypoint uses it when there are no client files.
+COPY scripts/ /opt/sphere/scripts/
+COPY --chmod=755 generate.sh tiledata.sh /opt/sphere/bin/
+RUN ln -s /sphere/generated/neo_generated.scp /opt/sphere/scripts/neo_generated.scp \
+ && /opt/sphere/bin/tiledata.sh /opt/sphere/tiledata.mul
 COPY --chmod=755 entrypoint.sh /usr/local/bin/laya-sphere
 
 # On SIGHUP Sphere saves the world before it exits (given the -U_SANITIZERS above); SIGTERM

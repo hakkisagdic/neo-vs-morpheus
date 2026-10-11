@@ -1,0 +1,15 @@
+[
+ {
+  "label": "sphere: scripted mages, open",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 3
+ },
+ {
+  "label": "sphere: scripted mages, pillars",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 3,
+  "arena": "pillars"
+ }
+]

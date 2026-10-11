@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # A local SphereServer-X shard in Docker, next to the ModernUO lanes (which use 2593+i).
 #
-#   server/sphere/sphere.sh build         build laya-sphere:<source-x>-<scripts-x> from vendor/emulators
+#   server/sphere/sphere.sh build         build laya-sphere:<source-x>-<scripts-x>-<ours> (see image())
 #   server/sphere/sphere.sh start         build if needed, start container laya-sphere on 127.0.0.1:2700
 #   server/sphere/sphere.sh stop          save the world and remove the container (the data volume stays)
 #   server/sphere/sphere.sh status|logs   container state / server console output
 #   server/sphere/sphere.sh console '#'   a line on Sphere's console ("#" saves, "?" lists commands)
-#   server/sphere/sphere.sh bot <cmd...>  the bot CLI against this shard, e.g. `bot login Neo`
+#   server/sphere/sphere.sh reload        read templates/*.json again (and changed scripts) without a restart
+#   server/sphere/sphere.sh bot <cmd...>  the bot CLI against this shard, e.g. `bot login Neo`,
+#                                         `bot series my-series.json`
 #
 # Settings come from the environment, then from the repo's .env (the environment wins):
 #   SPHERE_PORT (2700)        listen port; also the port Sphere hands clients for the game
@@ -16,6 +18,8 @@
 #   UO_DATA_DIR (server/client-files)  real client files, mounted read-only; empty = synthetic world
 #   SPHERE_OWNER_PASS, SPHERE_BOT_PASSWORD  passwords for this shard, used instead of
 #                             NEO_OWNER_PASS / BOT_PASSWORD: Sphere keeps at most 16 characters
+#   NEO_ARENA_MAP, NEO_ARENA_X, NEO_ARENA_Y, NEO_REAGENTS  the arena, as on ModernUO (defaults
+#                             Felucca 1180,3610 and 200 reagents for the built-in mage)
 #   SPHERE_JOBS (6), SPHERE_CPUS (2), SPHERE_MEMORY (2g)  build parallelism, container limits
 set -euo pipefail
 
@@ -50,7 +54,10 @@ die() {
 }
 
 commit() { git -C "$1" rev-parse --short=7 HEAD 2>/dev/null || echo local; }
-image() { echo "laya-sphere:$(commit "$src")-$(commit "$scripts")"; }
+# Our part of the image (this folder: Dockerfile, entrypoint, scripts) as a checksum, so that a
+# change to any of it makes a new tag, which `start` then builds.
+ours() { (cd "$HERE" && cat Dockerfile entrypoint.sh generate.sh tiledata.sh scripts/*.scp) | cksum | awk '{ printf "%08x", $1 }'; }
+image() { echo "laya-sphere:$(commit "$src")-$(commit "$scripts")-$(ours)"; }
 
 build() {
   [ -f "$src/CMakeLists.txt" ] || die "no Source-X checkout in $src"
@@ -85,8 +92,10 @@ start() {
     -p "127.0.0.1:$port:$port" \
     -e SPHERE_PORT="$port" -e SPHERE_SERVER_NAME="${SPHERE_SERVER_NAME:-Laya Sphere}" \
     -e NEO_OWNER_USER -e NEO_OWNER_PASS \
+    -e NEO_ARENA_MAP -e NEO_ARENA_X -e NEO_ARENA_Y -e NEO_REAGENTS \
     -v "$container-data:/sphere/data" \
     -v "$uodata:/uodata:ro" \
+    -v "$ROOT/templates:/templates:ro" \
     --cpus "${SPHERE_CPUS:-2}" --memory "${SPHERE_MEMORY:-2g}" \
     "$tag" >/dev/null
   for _ in $(seq 180); do
@@ -144,6 +153,13 @@ case "${1:-}" in
     ;;
   logs) shift; docker logs "$@" "$container" ;;
   console) shift; [ $# -gt 0 ] || die "usage: $0 console '<command>'"; console "$*" ;;
+  reload)
+    # The templates again, then Sphere's resync: it reads the script files that changed.
+    running || die "$container is not running"
+    docker exec "$container" /opt/sphere/bin/generate.sh /templates /sphere/generated/neo_generated.scp
+    console RESYNC
+    echo "$container: templates written again and a resync requested (see: $0 logs --tail 20)"
+    ;;
   bot)
     shift
     export BOT_PASSWORD=${SPHERE_BOT_PASSWORD:-${BOT_PASSWORD:-}}

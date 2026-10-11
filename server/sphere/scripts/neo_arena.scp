@@ -1,0 +1,541 @@
+//****************************************************************************
+// neo-vs-morpheus arena commands for SphereServer-X: the GM commands of ModernUO's NeoArena
+// overlay (server/overlay/NeoArena.cs), with the same names, arguments and replies, so the bot's
+// match orchestration (bot/src/game/match.ts) runs unchanged on this shard.
+//
+//   [NeoPrep <name>                              resurrect, heal, cure, end lasting spells, restock
+//   [NeoDuel <nameA> <nameB> [distance] [slot]   prep both and face them off in the arena
+//   [NeoPlace <name> <west|east> [distance] [slot]  prep one player and put them on one side
+//   [NeoTemplate <name> [template]               apply templates/<template>.json (default mage)
+//   [NeoMage [type] [distance] [slot]            spawn an NPC caster on the east side
+//   [NeoClear [radius] [slot]                    delete NPCs and corpses around the arena
+//   [NeoArena <open|pillars|wall|ring> [slot]    set the arena's obstacles
+//
+// A slot picks one of several arenas side by side, 80 tiles apart; slot 0's centre and the
+// templates come from neo_generated.scp, which server/sphere/generate.sh writes at every start.
+// Replies are system messages to the GM that start with "NEO ", as on ModernUO.
+//
+// Sphere script notes for whoever edits this: ARGV splits on commas only, so the commands take
+// their space-separated arguments apart with STRARG/STREAT. A LOCAL holding a number prints in
+// hex ("0e1a") and reads back as hex, so it survives the round trip; replies and coordinates use
+// <EVAL ...> or <dLOCAL.x> for decimal. A LOCAL set to nothing reads 0 and one set to
+// "90/35/100" reads 05a, so text that may be empty or start with a number stays out of LOCALs.
+// Arithmetic has no precedence (1180 - 8 / 2 + 8 is 1180), hence the parentheses.
+// Everything in <...> on a line is evaluated before the line runs, IF conditions
+// included, so a property of something that may not exist is read only inside an IF that checks
+// that it exists.
+//****************************************************************************
+VERSION=X1
+
+// Open to Game Masters, as on ModernUO (AccessLevel.GameMaster); the default is the owner only.
+[PLEVEL 4]
+NeoPrep
+NeoDuel
+NeoPlace
+NeoTemplate
+NeoMage
+NeoClear
+NeoArena
+
+///////////////////////////////////////////////////////////////
+//////// The commands
+///////////////////////////////////////////////////////////////
+
+[FUNCTION NeoPrep]
+// [NeoPrep <name>: resurrects, heals, cures, ends lasting spells and restocks an online player.
+LOCAL.who=<f_neo_find <STRARG <ARGS>>>
+IF (<LOCAL.who>)
+	UID.<LOCAL.who>.f_neo_prep
+	SRC.SYSMESSAGE NEO prep <UID.<LOCAL.who>.NAME> <f_neo_serial <LOCAL.who>>
+ENDIF
+RETURN 1
+
+[FUNCTION NeoDuel]
+// [NeoDuel <nameA> <nameB> [distance] [slot]: preps two online players and places them facing
+// each other, A on the west side and B on the east.
+LOCAL.a=<f_neo_find <STRARG <ARGS>>>
+IF !(<LOCAL.a>)
+	RETURN 1
+ENDIF
+LOCAL.b=<f_neo_find <STRARG <STREAT <ARGS>>>>
+IF !(<LOCAL.b>)
+	RETURN 1
+ENDIF
+LOCAL.distance=<f_neo_distance <STRARG <STREAT <STREAT <ARGS>>>>>
+LOCAL.slot=<f_neo_slot <STRARG <STREAT <STREAT <STREAT <ARGS>>>>>>
+LOCAL.west=<EVAL <f_neo_x <dLOCAL.slot>> - (<dLOCAL.distance> / 2)>
+UID.<LOCAL.a>.f_neo_prep
+UID.<LOCAL.b>.f_neo_prep
+UID.<LOCAL.a>.f_neo_go <dLOCAL.west>,<EVAL <DEF.neo_arena_y>>,2
+UID.<LOCAL.b>.f_neo_go <EVAL <dLOCAL.west> + <dLOCAL.distance>>,<EVAL <DEF.neo_arena_y>>,6
+SRC.SYSMESSAGE NEO duel <f_neo_who <LOCAL.a>> <f_neo_who <LOCAL.b>> <DEF.neo_arena_mapname>
+RETURN 1
+
+[FUNCTION NeoPlace]
+// [NeoPlace <name> <west|east> [distance] [slot]: preps one online player and places them on one
+// side of the arena.
+LOCAL.who=<f_neo_find <STRARG <ARGS>>>
+IF !(<LOCAL.who>)
+	RETURN 1
+ENDIF
+LOCAL.distance=<f_neo_distance <STRARG <STREAT <STREAT <ARGS>>>>>
+LOCAL.slot=<f_neo_slot <STRARG <STREAT <STREAT <STREAT <ARGS>>>>>>
+LOCAL.x=<EVAL <f_neo_x <dLOCAL.slot>> - (<dLOCAL.distance> / 2)>
+IF (STRCMPI(<STRARG <STREAT <ARGS>>>,east) == 0)
+	LOCAL.x=<EVAL <dLOCAL.x> + <dLOCAL.distance>>
+ENDIF
+UID.<LOCAL.who>.f_neo_prep
+UID.<LOCAL.who>.f_neo_go <dLOCAL.x>,<EVAL <DEF.neo_arena_y>>,-1
+SRC.SYSMESSAGE NEO place <f_neo_who <LOCAL.who>>
+RETURN 1
+
+[FUNCTION NeoTemplate]
+// [NeoTemplate <name> [template=mage | skill [str dex int]]: applies a character template
+// (stats, skills, gear, consumables) and preps the player. The older form gives the mage with
+// every one of its skills at <skill>, and optionally other stats.
+LOCAL.who=<f_neo_find <STRARG <ARGS>>>
+IF !(<LOCAL.who>)
+	RETURN 1
+ENDIF
+LOCAL.id=mage
+LOCAL.skill=-1
+IF (<ISEMPTY <STRARG <STREAT <ARGS>>>>)
+ELIF (<ISNUM <STRARG <STREAT <ARGS>>>>)
+	LOCAL.skill=<EVAL <STRARG <STREAT <ARGS>>>>
+ELSE
+	LOCAL.id=<STRTOLOWER <STRARG <STREAT <ARGS>>>>
+ENDIF
+IF !(<f_neo_tpl <LOCAL.id>,check_exists,-1>)
+	SRC.SYSMESSAGE NEO error no template <LOCAL.id>
+	RETURN 1
+ENDIF
+// Problems collect in a tag on the player, the reply reads it there (see the LOCAL notes above).
+UID.<LOCAL.who>.TAG.neo_problems=
+UID.<LOCAL.who>.f_neo_apply <LOCAL.id>,<dLOCAL.skill>
+// "[NeoTemplate <name> <skill> <str> <dex> <int>": other stats than the template's.
+IF !(<ISEMPTY <STRARG <STREAT <STREAT <STREAT <STREAT <ARGS>>>>>>>)
+	UID.<LOCAL.who>.f_neo_stats <STRARG <STREAT <STREAT <ARGS>>>>,<STRARG <STREAT <STREAT <STREAT <ARGS>>>>>,<STRARG <STREAT <STREAT <STREAT <STREAT <ARGS>>>>>>
+ENDIF
+UID.<LOCAL.who>.f_neo_prep
+IF (<ISEMPTY <UID.<LOCAL.who>.TAG.neo_problems>>)
+	SRC.SYSMESSAGE NEO template <UID.<LOCAL.who>.NAME> <LOCAL.id> stats <UID.<LOCAL.who>.OSTR>/<UID.<LOCAL.who>.ODEX>/<UID.<LOCAL.who>.OINT>
+ELSE
+	SRC.SYSMESSAGE NEO template <UID.<LOCAL.who>.NAME> <LOCAL.id> stats <UID.<LOCAL.who>.OSTR>/<UID.<LOCAL.who>.ODEX>/<UID.<LOCAL.who>.OINT> problems <UID.<LOCAL.who>.TAG.neo_problems>
+ENDIF
+UID.<LOCAL.who>.TAG.neo_problems=
+RETURN 1
+
+[FUNCTION NeoMage]
+// [NeoMage [type=EvilMageLord] [distance=8] [slot]: spawns an NPC caster on the arena's east side.
+// ModernUO's creature names that Scripts-X has under another name are translated; anything else
+// is taken as a CHARDEF (c_evilmage, ...).
+LOCAL.type=EvilMageLord
+IF !(<ISEMPTY <STRARG <ARGS>>>)
+	LOCAL.type=<STRARG <ARGS>>
+ENDIF
+LOCAL.def=<LOCAL.type>
+IF (STRCMPI(<LOCAL.type>,EvilMageLord) == 0)
+	LOCAL.def=c_evilmage_lord
+ELIF (STRCMPI(<LOCAL.type>,EvilMage) == 0)
+	LOCAL.def=c_evilmage
+ENDIF
+IF !(<RESDEF0.<LOCAL.def>>)
+	SRC.SYSMESSAGE NEO error unknown creature type <LOCAL.type>
+	RETURN 1
+ENDIF
+LOCAL.distance=<f_neo_distance <STRARG <STREAT <ARGS>>>>
+LOCAL.slot=<f_neo_slot <STRARG <STREAT <STREAT <ARGS>>>>>
+LOCAL.x=<EVAL (<f_neo_x <dLOCAL.slot>> - (<dLOCAL.distance> / 2)) + <dLOCAL.distance>>
+SERV.NEWNPC <LOCAL.def>
+LOCAL.npc=<NEW>
+IF !(<LOCAL.npc>)
+	SRC.SYSMESSAGE NEO error cannot create <LOCAL.type>
+	RETURN 1
+ENDIF
+UID.<LOCAL.npc>.HOME=<dLOCAL.x>,<EVAL <DEF.neo_arena_y>>,0,<EVAL <DEF.neo_arena_map>>
+UID.<LOCAL.npc>.HOMEDIST=4
+UID.<LOCAL.npc>.f_neo_go <dLOCAL.x>,<EVAL <DEF.neo_arena_y>>,-1
+SRC.SYSMESSAGE NEO mage <f_neo_who <LOCAL.npc>>
+RETURN 1
+
+[FUNCTION NeoClear]
+// [NeoClear [radius=20] [slot]: deletes the NPCs and corpses around the arena, between rounds.
+LOCAL.radius=20
+IF !(<ISEMPTY <STRARG <ARGS>>>)
+	LOCAL.radius=<f_neo_clamp <STRARG <ARGS>>,1,60>
+ENDIF
+LOCAL.marker=<f_neo_marker <f_neo_slot <STRARG <STREAT <ARGS>>>>>
+LOCAL.count=<UID.<LOCAL.marker>.f_neo_clear <dLOCAL.radius>>
+UID.<LOCAL.marker>.REMOVE
+SRC.SYSMESSAGE NEO clear <EVAL <LOCAL.count>>
+RETURN 1
+
+[FUNCTION NeoArena]
+// [NeoArena <open|pillars|wall|ring> [slot]: removes the arena's obstacles and places those of
+// the layout: stone wall blocks (item 0x0080), which the synthetic tiledata makes block walking and
+// line of sight (server/sphere/tiledata.sh).
+LOCAL.layout=open
+IF !(<ISEMPTY <STRARG <ARGS>>>)
+	LOCAL.layout=<STRTOLOWER <STRARG <ARGS>>>
+ENDIF
+IF (STRCMPI(<LOCAL.layout>,open) != 0) && (STRCMPI(<LOCAL.layout>,pillars) != 0) && (STRCMPI(<LOCAL.layout>,wall) != 0) && (STRCMPI(<LOCAL.layout>,ring) != 0)
+	SRC.SYSMESSAGE NEO error unknown layout <LOCAL.layout>; one of open, pillars, wall, ring
+	RETURN 1
+ENDIF
+LOCAL.marker=<f_neo_marker <f_neo_slot <STRARG <STREAT <ARGS>>>>>
+LOCAL.count=<UID.<LOCAL.marker>.f_neo_layout <LOCAL.layout>>
+UID.<LOCAL.marker>.REMOVE
+SRC.SYSMESSAGE NEO arena <LOCAL.layout> <EVAL <LOCAL.count>>
+RETURN 1
+
+///////////////////////////////////////////////////////////////
+//////// Finding players, numbers from arguments, replies
+///////////////////////////////////////////////////////////////
+
+[FUNCTION f_neo_find]
+// The UID of the online player whose character is called <ARGS> (in any case); 0 after an error
+// reply to SRC when there is none.
+IF (<ISEMPTY <ARGS>>)
+	SRC.SYSMESSAGE NEO error missing player name
+	RETURN 0
+ENDIF
+FOR n 1 <SERV.CLIENTS>
+	IF (<SERV.CLIENT.<EVAL <dLOCAL.n> - 1>>)
+		IF (STRCMPI(<SERV.CLIENT.<EVAL <dLOCAL.n> - 1>.NAME>,<ARGS>) == 0)
+			RETURN <SERV.CLIENT.<EVAL <dLOCAL.n> - 1>.UID>
+		ENDIF
+	ENDIF
+ENDFOR
+SRC.SYSMESSAGE NEO error <ARGS> is not online
+RETURN 0
+
+[FUNCTION f_neo_clamp]
+// f_neo_clamp <value>,<low>,<high>: the value (a whole number; anything else counts as 0), kept
+// between low and high, in decimal.
+LOCAL.v=0
+IF (<ISNUM <ARGV[0]>>)
+	LOCAL.v=<EVAL <ARGV[0]>>
+ENDIF
+IF (<LOCAL.v> < <ARGV[1]>)
+	LOCAL.v=<ARGV[1]>
+ELIF (<LOCAL.v> > <ARGV[2]>)
+	LOCAL.v=<ARGV[2]>
+ENDIF
+RETURN <dLOCAL.v>
+
+[FUNCTION f_neo_distance]
+// The start distance from a command argument: 8 when missing, 1 to 18.
+IF (<ISEMPTY <ARGS>>)
+	RETURN 8
+ENDIF
+RETURN <f_neo_clamp <ARGS>,1,18>
+
+[FUNCTION f_neo_slot]
+// The arena slot from a command argument: 0 when missing, 0 to 7.
+IF (<ISEMPTY <ARGS>>)
+	RETURN 0
+ENDIF
+RETURN <f_neo_clamp <ARGS>,0,7>
+
+[FUNCTION f_neo_x]
+// The x of arena slot <ARGS>'s centre: 80 tiles east of the one before, far enough apart that
+// neither fighters, obstacles (30 tiles) nor clearing (20) reach a neighbour.
+RETURN <EVAL <DEF.neo_arena_x> + (<ARGS> * 80)>
+
+[FUNCTION f_neo_serial]
+// A UID as the client sees it and ModernUO prints it: 0x and eight hex digits.
+RETURN 0x<STRTOUPPER <STRSUB -8,8,00000000<HVAL <ARGS>>>>
+
+[FUNCTION f_neo_who]
+// "<name> 0x<serial> x,y,z" of character <ARGS>, for the replies.
+RETURN <UID.<ARGS>.NAME> <f_neo_serial <ARGS>> <UID.<ARGS>.P.X>,<UID.<ARGS>.P.Y>,<UID.<ARGS>.P.Z>
+
+[FUNCTION f_neo_go]
+// On a character: to <ARGV[0]>,<ARGV[1]> on the arena's map, at the ground's height, then facing
+// <ARGV[2]> (0 north, 2 east, 4 south, 6 west; -1 keeps the direction).
+GO <EVAL <ARGV[0]>>,<EVAL <ARGV[1]>>,0,<EVAL <DEF.neo_arena_map>>
+IF (<ARGV[2]> >= 0)
+	DIR=<ARGV[2]>
+ENDIF
+
+///////////////////////////////////////////////////////////////
+//////// Prep
+///////////////////////////////////////////////////////////////
+
+[FUNCTION f_neo_prep]
+// On a player: what Prep does on ModernUO. Resurrects, cures, ends lasting spell effects and
+// paralysis, fills hits, mana and stamina, stops the fight, and restocks the template.
+IF (<FLAGS> & statf_dead)
+	RESURRECT 1
+ENDIF
+CURE 1
+// Lasting spells are memory items on the spell layers (32 Bless, Curse and the other stat
+// spells, 33 Reactive Armor, 34 Night Sight, 35 Protection, 36 Incognito, 37 Magic Reflection,
+// 38 Paralyze, 39 Invisibility, 40 Polymorph, 41 summons), poison and potion effects on 42 and
+// 44, a web on 51, a bandage at work on 53; removing the item ends the effect.
+FOR layer 32 41
+	f_neo_unlayer <dLOCAL.layer>
+ENDFOR
+f_neo_unlayer 42
+f_neo_unlayer 44
+f_neo_unlayer 51
+f_neo_unlayer 53
+IF (<ATTACKER>)
+	ATTACKER.CLEAR
+ENDIF
+HITS=<MAXHITS>
+MANA=<MAXMANA>
+STAM=<MAXSTAM>
+f_neo_restock
+
+[FUNCTION f_neo_unlayer]
+// On a character: removes what lies on layer <ARGS> (several spell effects can share a layer).
+FOR 10
+	IF !(<FINDLAYER.<ARGS>>)
+		RETURN 1
+	ENDIF
+	FINDLAYER.<ARGS>.REMOVE
+ENDFOR
+RETURN 1
+
+[FUNCTION f_neo_restock]
+// On a player: fresh consumables for its template (TAG.neo_template, else the mage), its
+// spellbook, and any of its gear that went missing. Reagents and robes go first: every
+// resurrection away from the corpse dresses the player in a new robe.
+IF !(<FINDLAYER.21>)
+	NEWITEM i_backpack
+	EQUIP <NEW>
+ENDIF
+LOCAL.pack=<FINDLAYER.21>
+UID.<LOCAL.pack>.f_neo_purge_type t_reagent
+UID.<LOCAL.pack>.f_neo_purge i_robe
+LOCAL.id=mage
+IF !(<ISEMPTY <TAG.neo_template>>)
+	LOCAL.id=<TAG.neo_template>
+ENDIF
+f_neo_tpl <LOCAL.id>,stock,-1
+// What goes wrong here was reported when the template was applied.
+TAG.neo_quiet=1
+f_neo_tpl <LOCAL.id>,gear,-1
+TAG.neo_quiet=
+
+[FUNCTION f_neo_empty]
+// On a container: removes everything in it (one by one, so that clients see it go).
+FORCONT <UID> 0
+	REMOVE
+ENDFOR
+
+[FUNCTION f_neo_purge]
+// On a container: removes every item of kind <ARGS> inside it, at any depth.
+FORCONTID <ARGS> 255
+	REMOVE
+ENDFOR
+
+[FUNCTION f_neo_purge_type]
+// On a container: removes every item of type <ARGS> inside it, at any depth.
+FORCONTTYPE <ARGS> 255
+	REMOVE
+ENDFOR
+
+///////////////////////////////////////////////////////////////
+//////// Templates (the steps are in neo_generated.scp)
+///////////////////////////////////////////////////////////////
+
+[FUNCTION f_neo_apply]
+// On a player: template <ARGV[0]>, with every one of its skills at <ARGV[1]> unless that is
+// negative. Another build's weapons and armour come off and the pack empties first; problems go
+// to TAG.neo_problems.
+FOR layer 1 24
+	IF (<dLOCAL.layer> != 11) && (<dLOCAL.layer> != 16) && (<dLOCAL.layer> != 21)
+		IF (<FINDLAYER.<dLOCAL.layer>>)
+			// Sphere counts clothes as armour; they stay, as on ModernUO. A spellbook in hand goes
+			// like one in the pack (a new character holds Sphere's).
+			IF (<FINDLAYER.<dLOCAL.layer>.ISWEAPON>) || (<FINDLAYER.<dLOCAL.layer>.TYPE> == t_spellbook)
+				FINDLAYER.<dLOCAL.layer>.REMOVE
+			ELIF (<FINDLAYER.<dLOCAL.layer>.ISARMOR>) && (<FINDLAYER.<dLOCAL.layer>.TYPE> != t_clothing)
+				FINDLAYER.<dLOCAL.layer>.REMOVE
+			ENDIF
+		ENDIF
+	ENDIF
+ENDFOR
+IF (<FINDLAYER.21>)
+	FINDLAYER.21.f_neo_empty
+ENDIF
+ALLSKILLS 0
+f_neo_tpl <ARGV[0]>,apply,<ARGV[1]>
+TAG.neo_template=<ARGV[0]>
+f_neo_tpl <ARGV[0]>,gear,-1
+f_neo_tpl <ARGV[0]>,check,-1
+
+[FUNCTION f_neo_stats]
+// On a player: strength, dexterity and intelligence <ARGV[0..2]>, each 10 to 125.
+STR=<f_neo_clamp <ARGV[0]>,10,125>
+DEX=<f_neo_clamp <ARGV[1]>,10,125>
+INT=<f_neo_clamp <ARGV[2]>,10,125>
+
+[FUNCTION f_neo_skill]
+// On a player: skill <ARGV[0]> (Sphere's key) at <ARGV[1]>, or at <ARGV[2]> when that is 0 or
+// more; 0 to 120. Sphere keeps skills in tenths.
+LOCAL.value=<ARGV[1]>
+IF (<ARGV[2]> >= 0)
+	LOCAL.value=<ARGV[2]>
+ENDIF
+<ARGV[0]>=<EVAL <f_neo_clamp <EVAL <LOCAL.value>>,0,120> * 10>
+
+[FUNCTION f_neo_problem]
+// On a player: notes a problem with its template for the GM's reply (not while restocking).
+IF (<TAG0.neo_quiet>)
+	RETURN 0
+ENDIF
+IF (<ISEMPTY <TAG.neo_problems>>)
+	TAG.neo_problems=<ARGS>
+ELSE
+	TAG.neo_problems=<TAG.neo_problems>; <ARGS>
+ENDIF
+
+[FUNCTION f_neo_check]
+// On a player: whether item <ARGV[0]> (<ARGV[1]> in the template) exists on this shard.
+SERV.NEWITEM <ARGV[0]>
+IF (<NEW>)
+	NEW.REMOVE
+ELSE
+	f_neo_problem unknown item <ARGV[1]>
+ENDIF
+
+[FUNCTION f_neo_wear]
+// On a player: puts on a template's gear, <ARGV[0]> (<ARGV[1]> in the template), unless the same
+// item is worn already; whatever else is on its layer goes. Newbie (blessed), so death keeps it.
+NEWITEM <ARGV[0]>
+LOCAL.gear=<NEW>
+IF !(<LOCAL.gear>)
+	f_neo_problem unknown item <ARGV[1]>
+	RETURN 0
+ENDIF
+LOCAL.layer=<UID.<LOCAL.gear>.LAYER>
+IF (<LOCAL.layer> == 0)
+	f_neo_problem cannot wear <ARGV[1]>
+	UID.<LOCAL.gear>.REMOVE
+	RETURN 0
+ENDIF
+IF (<FINDLAYER.<dLOCAL.layer>>)
+	IF (<FINDLAYER.<dLOCAL.layer>.ID> == <UID.<LOCAL.gear>.ID>)
+		UID.<LOCAL.gear>.REMOVE
+		RETURN 1
+	ENDIF
+	FINDLAYER.<dLOCAL.layer>.REMOVE
+ENDIF
+UID.<LOCAL.gear>.ATTR=<EVAL <UID.<LOCAL.gear>.ATTR> | attr_newbie>
+EQUIP <LOCAL.gear>
+IF (<UID.<LOCAL.gear>.CONT> != <UID>)
+	f_neo_problem cannot wear <ARGV[1]>
+	UID.<LOCAL.gear>.REMOVE
+	RETURN 0
+ENDIF
+RETURN 1
+
+[FUNCTION f_neo_stock]
+// On a player: <ARGV[1]> of item <ARGV[0]> in the pack in place of any there, newbie (blessed),
+// so death keeps them. Something that does not stack comes as that many single items.
+LOCAL.pack=<FINDLAYER.21>
+UID.<LOCAL.pack>.f_neo_purge <ARGV[0]>
+LOCAL.left=<EVAL <ARGV[1]>>
+WHILE (<LOCAL.left> > 0)
+	NEWITEM <ARGV[0]>,<dLOCAL.left>,<LOCAL.pack>
+	LOCAL.item=<NEW>
+	IF !(<LOCAL.item>)
+		RETURN 0
+	ENDIF
+	UID.<LOCAL.item>.ATTR=<EVAL <UID.<LOCAL.item>.ATTR> | attr_newbie>
+	LOCAL.left=<EVAL <LOCAL.left> - <UID.<LOCAL.item>.AMOUNT>>
+ENDWHILE
+RETURN 1
+
+[FUNCTION f_neo_book]
+// On a player: a spellbook with all 64 Magery spells (MORE1 and MORE2 hold them as bits), the
+// one in hand or in the pack, else a new one in the pack.
+LOCAL.book=<FINDTYPE.t_spellbook>
+IF !(<LOCAL.book>)
+	NEWITEM i_spellbook,1,<FINDLAYER.21>
+	LOCAL.book=<NEW>
+ENDIF
+IF (<LOCAL.book>)
+	UID.<LOCAL.book>.MORE1=0ffffffff
+	UID.<LOCAL.book>.MORE2=0ffffffff
+	UID.<LOCAL.book>.ATTR=<EVAL <UID.<LOCAL.book>.ATTR> | attr_newbie>
+ENDIF
+
+///////////////////////////////////////////////////////////////
+//////// The arena: a marker item at a slot's centre to search around
+///////////////////////////////////////////////////////////////
+
+[FUNCTION f_neo_marker]
+// The UID of a new invisible marker at the centre of arena slot <ARGS>, to run the searches
+// below from; the caller removes it.
+SERV.NEWITEM i_nodraw
+LOCAL.marker=<NEW>
+UID.<LOCAL.marker>.ATTR=<EVAL attr_invis | attr_move_never>
+UID.<LOCAL.marker>.P=<f_neo_x <ARGS>>,<EVAL <DEF.neo_arena_y>>,0,<EVAL <DEF.neo_arena_map>>
+RETURN <LOCAL.marker>
+
+[FUNCTION f_neo_clear]
+// On a marker: removes the NPCs and corpses within <ARGS> tiles; returns how many.
+LOCAL.count=0
+FORCHARS <ARGS>
+	IF (<NPC>)
+		REMOVE
+		LOCAL.count += 1
+	ENDIF
+ENDFOR
+FORITEMS <ARGS>
+	IF (<TYPE> == t_corpse)
+		REMOVE
+		LOCAL.count += 1
+	ENDIF
+ENDFOR
+RETURN <dLOCAL.count>
+
+[FUNCTION f_neo_layout]
+// On a marker: removes the obstacles within 30 tiles and places those of layout <ARGS>, as
+// offsets from the centre (the start spots lie on the centre row, west and east); returns how
+// many it placed.
+FORITEMS 30
+	IF (<TAG0.neo_obstacle>)
+		REMOVE
+	ENDIF
+ENDFOR
+LOCAL.count=0
+IF (STRCMPI(<ARGS>,pillars) == 0)
+	// cover to either side of the line between the start spots
+	f_neo_obstacle -3,-2
+	f_neo_obstacle 3,-2
+	f_neo_obstacle -3,2
+	f_neo_obstacle 3,2
+	LOCAL.count=4
+ELIF (STRCMPI(<ARGS>,wall) == 0)
+	// across the middle, open at both ends: no straight line from one start to the other
+	FOR offset -2 2
+		f_neo_obstacle 0,<dLOCAL.offset>
+	ENDFOR
+	LOCAL.count=5
+ELIF (STRCMPI(<ARGS>,ring) == 0)
+	// a closed square, 23 by 23 tiles inside: nobody can run forever, as on the real map
+	FOR offset -12 12
+		f_neo_obstacle <dLOCAL.offset>,-12
+		f_neo_obstacle <dLOCAL.offset>,12
+	ENDFOR
+	FOR offset -11 11
+		f_neo_obstacle -12,<dLOCAL.offset>
+		f_neo_obstacle 12,<dLOCAL.offset>
+	ENDFOR
+	LOCAL.count=96
+ENDIF
+RETURN <dLOCAL.count>
+
+[FUNCTION f_neo_obstacle]
+// On a marker: a stone wall block <ARGV[0]>,<ARGV[1]> tiles from it, at z 0 as on ModernUO.
+SERV.NEWITEM 080
+LOCAL.block=<NEW>
+UID.<LOCAL.block>.NAME=neo arena obstacle
+UID.<LOCAL.block>.ATTR=<EVAL <UID.<LOCAL.block>.ATTR> | attr_move_never>
+UID.<LOCAL.block>.TAG.neo_obstacle=1
+UID.<LOCAL.block>.P=<EVAL <P.X> + <ARGV[0]>>,<EVAL <P.Y> + <ARGV[1]>>,0,<P.M>

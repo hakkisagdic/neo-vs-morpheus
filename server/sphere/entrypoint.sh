@@ -6,8 +6,11 @@
 #   SPHERE_SERVER_NAME   shard name in the server list ("Laya Sphere")
 #   NEO_OWNER_USER       owner (GM) account, Owner privilege level (architect)
 #   NEO_OWNER_PASS       its password; Sphere keeps at most 16 characters of a password
+#   NEO_ARENA_MAP, NEO_ARENA_X, NEO_ARENA_Y, NEO_REAGENTS   the arena, as on ModernUO (generate.sh)
 #
-# Bot accounts are created on their first login (AccApp=2), as on the ModernUO arena.
+# Bot accounts are created on their first login (AccApp=2), as on the ModernUO arena. The arena
+# commands (scripts/neo_arena.scp) read the character templates from /templates (templates/,
+# mounted read-only), turned into Sphere script at every start.
 set -euo pipefail
 
 port="${SPHERE_PORT:-2593}"
@@ -77,9 +80,15 @@ Log=$data/logs/
 // as MD5 hashes rather than in plain text.
 AccApp=2
 Md5Passwords=1
-// Many bots share one address (Docker's gateway).
+// Many bots share one address (Docker's gateway), and every match logs its bots in again (two
+// connections each: login server, then game server). Upstream blocks an address for five
+// minutes after 15 connections in a short while (MaxPings, decaying) or 50 without a five-minute
+// pause (MaxConnectRequestsPerIP): two matches at once hit the first, a series the second. The
+// port is published on 127.0.0.1 only, so these guard nothing here.
 ClientMaxIP=64
 ConnectingMaxIP=32
+MaxPings=1000000
+MaxConnectRequestsPerIP=0
 // The bots' client is unencrypted; real clients may still use encryption.
 UseCrypt=1
 UseNoCrypt=1
@@ -87,6 +96,9 @@ UseNoCrypt=1
 // password-free console for local addresses.
 UseHttp=0
 LocalIPAdmin=0
+// GM commands start with "[" as on ModernUO, so the bot's orchestrator sends "[NeoDuel ..."
+// unchanged (Sphere's default is ".").
+CommandPrefix=[
 
 [EOF]
 EOF
@@ -97,8 +109,9 @@ ln -sf "$dist/sphereCrypt.ini" sphereCrypt.ini
 # tiledata.mul, multi.idx and multi.mul, and moves the regions and teleporters of a map it has
 # no files for onto Felucca, so every map of sphere.ini gets a file: all land tile 0 at z 0
 # (MapN=width,height,sector size,file number,...; blocks of 8x8 tiles, 196 bytes each). No
-# statics, no multis, and a zeroed 7.0.9+ tiledata.mul, so no tile has a flag and everything is
-# walkable. Sparse files: the zeros take no disk.
+# statics, no multis. The 7.0.9+ tiledata.mul from the image (tiledata.sh) is zeros, so that
+# nothing has a flag and everything is walkable, except the arena's wall block and what the
+# bots wear. Sparse files: the zeros take no disk.
 if [ "$synthetic" = 1 ]; then
   rm -rf "$mul"
   mkdir -p "$mul"
@@ -113,7 +126,7 @@ if [ "$synthetic" = 1 ]; then
   [ -f "$mul/map0.mul" ] || truncate -s $((896 * 512 * 196)) "$mul/map0.mul"
   : > "$mul/staidx0.mul"
   : > "$mul/statics0.mul"
-  truncate -s 3188736 "$mul/tiledata.mul"
+  cp "$dist/tiledata.mul" "$mul/tiledata.mul"
   : > "$mul/multi.idx"
   : > "$mul/multi.mul"
   echo "laya-sphere: no client files in /uodata, using a synthetic flat world ($(cd "$mul" && echo map*.mul))"
@@ -133,6 +146,13 @@ EOF
 else
   echo "laya-sphere: NEO_OWNER_PASS is not set; no owner account" >&2
 fi
+
+# The arena's place and the character templates as Sphere script, loaded through the link
+# /opt/sphere/scripts/neo_generated.scp. Without templates only the built-in mage exists.
+mkdir -p /sphere/generated
+[ -d /templates ] || echo "laya-sphere: no templates in /templates; [NeoTemplate knows only the built-in mage" >&2
+"$dist/bin/generate.sh" /templates /sphere/generated/neo_generated.scp
+echo "laya-sphere: arena templates: $(sed -n 's/^IF (STRCMPI(<ARGV\[0\]>,\(.*\)) == 0)$/\1/p' /sphere/generated/neo_generated.scp | tr '\n' ' ')"
 
 # Console commands reach Sphere through a named pipe as its standard input, e.g.
 # `docker exec laya-sphere bash -c 'echo "#" > /sphere/console'` saves the world and "X#"
