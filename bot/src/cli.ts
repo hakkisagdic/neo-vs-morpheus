@@ -10,7 +10,8 @@ import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from ".
 import { daggerLabels } from "./distill/dagger.ts";
 import { outcomeLabels, scoreRuns } from "./distill/outcomes.ts";
 import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
-import { skillRows } from "./distill/skill.ts";
+import { sampleTrainState, skillRows } from "./distill/skill.ts";
+import { random } from "./bench/stats.ts";
 import {
   type TrainingState,
   isMovementState,
@@ -36,7 +37,7 @@ import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { describeSkillResult, runSkillSession } from "./game/skill-session.ts";
 import { SkillTrainer } from "./game/train.ts";
-import { makeTrainBrain } from "./game/train-brain.ts";
+import { OracleTrainBrain, TRAIN_QUESTION, describeTraining, makeTrainBrain, trainOptions } from "./game/train-brain.ts";
 import { MonitorHub } from "./monitor/hub.ts";
 import { PanelServer, startFleetPulls } from "./panel/server.ts";
 
@@ -76,6 +77,8 @@ const USAGE = `usage: npm run nvm -- <command>
                       --write keeps them in bench/results/ and docs/BENCH.md
   panel               the control panel at localhost:MONITOR_PORT, up until Ctrl-C: live matches
                       (duels publish to it while it runs), every recorded run and its replay
+  skillcheck <laya url> [n]  how often a Laya server picks what the oracle trainer picks on n sampled
+                      skill-training states (the gate's evidence that a candidate can train skills)
   train <Name> [--partner Name] [--resist] [--minutes N] [--goal N] [--brain rules|laya|jev|random[@ms]]
                       level a bot: Magery, Meditation and Eval Int, every step chosen by --brain
                       (the scripted trainer by default); with --partner and --resist they also
@@ -379,9 +382,15 @@ async function leaderboardCommand(args: string[]): Promise<void> {
   };
   const duels = Object.entries(spec.tracks).filter(([, t]) => t.kind !== "skill");
   const skills = Object.fromEntries(Object.entries(spec.tracks).filter(([, t]) => t.kind === "skill")) as Record<string, SkillTrack>;
-  // A sparring model's side reads as its checkpoint and the build ("laya-b:mage" -> "neo-duel-v8r-s2 mage").
+  // Every track's opponent as its side reads: "rules@40:mage" -> "rules@40 mage", and a sparring
+  // model's as its checkpoint ("laya-b:mage" -> "neo-duel-v8r-s2 mage"), so that no other opponent pools in.
   const opponents = Object.fromEntries(
-    duels.filter(([, t]) => t.opponent_model && t.opponent).map(([k, t]) => [k, `${t.opponent_model} ${(t.opponent ?? "").split(":")[1] ?? "mage"}`]),
+    duels
+      .filter(([, t]) => t.opponent)
+      .map(([k, t]) => {
+        const [brain, build = "mage"] = (t.opponent ?? "").split(":");
+        return [k, `${t.opponent_model ?? brain} ${build}`];
+      }),
   );
   const all = await readRuns();
   const rows = leaderboard(all, id, spec.half_width, opponents);
@@ -408,6 +417,34 @@ async function leaderboardCommand(args: string[]): Promise<void> {
     );
     await writeFile(join(root, "docs", "BENCH.md"), markdown + "\n");
   }
+}
+
+/**
+ * How often a Laya server picks what the oracle trainer picks on sampled skill-training states
+ * (another seed than the training rows'): the gate's evidence that a candidate can train skills.
+ */
+async function skillcheck(args: string[]): Promise<void> {
+  const [url, count = "200"] = args;
+  if (!url) {
+    throw new Error("usage: skillcheck <laya url> [states]");
+  }
+  const next = random(20261111);
+  const oracle = new OracleTrainBrain();
+  const backend = { name: "laya" as const, url, model: "typed-decisions", timeoutMs: 30_000 };
+  let asked = 0;
+  let agreed = 0;
+  for (let i = 0; i < Number(count); i++) {
+    const s = sampleTrainState(next);
+    const criteria = trainOptions(s);
+    if (Object.keys(criteria).length < 2) {
+      continue;
+    }
+    const want = (await oracle.decide(s)).key;
+    const d = await systemOne(backend, describeTraining(s), { move: { type: "choice", instructions: TRAIN_QUESTION, criteria } });
+    asked++;
+    agreed += d.answers.move.choice === want ? 1 : 0;
+  }
+  console.log(`agreement ${(agreed / Math.max(1, asked)).toFixed(3)} on ${asked} training states`);
 }
 
 async function panel(): Promise<void> {
@@ -832,6 +869,9 @@ try {
       break;
     case "fleet":
       await fleet(args);
+      break;
+    case "skillcheck":
+      await skillcheck(args);
       break;
     case "train":
       await train(args);

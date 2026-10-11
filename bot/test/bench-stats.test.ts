@@ -36,3 +36,10 @@ describe("bench statistics", () => {
     expect(holm([0.01, 0.04, 0.03])).toEqual([0.03, 0.06, 0.06]);
   });
 });
+
+describe("review fixes on the statistics", () => {
+  it("does not call an empty comparison significant", () => {
+    const d = bootstrapDifference([], [{ points: 5, rounds: 10 }]);
+    expect(d.p).toBeNaN();
+  });
+});

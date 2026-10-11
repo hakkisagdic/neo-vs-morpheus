@@ -53,7 +53,14 @@ MIN_NEW_ROWS = 3000
 MIN_NEW_JEV = 1000
 #: Mage-duel rounds each side needs before a candidate is promoted or dropped, and the one-sided
 #: z for 95% confidence; the scripted bot at this reaction time or quicker is "matched speed".
-GATE_ROUNDS = 400
+#: Rounds each side plays before the gate decides, once: looking again and again as rounds come in
+#: would raise its error well past the stated 5% (an adversarial review measured 18% over 3 hours).
+GATE_ROUNDS = 800
+#: The rounds of a run share its arena and seats: the variance of a share is ~1.25-1.36 times the
+#: binomial one in the gate's runs, so the standard error is widened by its root.
+GATE_VIF = 1.3
+#: Agreement with the oracle trainer on sampled training states that counts as "can train skills".
+SKILL_AGREEMENT = 0.8
 GATE_Z = 1.645
 #: Points a candidate that can train skills may trail a champion that cannot, at duels (non-inferiority).
 SKILL_MARGIN = 0.05
@@ -77,7 +84,11 @@ def log(message):
 
 
 def sh(cmd, cwd=ROOT, timeout=7200):
-    out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    """A command's exit code and output; one that runs past its timeout answers 124, like timeout(1)."""
+    try:
+        out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as err:
+        return 124, f"{' '.join(map(str, cmd))[:120]}: no answer in {timeout} s; {(err.stdout or '')[-200:]}"
     return out.returncode, (out.stdout + out.stderr).strip()
 
 
@@ -155,8 +166,11 @@ def fetch(state, name):
 def evaluate(state, name):
     """The new checkpoint takes the candidate lane that holds the older candidate."""
     candidates = state.setdefault("candidates", {})
-    lanes = state.get("eval_lanes", [0, 2])
     order = state.setdefault("arrived", [])
+    # The champion must keep a lane to play on: its last one is not given to a candidate.
+    with open(os.path.join(ROOT, ".fleet", "plan.json")) as f:
+        champion_lanes = [l["lane"] for l in json.load(f).get("mac", []) if l.get("model") == state.get("champion")]
+    lanes = [l for l in state.get("eval_lanes", [0, 2]) if not (champion_lanes == [l] and str(l) not in candidates)]
     free = [l for l in lanes if str(l) not in candidates]
     lane = free[0] if free else min(lanes, key=lambda l: order.index(candidates[str(l)]) if candidates[str(l)] in order else -1)
     if str(lane) in candidates:
@@ -199,8 +213,10 @@ def switch_lanes(old, new):
 
 def gate(state):
     """Each candidate against the champion over the same hours: once both have GATE_ROUNDS mage-duel
-    rounds, a one-sided two-proportion z-test promotes a better candidate (its lanes and the
-    champion's become its) or drops a worse one (its lane goes back to the champion)."""
+    rounds, one one-sided two-proportion z-test (unpooled, widened by GATE_VIF) promotes a better
+    candidate, or one no worse by the margin when it brings skill training (its lanes and the
+    champion's become its), and otherwise drops it (its lane goes back to the champion). At most
+    one promotion a pass: the rest were measured against the old champion."""
     champion = state.setdefault("champion", "neo-duel-v8")
     for lane, name in list(state.get("candidates", {}).items()):
         since = state.get("eval_since", {}).get(name)
@@ -222,15 +238,18 @@ def gate(state):
         if n1 < GATE_ROUNDS or n2 < GATE_ROUNDS:
             log(f"{name} against {champion}: {cw}-{cl} and {bw}-{bl}; waiting for {GATE_ROUNDS} rounds each")
             continue
-        pooled = (cw + bw) / (n1 + n2)
-        se = math.sqrt(pooled * (1 - pooled) * (1 / n1 + 1 / n2)) or 1.0
+        # One look, at GATE_ROUNDS: the unpooled standard error, widened for rounds that go together.
+        p1, p2 = cw / n1, bw / n2
+        se = math.sqrt(GATE_VIF * (p1 * (1 - p1) / n1 + p2 * (1 - p2) / n2)) or 1.0
         # A candidate that brings something new (skill training) needs only to be no worse at duels:
-        # a non-inferiority test, its share plus the margin against the champion's.
+        # a non-inferiority test, its share plus the margin against the champion's. The margin needs
+        # evidence that it does train skills: agreement with the oracle on sampled training states.
         margin = state.get("margins", {}).get(name, 0.0)
         if not margin and name in skilled and champion not in skilled:
-            margin = SKILL_MARGIN  # it brings skill training; at duels it needs only to be no worse
-        z = (cw / n1 - bw / n2 + margin) / se
-        verdict = (f"{name} {100 * cw / n1:.0f}% ({cw}-{cl}) against {champion} {100 * bw / n2:.0f}% ({bw}-{bl}), z {z:+.2f}"
+            agreement = skill_agreement(state, name, lane)
+            margin = SKILL_MARGIN if agreement is not None and agreement >= SKILL_AGREEMENT else 0.0
+        z = (p1 - p2 + margin) / se
+        verdict = (f"{name} {100 * p1:.0f}% ({cw}-{cl}) against {champion} {100 * p2:.0f}% ({bw}-{bl}), z {z:+.2f}"
                    + (f" (no worse by {100 * margin:.0f} points)" if margin else ""))
         if z > GATE_Z:
             moved = switch_lanes(champion, name)
@@ -240,15 +259,32 @@ def gate(state):
             del state["candidates"][lane]
             log(f"promoted: {verdict}; lanes {moved} now play it")
             track(name, champion)
-        elif z < -GATE_Z:
-            sh([sys.executable, "lab/evaluate.py", "--model", champion, "--lane", lane])
-            state.setdefault("history", []).append({"dropped": name, "at": since, "result": verdict})
-            del state["candidates"][lane]
-            log(f"dropped: {verdict}; lane {lane} plays {champion} again")
-            track(name)
-        else:
-            log(f"undecided: {verdict}")
+            # The other candidates were measured against the old champion: they wait for the next pass.
+            save(state)
+            return
+        # Not shown better (or no worse): it leaves at its one look, and its lane plays the champion again.
+        sh([sys.executable, "lab/evaluate.py", "--model", champion, "--lane", lane])
+        state.setdefault("history", []).append({"dropped": name, "at": since, "result": verdict})
+        del state["candidates"][lane]
+        log(f"dropped: {verdict}; lane {lane} plays {champion} again")
+        track(name)
         save(state)
+
+
+def skill_agreement(state, name, lane):
+    """How often the candidate (its Laya server on lane's port) picks what the oracle trainer picks on
+    sampled training states; measured once, kept in the state. None when it cannot be measured."""
+    known = state.setdefault("skillcheck", {})
+    if name in known:
+        return known[name]
+    code, out = sh(["npm", "run", "-s", "nvm", "--", "skillcheck", f"http://127.0.0.1:{8001 + int(lane)}", "200"], cwd=BOT, timeout=1800)
+    m = re.search(r"agreement ([\d.]+)", out)
+    if code or not m:
+        log(f"{name}: skill check failed: {out[-200:]}")
+        return None
+    known[name] = float(m.group(1))
+    log(f"{name}: agrees with the oracle trainer on {100 * known[name]:.0f}% of training states")
+    return known[name]
 
 
 def build_jev(state):
@@ -379,9 +415,13 @@ def read_inbox(state):
     path = os.path.join(ROOT, ".fleet", "trainer-inbox.json")
     if not os.path.exists(path):
         return
-    with open(path) as f:
-        orders = json.load(f)
-    os.remove(path)
+    try:
+        with open(path) as f:
+            orders = json.load(f)
+    except ValueError as err:
+        os.replace(path, path + ".bad")  # set aside, so that one bad file does not stop every round
+        log(f"inbox: unreadable ({err}); kept as {path}.bad")
+        return
     for name in orders.get("skills", []):
         if name not in state.setdefault("skills", []):
             state["skills"].append(name)
@@ -396,6 +436,7 @@ def read_inbox(state):
         evaluate(state, c["name"])
         log(f"inbox: {c['name']} is a candidate" + (f", no worse by {100 * c['margin']:.0f} points" if c.get("margin") else ""))
     save(state)
+    os.remove(path)  # only once the orders are in the saved state
 
 
 def round_once():

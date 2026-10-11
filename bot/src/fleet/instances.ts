@@ -717,8 +717,10 @@ print("FLEET>>>" + ("ok" if os.path.exists(f"{A}/models/{tag}/rl_agent_config.js
 
   async start(o: StartOptions): Promise<string> {
     const lane = o.lane ?? 0;
-    if (o.model && this.#cli) {
-      await this.#provideModel(o.model);
+    for (const model of [o.model, o.modelB]) {
+      if (model && this.#cli) {
+        await this.#provideModel(model);
+      }
     }
     const local = seriesPath(o.series);
     const file = basename(local);

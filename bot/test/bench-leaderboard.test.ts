@@ -56,3 +56,20 @@ describe("a sparring model as the opponent", () => {
     expect(rows.map((r) => [r.player, r.rounds, r.score])).toEqual([["neo-duel-v8s4 mage", 20, 0.65]]);
   });
 });
+
+describe("review fixes on the duel tables", () => {
+  it("leaves out a sparring run whose frozen model decided too slowly, as the ratings do", () => {
+    const run = (latency: number) =>
+      ({
+        bench: "uo-bench/1:ml/spar-mage",
+        sides: ["neo-duel-v8s4 mage", "neo-duel-v8r-s2 mage"],
+        wins: [6, 4],
+        draws: 0,
+        problems: [],
+        summary: { fighters: [{ name: "Neo" }, { name: "Morpheus" }], latencyMs: { Neo: 40, Morpheus: latency } },
+      }) as unknown as RunInfo;
+    const rows = leaderboard([run(35), run(300)], "uo-bench/1", 0.03, { "ml/spar-mage": "neo-duel-v8r-s2 mage" });
+    expect(rows[0].rounds).toBe(10);
+    expect(rows[0].flagged).toBe(1);
+  });
+});

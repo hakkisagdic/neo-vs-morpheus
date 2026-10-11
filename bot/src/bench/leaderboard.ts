@@ -52,10 +52,8 @@ export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03, op
     const key = `${track}|${run.sides[i]}`;
     const group = groups.get(key) ?? { track, player: run.sides[i], scores: [], flagged: 0 };
     groups.set(key, group);
-    const name = run.summary?.fighters[i]?.name;
-    const latency = name !== undefined ? run.summary?.latencyMs[name] : undefined;
-    const paced = run.sides[i].split(" ")[0].includes("@");
-    if (run.problems.length || (!paced && latency !== undefined && latency > BENCH_LATENCY_MS)) {
+    // Every side at its own pace must decide within BENCH_LATENCY_MS: the player, and a sparring model too.
+    if (run.problems.length || tooSlow(run)) {
       group.flagged++;
       continue;
     }
@@ -83,7 +81,19 @@ export function leaderboard(runs: RunInfo[], bench: string, halfWidth = 0.03, op
       settled: rounds >= MIN_ROUNDS && (interval[1] - interval[0]) / 2 <= halfWidth,
     };
   });
-  return rows.sort((a, b) => a.track.localeCompare(b.track) || (b.score || 0) - (a.score || 0));
+  return rows.sort((a, b) => a.track.localeCompare(b.track) || byScore(b.score, a.score));
+}
+
+/** Descending by score, a score that is not a number (no counted rounds) last. */
+const byScore = (a: number, b: number) => (Number.isNaN(a) ? -Infinity : a) - (Number.isNaN(b) ? -Infinity : b);
+
+/** A side at its own pace (no "@N"), not the scripted bot, whose median decision took longer than BENCH_LATENCY_MS. */
+function tooSlow(run: RunInfo): boolean {
+  return run.sides.some((side, i) => {
+    const name = run.summary?.fighters[i]?.name;
+    const latency = name !== undefined ? run.summary?.latencyMs[name] : undefined;
+    return !scripted(side) && !side.split(" ")[0].includes("@") && latency !== undefined && latency > BENCH_LATENCY_MS;
+  });
 }
 
 const pct = (x: number) => (Number.isNaN(x) ? "—" : `${(100 * x).toFixed(1)}`);
@@ -115,12 +125,7 @@ export function ratingPairings(runs: RunInfo[], bench: string, tracks: string[])
     if (!track || !tracks.includes(track) || run.sides.length !== 2 || run.problems.length) {
       continue;
     }
-    const slow = run.sides.some((side, i) => {
-      const name = run.summary?.fighters[i]?.name;
-      const latency = name !== undefined ? run.summary?.latencyMs[name] : undefined;
-      return !scripted(side) && !side.split(" ")[0].includes("@") && latency !== undefined && latency > BENCH_LATENCY_MS;
-    });
-    if (slow || run.sides[0] === run.sides[1]) {
+    if (tooSlow(run) || run.sides[0] === run.sides[1]) {
       continue;
     }
     out.push({ a: run.sides[0], b: run.sides[1], aPoints: run.wins[0] + run.draws / 2, bPoints: run.wins[1] + run.draws / 2 });

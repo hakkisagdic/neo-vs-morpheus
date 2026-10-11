@@ -84,6 +84,9 @@ export function skillProblems(r: SkillResult): string[] {
   }
   if (r.seconds < r.minutes * 60 - 30) {
     problems.push(`trained ${Math.round(r.seconds / 60)} of ${r.minutes} minutes`);
+  } else if (r.reachedAt === null && r.seconds < r.cap * 60 - 30) {
+    // Stopped before the goal and before the cap (its backend failed): its time to the goal is unknown.
+    problems.push(`stopped at ${Math.round(r.seconds / 60)} of ${r.cap} minutes without reaching ${r.goal}`);
   }
   // A step is a decision and a cast, a rest or a skill use: seconds, a decision time more at most.
   const allowed = (r.trainee.decisionMs ?? 0) / 1000 + STALL_S;
@@ -135,8 +138,9 @@ export function skillLeaderboard(runs: SkillRun[], bench: string, tracks: Record
           settled: results.length >= MIN_SESSIONS && (interval[1] - interval[0]) / 2 <= score.half_width,
         });
       }
-      const sign = score.metric === "gain" ? -1 : 1;
-      rows.push(...scored.sort((a, b) => sign * ((a.score || 0) - (b.score || 0))));
+      // Best first (more gain, fewer minutes); a player with no counted session last.
+      const key = (r: SkillRow) => (Number.isNaN(r.score) ? Infinity : score.metric === "gain" ? -r.score : r.score);
+      rows.push(...scored.sort((a, b) => key(a) - key(b)));
     }
   }
   return rows;

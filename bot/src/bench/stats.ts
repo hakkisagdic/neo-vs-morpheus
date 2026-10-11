@@ -69,6 +69,9 @@ export function bootstrapInterval(runs: RunScore[], iterations = 2000, seed = 20
  * and a two-sided p-value (twice the share of resamples on the far side of zero).
  */
 export function bootstrapDifference(a: RunScore[], b: RunScore[], iterations = 2000, seed = 20261006): { difference: number; interval: [number, number]; p: number } {
+  if (!a.length || !b.length) {
+    return { difference: Number.NaN, interval: [Number.NaN, Number.NaN], p: Number.NaN }; // nothing to compare, not "significant"
+  }
   const next = random(seed);
   const sa = resampled(a, iterations, next);
   const sb = resampled(b, iterations, next);

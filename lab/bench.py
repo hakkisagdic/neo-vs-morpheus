@@ -31,6 +31,20 @@ def fleet(*args):
     return out.returncode
 
 
+def trainer_lanes():
+    """Mac lanes the trainer's gate uses: its candidate lanes and the lanes the plan gives the champion."""
+    lanes = set()
+    try:
+        with open(os.path.join(ROOT, ".fleet", "trainer.json")) as f:
+            state = json.load(f)
+        lanes |= set(state.get("eval_lanes", []))
+        with open(os.path.join(ROOT, ".fleet", "plan.json")) as f:
+            lanes |= {l["lane"] for l in json.load(f).get("mac", []) if l.get("model") == state.get("champion")}
+    except (OSError, ValueError):
+        pass
+    return lanes
+
+
 def machine_kind(name):
     """The fleet's kind of machine (fleet.json): local (this Mac), ssh-lab, colab, kaggle, camber."""
     try:
@@ -76,6 +90,7 @@ def main():
     ap.add_argument("--passes", type=int, default=4, help="times every match is played")
     ap.add_argument("--parallel", type=int, default=8)
     ap.add_argument("--seed", type=int, default=20261006)
+    ap.add_argument("--force", action="store_true", help="take Mac lanes the trainer's gate plays on")
     args = ap.parse_args()
     if args.player == "laya" and not args.model:
         sys.exit("a laya player needs --model")
@@ -99,6 +114,11 @@ def main():
         sys.exit("a sparring model needs a lane with a second Laya server: a Mac or Colab lane")
     model_b = next(iter(sparring), None)
     lanes = [int(x) for x in args.lanes.split(",")]
+    # The trainer's gate plays on Mac lanes (its candidates' and the champion's); a bench run there
+    # would leave the gate without rounds for hours.
+    taken = trainer_lanes() if kind == "local" else set()
+    if taken & set(lanes) and not args.force:
+        sys.exit(f"lanes {sorted(taken & set(lanes))} play the trainer's gate (.fleet/plan.json, eval_lanes); --force to take them")
     plan = matches(spec, tracks, args.player, args.passes, args.seed)
     who = args.model or args.player.replace("@", "-at-")
     os.makedirs(SERIES, exist_ok=True)

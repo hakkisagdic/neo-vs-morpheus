@@ -73,11 +73,14 @@ export function describeSkillResult(r: SkillResult): string {
   return `Magery ${r.start.Magery.toFixed(1)} -> ${r.end.Magery.toFixed(1)} (+${at.toFixed(1)} in ${r.minutes} min; ${goal}), ${r.casts} casts, ${r.decisions} decisions at ${r.latencyMs} ms${trouble.length ? `; ${trouble.join(", ")}` : ""}`;
 }
 
-/** The longest time between one step's state and the next's, s. */
-export function longestStep(steps: Pick<TrainStep, "state">[]): number {
+/** The longest time between one step's state and the next's, s, and after the last one when the session's end is given. */
+export function longestStep(steps: Pick<TrainStep, "state">[], end?: number): number {
   let longest = 0;
   for (let i = 1; i < steps.length; i++) {
     longest = Math.max(longest, steps[i].state.seconds - steps[i - 1].state.seconds);
+  }
+  if (end !== undefined && steps.length) {
+    longest = Math.max(longest, end - (steps.at(-1)?.state.seconds ?? end));
   }
   return Math.round(longest);
 }
@@ -142,7 +145,7 @@ export async function runSkillSession(o: SkillSessionOptions, log: (m: string) =
       errors: trainer.errors,
       decisions: trainer.steps.length,
       latencyMs: Math.round(median(trainer.steps.map((s) => s.choice.latencyMs))),
-      longestStepS: longestStep(trainer.steps),
+      longestStepS: longestStep(trainer.steps, (Date.now() - startedAt) / 1000),
       choices,
     };
     await saveSkillRun(result, trainer.steps, o.bench);

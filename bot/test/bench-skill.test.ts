@@ -110,3 +110,22 @@ describe("UO Bench skill tracks", () => {
     expect(meanInterval([3]).interval[0]).toBeNaN();
   });
 });
+
+describe("review fixes on the skill tracks", () => {
+  it("flags a session that stopped before both the goal and the cap", () => {
+    expect(skillProblems(session({ seconds: 3000, reachedAt: null }))).toEqual(["stopped at 50 of 60 minutes without reaching 70"]);
+    expect(skillProblems(session({ seconds: 3000, reachedAt: 2700 }))).toEqual([]);
+  });
+
+  it("counts the time after the last step, and ranks a player with no counted session last", () => {
+    const steps = [0, 3, 6].map((seconds) => ({ state: { seconds } })) as Parameters<typeof longestStep>[0];
+    expect(longestStep(steps, 900)).toBe(894);
+    const runs = [
+      { file: "a", bench: "uo-bench/1:ml/skill-magery", format: TRAIN_FORMAT, result: session({ reachedAt: 2700 }) },
+      { file: "b", bench: "uo-bench/1:ml/skill-magery", format: TRAIN_FORMAT, result: session({ reachedAt: 2900 }) },
+      { file: "c", bench: "uo-bench/1:ml/skill-magery", format: TRAIN_FORMAT, result: session({ trainee: { name: "Neo", brain: "random", template: "mage-trainee" }, restocks: 3 }) },
+    ];
+    const time = skillLeaderboard(runs, "uo-bench/1", TRACKS).filter((r) => r.track === "time");
+    expect(time.map((r) => r.player)).toEqual(["rules mage-trainee", "random mage-trainee"]); // NaN last, not first
+  });
+});
