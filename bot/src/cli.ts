@@ -27,7 +27,8 @@ import { config, requireSetting } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
 import { type Instance, formatInfo, loadFleet, pick } from "./fleet/instances.ts";
 import { formatRows, readRuns, tally } from "./fleet/results.ts";
-import { leaderboard, leaderboardMarkdown } from "./bench/leaderboard.ts";
+import { ratings } from "./bench/ladder.ts";
+import { leaderboard, leaderboardMarkdown, ratingPairings, ratingsMarkdown } from "./bench/leaderboard.ts";
 import { type SkillTrack, readSkillRuns, skillLeaderboard, skillMarkdown } from "./bench/skill.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
@@ -382,16 +383,28 @@ async function leaderboardCommand(args: string[]): Promise<void> {
   const opponents = Object.fromEntries(
     duels.filter(([, t]) => t.opponent_model && t.opponent).map(([k, t]) => [k, `${t.opponent_model} ${(t.opponent ?? "").split(":")[1] ?? "mage"}`]),
   );
-  const rows = leaderboard(await readRuns(), id, spec.half_width, opponents);
+  const all = await readRuns();
+  const rows = leaderboard(all, id, spec.half_width, opponents);
   const skillRows = skillLeaderboard(await readSkillRuns(), id, skills);
   const about = Object.fromEntries(Object.values(skills).flatMap((t) => t.scores.map((s) => [s.name, s.about ?? t.about ?? ""])));
-  const markdown = [leaderboardMarkdown(rows, id, Object.fromEntries(duels.map(([k, t]) => [k, t.about]))), skillMarkdown(skillRows, about)].join("\n");
+  // Ratings: every duel at the players' own speed of a build (duel, sparring, ladder tracks), one scale.
+  const byBuild = Object.fromEntries(
+    ["mage", "dexer", "archer"].map((build) => {
+      const tracks = duels.map(([k]) => k).filter((k) => /^ml\/(duel|spar|ladder)-/.test(k) && k.endsWith(`-${build}`));
+      return [build, ratings(ratingPairings(all, id, tracks), `rules@40 ${build}`)];
+    }),
+  );
+  const markdown = [
+    leaderboardMarkdown(rows, id, Object.fromEntries(duels.map(([k, t]) => [k, t.about]))),
+    skillMarkdown(skillRows, about),
+    ratingsMarkdown(byBuild),
+  ].join("\n");
   console.log(markdown);
   if (values.write) {
     await mkdir(join(root, "bench", "results"), { recursive: true });
     await writeFile(
       join(root, "bench", "results", `${id.replace("/", "-")}.json`),
-      JSON.stringify({ bench: id, at: new Date().toISOString(), rows, skills: skillRows }, null, 1) + "\n",
+      JSON.stringify({ bench: id, at: new Date().toISOString(), rows, skills: skillRows, ratings: byBuild }, null, 1) + "\n",
     );
     await writeFile(join(root, "docs", "BENCH.md"), markdown + "\n");
   }

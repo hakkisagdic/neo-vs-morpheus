@@ -1,6 +1,7 @@
 // UO Bench's leaderboard: every player's score on every track of a bench version, from the runs
 // tagged with it (versions.bench, "uo-bench/1:ml/duel-mage"), with intervals from bench/stats.ts.
 import type { RunInfo } from "../fleet/results.ts";
+import type { Pairing, Rating } from "./ladder.ts";
 import { type RunScore, bootstrapInterval, share, wilson } from "./stats.ts";
 
 export type BenchRow = {
@@ -96,6 +97,55 @@ export function leaderboardMarkdown(rows: BenchRow[], bench: string, about: Reco
     parts.push("| # | player | score | 95% interval | rounds (runs) | flagged | settled |", "|---|---|---|---|---|---|---|");
     rows.filter((r) => r.track === track).forEach((r, k) => {
       parts.push(`| ${k + 1} | ${r.player} | ${pct(r.score)} | ${pct(r.interval[0])}–${pct(r.interval[1])} | ${r.rounds} (${r.runs}) | ${r.flagged} | ${r.settled ? "yes" : "no"} |`);
+    });
+    parts.push("");
+  }
+  return parts.join("\n");
+}
+
+/**
+ * The runs of a build's duel-type tracks (duel, sparring, ladder: everyone at its own speed) as
+ * pairings for the ratings (bench/ladder.ts), leaving out what the tables leave out: runs a check
+ * flagged, and runs in which a side at its own pace decided slower than BENCH_LATENCY_MS.
+ */
+export function ratingPairings(runs: RunInfo[], bench: string, tracks: string[]): Pairing[] {
+  const out: Pairing[] = [];
+  for (const run of runs) {
+    const track = run.bench?.startsWith(`${bench}:`) ? run.bench.slice(bench.length + 1) : undefined;
+    if (!track || !tracks.includes(track) || run.sides.length !== 2 || run.problems.length) {
+      continue;
+    }
+    const slow = run.sides.some((side, i) => {
+      const name = run.summary?.fighters[i]?.name;
+      const latency = name !== undefined ? run.summary?.latencyMs[name] : undefined;
+      return !scripted(side) && !side.split(" ")[0].includes("@") && latency !== undefined && latency > BENCH_LATENCY_MS;
+    });
+    if (slow || run.sides[0] === run.sides[1]) {
+      continue;
+    }
+    out.push({ a: run.sides[0], b: run.sides[1], aPoints: run.wins[0] + run.draws / 2, bPoints: run.wins[1] + run.draws / 2 });
+  }
+  return out;
+}
+
+/** The ratings as Markdown, one table per build. */
+export function ratingsMarkdown(byBuild: Record<string, Rating[]>): string {
+  const parts: string[] = [];
+  for (const [build, rows] of Object.entries(byBuild)) {
+    if (!rows.length) {
+      continue;
+    }
+    parts.push(
+      `## Ratings: ${build}`,
+      "",
+      `Bradley-Terry over every ${build} duel at the players' own speed (duel, sparring and ladder tracks), Elo scale, the scripted bot at 1000; 95% interval from a bootstrap over runs.`,
+      "",
+      "| # | player | rating | 95% interval | rounds | opponents |",
+      "|---|---|---|---|---|---|",
+    );
+    rows.forEach((r, k) => {
+      const iv = Number.isNaN(r.interval[0]) ? "—" : `${Math.round(r.interval[0])}–${Math.round(r.interval[1])}`;
+      parts.push(`| ${k + 1} | ${r.player} | ${Math.round(r.rating)} | ${iv} | ${r.rounds} | ${r.opponents} |`);
     });
     parts.push("");
   }
