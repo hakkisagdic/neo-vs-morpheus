@@ -411,7 +411,8 @@ def label(state):
 def read_inbox(state):
     """Orders left in .fleet/trainer-inbox.json between rounds, applied once and then removed, so that
     nothing edits the state while a round has it: {"candidates": [{"name": N, "margin": 0.05}],
-    "set": PATH, "queue": [...], "seed_prefix": P, "next_seed": N, "skills": [names that train skills]}."""
+    "set": PATH, "queue": [...], "seed_prefix": P, "next_seed": N, "skills": [names that train skills],
+    "eval_lanes": [Mac lanes for candidates]}."""
     path = os.path.join(ROOT, ".fleet", "trainer-inbox.json")
     if not os.path.exists(path):
         return
@@ -426,7 +427,7 @@ def read_inbox(state):
         if name not in state.setdefault("skills", []):
             state["skills"].append(name)
             log(f"inbox: {name} trains skills")
-    for key in ("set", "set_trains_skills", "queue", "seed_prefix", "next_seed", "recipe", "train_args"):
+    for key in ("set", "set_trains_skills", "queue", "seed_prefix", "next_seed", "recipe", "train_args", "eval_lanes"):
         if key in orders:
             state[key] = orders[key]
             log(f"inbox: {key} = {json.dumps(orders[key])[:200]}")
