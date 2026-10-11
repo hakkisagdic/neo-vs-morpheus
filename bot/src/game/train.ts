@@ -1,18 +1,38 @@
 // Skill training ("kasma"): at every step a brain (./train-brain.ts: the scripted trainer, a model,
 // or a random pick) chooses a practice spell of some circle, meditation, or Eval Int, and the
 // trainer carries it out and keeps the step. With a partner, every third cast is a weak curse on
-// them, which trains their Resisting Spells.
+// them, which trains their Resisting Spells. A necromancer or a paladin trains the same way, with
+// its school's practice spells (./train-schools.ts) instead of the circles.
 import { EventEmitter } from "node:events";
 import * as out from "../uo/outgoing.ts";
 import { spell } from "../uo/spells.ts";
+import { NECRO_REAGENTS } from "../world/world.ts";
 import { Caster } from "./caster.ts";
 import type { Session } from "./session.ts";
-import { PRACTICE, RuleTrainBrain, type TrainBrain, type TrainChoice, type TrainState, actionOf } from "./train-brain.ts";
+import { PRACTICE, RuleTrainBrain, type SkillState, type TrainBrain, type TrainChoice, type TrainSkill, actionOf } from "./train-brain.ts";
+import { FORM_BODIES } from "./train-schools.ts";
 
 export { PRACTICE, bestCircle, circleMin, successChance } from "./train-brain.ts";
 
-export const SKILL = { magery: 25, evalInt: 16, magicResist: 26, meditation: 46 } as const;
-const SKILL_NAMES: Record<number, string> = { 25: "Magery", 16: "Eval Int", 26: "Resist", 46: "Meditation" };
+export const SKILL = {
+  magery: 25,
+  evalInt: 16,
+  magicResist: 26,
+  meditation: 46,
+  necromancy: 49,
+  spiritSpeak: 32,
+  chivalry: 51,
+  focus: 50,
+} as const;
+
+/** The skills a session records at its start and end, by the skill it trains. */
+const RECORDED: Record<TrainSkill, Record<number, string>> = {
+  magery: { 25: "Magery", 16: "Eval Int", 26: "Resist", 46: "Meditation" },
+  necromancy: { 49: "Necromancy", 32: "Spirit Speak", 46: "Meditation" },
+  chivalry: { 51: "Chivalry", 50: "Focus", 46: "Meditation" },
+};
+
+const TRAINED: Record<TrainSkill, number> = { magery: SKILL.magery, necromancy: SKILL.necromancy, chivalry: SKILL.chivalry };
 
 /** How long a skill keeps the next one waiting (ModernUO): Meditation 10 s, Eval Int 1 s. */
 const SKILL_DELAY_MS: Record<number, number> = { [SKILL.meditation]: 10_000, [SKILL.evalInt]: 1_000 };
@@ -23,8 +43,11 @@ const MAX_FAILING = 30;
 /** Harmful but weak spells for a partner, to train their Resisting Spells. */
 const ON_PARTNER = ["clumsy", "feeblemind", "weaken"];
 
+/** Chivalry's dearest practice spell (Noble Sacrifice) takes 30 tithing points: fewer, and the GM restocks. */
+export const LOW_TITHING = 30;
+
 /** One step: the state the brain saw, its choice, and how a cast or a meditation went. */
-export type TrainStep = { state: TrainState; choice: TrainChoice; outcome?: string };
+export type TrainStep = { state: SkillState; choice: TrainChoice; outcome?: string };
 
 type TrainerEvents = { log: [text: string] };
 
@@ -32,67 +55,122 @@ export class SkillTrainer extends EventEmitter<TrainerEvents> {
   readonly session: Session;
   readonly caster: Caster;
   readonly brain: TrainBrain;
+  /** The skill in training. */
+  readonly trains: TrainSkill;
   partner: number | null = null;
   /** Cast weak curses on the partner to train their Resisting Spells (their casts get disturbed). */
   resist = false;
   readonly steps: TrainStep[] = [];
-  /** Magery as it rose: [seconds since the start, Magery]. */
+  /** The trained skill as it rose: [seconds since the start, skill]. */
   readonly progress: [number, number][] = [];
   casts = 0;
   fizzles = 0;
-  /** Times the reagents ran low and the GM restocked them (a prep, which fills mana too). */
+  /** Times the reagents (Chivalry: the tithing points) ran low and the GM restocked them (a prep, which fills mana too). */
   restocks = 0;
   /** Steps the brain could not decide (its backend failed); the time they took is lost. */
   errors = 0;
   #meditating = false;
   #skillReadyAt = 0;
   #startedAt = Date.now();
-  #startMagery = 0;
+  #startLevel = 0;
 
-  /** The scripted trainer by default, practising Eval Int while it waits for mana. */
-  constructor(session: Session, brain: TrainBrain = new RuleTrainBrain(undefined, true)) {
+  /** The scripted trainer by default, practising Eval Int while it waits for mana (Magery). */
+  constructor(session: Session, brain: TrainBrain = new RuleTrainBrain(undefined, true), trains: TrainSkill = "magery") {
     super();
     this.session = session;
     this.caster = new Caster(session);
     this.brain = brain;
+    this.trains = trains;
   }
 
   skill(id: number): number {
     return this.session.world.skills.get(id)?.base ?? 0;
   }
 
+  /** The level of the skill in training. */
+  level(): number {
+    return this.skill(TRAINED[this.trains]);
+  }
+
   snapshot(): Record<string, number> {
-    return Object.fromEntries(Object.entries(SKILL_NAMES).map(([id, name]) => [name, this.skill(Number(id))]));
+    return Object.fromEntries(Object.entries(RECORDED[this.trains]).map(([id, name]) => [name, this.skill(Number(id))]));
   }
 
   seconds(): number {
     return (Date.now() - this.#startedAt) / 1000;
   }
 
-  state(): TrainState {
+  state(): SkillState {
     const { player: p, stats } = this.session.world;
-    const magery = this.skill(SKILL.magery);
+    const level = this.level();
+    const skillReadyIn = Math.max(0, (this.#skillReadyAt - Date.now()) / 1000);
+    const sofar = {
+      casts: this.casts,
+      fizzles: this.fizzles,
+      gained: Math.round((level - this.#startLevel) * 10) / 10,
+      seconds: Math.round(this.seconds() * 10) / 10,
+    };
+    if (this.trains === "necromancy") {
+      return {
+        skill: "necromancy",
+        necromancy: level,
+        spiritSpeak: this.skill(SKILL.spiritSpeak),
+        meditation: this.skill(SKILL.meditation),
+        allSkills: this.#allSkills(),
+        int: stats.int,
+        hits: p.hits,
+        hitsMax: p.hitsMax,
+        mana: p.mana,
+        manaMax: p.manaMax,
+        form: FORM_BODIES[p.body] ?? null,
+        meditating: this.#meditating,
+        skillReadyIn,
+        ...sofar,
+      };
+    }
+    if (this.trains === "chivalry") {
+      return {
+        skill: "chivalry",
+        chivalry: level,
+        focus: this.skill(SKILL.focus),
+        meditation: this.skill(SKILL.meditation),
+        allSkills: this.#allSkills(),
+        int: stats.int,
+        mana: p.mana,
+        manaMax: p.manaMax,
+        tithing: stats.tithing,
+        meditating: this.#meditating,
+        skillReadyIn,
+        ...sofar,
+      };
+    }
     return {
-      magery,
+      magery: level,
       meditation: this.skill(SKILL.meditation),
       evalInt: this.skill(SKILL.evalInt),
       int: stats.int,
       mana: p.mana,
       manaMax: p.manaMax,
       meditating: this.#meditating,
-      skillReadyIn: Math.max(0, (this.#skillReadyAt - Date.now()) / 1000),
-      casts: this.casts,
-      fizzles: this.fizzles,
-      gained: Math.round((magery - this.#startMagery) * 10) / 10,
-      seconds: Math.round(this.seconds() * 10) / 10,
+      skillReadyIn,
+      ...sofar,
     };
   }
 
+  /** Every skill's base together, to a tenth. */
+  #allSkills(): number {
+    let total = 0;
+    for (const s of this.session.world.skills.values()) {
+      total += s.base;
+    }
+    return Math.round(total * 10) / 10;
+  }
+
   /** Trains until `signal` aborts or `done` says the session is over. `restock` refills reagents. */
-  async run(signal: AbortSignal, done: (s: TrainState) => boolean, restock: () => Promise<void>): Promise<void> {
+  async run(signal: AbortSignal, done: (s: SkillState) => boolean, restock: () => Promise<void>): Promise<void> {
     const w = this.session.world;
     this.#startedAt = Date.now();
-    this.#startMagery = this.skill(SKILL.magery);
+    this.#startLevel = this.level();
     const onJournal = (e: { cliloc?: number; text: string }) => {
       if (e.cliloc === 501851) {
         this.#meditating = true; // You enter a meditative trance.
@@ -103,9 +181,9 @@ export class SkillTrainer extends EventEmitter<TrainerEvents> {
       }
     };
     const onSkills = () => {
-      const magery = this.skill(SKILL.magery);
-      if (magery !== (this.progress.at(-1)?.[1] ?? this.#startMagery)) {
-        this.progress.push([Math.round(this.seconds()), magery]);
+      const level = this.level();
+      if (level !== (this.progress.at(-1)?.[1] ?? this.#startLevel)) {
+        this.progress.push([Math.round(this.seconds()), level]);
       }
     };
     w.on("journal", onJournal);
@@ -137,6 +215,15 @@ export class SkillTrainer extends EventEmitter<TrainerEvents> {
     }
   }
 
+  /** Whether the reagents (or Chivalry's tithing points) ran low enough to ask the GM for more. */
+  #runningLow(): boolean {
+    const w = this.session.world;
+    if (this.trains === "chivalry") {
+      return w.stats.tithing < LOW_TITHING;
+    }
+    return Object.values(this.trains === "necromancy" ? w.reagents(NECRO_REAGENTS) : w.reagents()).some((n) => n < 5);
+  }
+
   async #act(key: string, restock: () => Promise<void>): Promise<string | undefined> {
     const action = actionOf(key);
     if (action.kind === "meditate") {
@@ -158,8 +245,8 @@ export class SkillTrainer extends EventEmitter<TrainerEvents> {
     const w = this.session.world;
     const p = w.player;
     this.#meditating = false; // a cast ends the trance
-    if (Object.values(w.reagents()).some((n) => n < 5)) {
-      this.emit("log", "reagents low; asking the GM for more");
+    if (this.#runningLow()) {
+      this.emit("log", `${this.trains === "chivalry" ? "tithing points" : "reagents"} low; asking the GM for more`);
       this.restocks++;
       await restock();
       await sleep(800);
@@ -169,8 +256,8 @@ export class SkillTrainer extends EventEmitter<TrainerEvents> {
       await sleep(wait);
     }
     // With a partner, every third cast is a weak curse on them (their Resisting Spells).
-    const onPartner = this.resist && this.partner !== null && this.casts % 3 === 2;
-    const sp = onPartner ? spell(ON_PARTNER[this.casts % ON_PARTNER.length]) : spell(PRACTICE[action.circle]);
+    const onPartner = action.kind === "cast" && this.resist && this.partner !== null && this.casts % 3 === 2;
+    const sp = onPartner ? spell(ON_PARTNER[this.casts % ON_PARTNER.length]) : spell(action.kind === "cast" ? PRACTICE[action.circle] : action.spell);
     const target =
       onPartner && this.partner !== null
         ? ({ kind: "mobile", serial: this.partner } as const)
@@ -183,7 +270,7 @@ export class SkillTrainer extends EventEmitter<TrainerEvents> {
       this.fizzles++;
     } else if (outcome.result !== "cast") {
       this.emit("log", `${sp.name}: ${outcome.result}`);
-      if (outcome.result === "noReagents") {
+      if (outcome.result === "noReagents" || outcome.result === "noTithing") {
         this.restocks++;
         await restock();
       }

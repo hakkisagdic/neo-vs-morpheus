@@ -2,18 +2,37 @@
 // Jev) or a random pick answering one choice question per step. UO Bench's skill tracks compare
 // them from the same start: how much Magery each gains in a fixed time, and how soon each gets to
 // a goal. The model is told what a player would see: its skills and mana, and for every circle the
-// practice spell, its mana and its chance to succeed.
+// practice spell, its mana and its chance to succeed. Necromancy and Chivalry are trained the same
+// way (./train-schools.ts: their spells, odds and texts); a state without `skill` is Magery's.
 //
 // ModernUO (ML rules, MagerySpell.GetCastSkills): a spell of circle c succeeds with chance
 // (skill - min) / 40, min from a table (-18, -4, 10, 24, 38, 52, 66, 80), not RunUO's
 // (c - 1) * 100 / 7 - 20. Below min a cast is "too difficult" and never gains; at or above min + 40
 // it is "no challenge"; in between it can gain whether it succeeds or fizzles.
-// Meditation puts you in a trance with chance (50 + 2 × (skill − mana missing)) %, and every try
-// keeps the next skill waiting 10 s; in a trance mana comes back faster, and a cast ends it.
+// Meditation and mana regeneration: ./train-odds.ts.
 import { modelBackend } from "../brain/backends.ts";
 import { type Backend, systemOne } from "../brain/systemone.ts";
 import { spell } from "../uo/spells.ts";
 import type { BrainKind } from "./match.ts";
+import { manaPerSecond, tranceChance } from "./train-odds.ts";
+import {
+  CHIVALRY_FORMAT,
+  CHIVALRY_QUESTION,
+  type ChivalryState,
+  NECRO_FORMAT,
+  NECRO_QUESTION,
+  type NecroState,
+  chivalryOptions,
+  chivalryOracle,
+  chivalryRules,
+  describeChivalry,
+  describeNecro,
+  necroOptions,
+  necroOracle,
+  necroRules,
+} from "./train-schools.ts";
+
+export { manaPerSecond, tranceChance } from "./train-odds.ts";
 
 /** Harmless practice spell for each circle (self or ground targeted). */
 export const PRACTICE: Record<number, string> = {
@@ -32,15 +51,6 @@ const CIRCLE_MIN = [-18, -4, 10, 24, 38, 52, 66, 80];
 export const circleMin = (circle: number) => CIRCLE_MIN[circle - 1];
 export const successChance = (skill: number, circle: number) => Math.min(1, Math.max(0, (skill - circleMin(circle)) / 40));
 
-/** The chance that Meditation puts you in a trance now. */
-export const tranceChance = (meditation: number, missing: number) => Math.min(1, Math.max(0, (50 + (meditation - missing) * 2) / 100));
-
-/** Mana a second (ModernUO, ML rules) from Int and Meditation alone: no Focus, armour or items. */
-export function manaPerSecond(int: number, meditation: number, trance: boolean): number {
-  const med = (int + meditation * 3) * (meditation < 100 ? 0.025 : 0.0275);
-  return 0.1 * (2 + Math.floor(med + (trance ? Math.min(med, 13) : 0)));
-}
-
 /** The circle whose success chance is closest to 50%. */
 export function bestCircle(skill: number): number {
   let best = 1;
@@ -52,8 +62,16 @@ export function bestCircle(skill: number): number {
   return best;
 }
 
-export type TrainAction = { kind: "cast"; circle: number } | { kind: "meditate" } | { kind: "evalInt" };
+/** A practice spell of Magery's by circle, or of another school by name ("cast:wither"). */
+export type TrainAction = { kind: "cast"; circle: number } | { kind: "spell"; spell: string } | { kind: "meditate" } | { kind: "evalInt" };
 
+/** The skills a session can train. */
+export type TrainSkill = "magery" | "necromancy" | "chivalry";
+
+/** The skill's name as the server and the records write it. */
+export const SKILL_NAME: Record<TrainSkill, string> = { magery: "Magery", necromancy: "Necromancy", chivalry: "Chivalry" };
+
+/** A Magery trainee's state (no `skill`: the shape the sessions before the other schools recorded). */
 export type TrainState = {
   magery: number;
   meditation: number;
@@ -71,8 +89,23 @@ export type TrainState = {
   seconds: number;
 };
 
+export type { ChivalryState, NecroState } from "./train-schools.ts";
+
+/** A trainee's state, whatever it trains. */
+export type SkillState = TrainState | NecroState | ChivalryState;
+
+export const trainSkillOf = (s: SkillState): TrainSkill => ("skill" in s ? s.skill : "magery");
+
+/** The level of the skill in training. */
+export function levelOf(s: SkillState): number {
+  if (!("skill" in s)) {
+    return s.magery;
+  }
+  return s.skill === "necromancy" ? s.necromancy : s.chivalry;
+}
+
 export type TrainChoice = {
-  /** The option taken ("cast:4", "meditate", "evalInt"). */
+  /** The option taken ("cast:4", "cast:wither", "meditate", "evalInt"). */
   key: string;
   /** The checkpoint that answered, "rules", "random", or "forced" when one option was left. */
   model: string;
@@ -82,15 +115,26 @@ export type TrainChoice = {
 
 export interface TrainBrain {
   readonly name: string;
-  decide(s: TrainState): Promise<TrainChoice>;
+  decide(s: SkillState): Promise<TrainChoice>;
 }
 
 export const TRAIN_QUESTION = "Which move raises your Magery the fastest from here?";
 /** The training state and question as models read them; recorded with every session. */
 export const TRAIN_FORMAT = "skill-3";
 
+/** Each skill's format: Magery's TRAIN_FORMAT, and the other schools' own. */
+export const TRAIN_FORMATS: Record<TrainSkill, string> = { magery: TRAIN_FORMAT, necromancy: NECRO_FORMAT, chivalry: CHIVALRY_FORMAT };
+
+const QUESTIONS: Record<TrainSkill, string> = { magery: TRAIN_QUESTION, necromancy: NECRO_QUESTION, chivalry: CHIVALRY_QUESTION };
+
+/** The question a model answers for a state. */
+export const trainQuestion = (s: SkillState): string => QUESTIONS[trainSkillOf(s)];
+
 /** The moves open in a state, as option -> what a player would know about it. */
-export function trainOptions(s: TrainState): Record<string, string> {
+export function trainOptions(s: SkillState): Record<string, string> {
+  if ("skill" in s) {
+    return s.skill === "necromancy" ? necroOptions(s) : chivalryOptions(s);
+  }
   const options: Record<string, string> = {};
   for (let circle = 1; circle <= 8; circle++) {
     const sp = spell(PRACTICE[circle]);
@@ -111,7 +155,10 @@ export function trainOptions(s: TrainState): Record<string, string> {
   return options;
 }
 
-export function describeTraining(s: TrainState): string {
+export function describeTraining(s: SkillState): string {
+  if ("skill" in s) {
+    return s.skill === "necromancy" ? describeNecro(s) : describeChivalry(s);
+  }
   const wait = s.skillReadyIn > 0 ? Math.ceil(s.skillReadyIn) : 0;
   return [
     "Ultima Online skill training: raise Magery as fast as you can.",
@@ -125,7 +172,8 @@ export function describeTraining(s: TrainState): string {
 
 export function actionOf(key: string): TrainAction {
   if (key.startsWith("cast:")) {
-    return { kind: "cast", circle: Number(key.slice("cast:".length)) };
+    const what = key.slice("cast:".length);
+    return /^\d+$/.test(what) ? { kind: "cast", circle: Number(what) } : { kind: "spell", spell: what };
   }
   return key === "meditate" ? { kind: "meditate" } : { kind: "evalInt" };
 }
@@ -140,7 +188,8 @@ async function pace(started: number, decisionMs = 0): Promise<void> {
 /**
  * The scripted trainer: the circle whose chance is nearest 50%; meditation once a trance is down
  * to an even chance (or a cast no longer fits), and in a trance back to nearly full mana. `evalInt`: practise Eval Int while waiting for mana, every few seconds, as the trainer
- * always did; UO Bench's rules player trains Magery alone.
+ * always did; UO Bench's rules player trains Magery alone. Necromancy and Chivalry: the same rules
+ * over their own practice spells (train-schools.ts).
  */
 export class RuleTrainBrain implements TrainBrain {
   readonly name = "rules";
@@ -153,8 +202,13 @@ export class RuleTrainBrain implements TrainBrain {
     this.evalInt = evalInt;
   }
 
-  async decide(s: TrainState): Promise<TrainChoice> {
+  async decide(s: SkillState): Promise<TrainChoice> {
     const started = performance.now();
+    if ("skill" in s) {
+      const key = s.skill === "necromancy" ? necroRules(s) : chivalryRules(s);
+      await pace(started, this.decisionMs);
+      return { key, model: "rules", latencyMs: performance.now() - started };
+    }
     const circle = bestCircle(s.magery);
     const low = s.mana < spell(PRACTICE[circle]).mana + 5;
     // Mana spent down to an even chance of a trance: meditate now, while one is still likely.
@@ -196,6 +250,7 @@ export function castScore(s: TrainState, circle: number): number {
  * The trainer worked out from ModernUO's formulas: the circle with the most expected gains a
  * second (castScore: often the hardest one it can cast, since fizzles gain too and cost no mana),
  * meditation only when that circle spends mana faster than it comes back, or when it runs out.
+ * Necromancy and Chivalry: the same reckoning over their spells (train-schools.ts).
  */
 export class OracleTrainBrain implements TrainBrain {
   readonly name = "oracle";
@@ -217,8 +272,13 @@ export class OracleTrainBrain implements TrainBrain {
     return best;
   }
 
-  async decide(s: TrainState): Promise<TrainChoice> {
+  async decide(s: SkillState): Promise<TrainChoice> {
     const started = performance.now();
+    if ("skill" in s) {
+      const key = s.skill === "necromancy" ? necroOracle(s) : chivalryOracle(s);
+      await pace(started, this.decisionMs);
+      return { key, model: "oracle", latencyMs: performance.now() - started };
+    }
     const { circle } = OracleTrainBrain.best(s);
     const p = successChance(s.magery, circle);
     const cost = spell(PRACTICE[circle]).mana;
@@ -246,7 +306,7 @@ export class ModelTrainBrain implements TrainBrain {
     return this.backend.name;
   }
 
-  async decide(s: TrainState): Promise<TrainChoice> {
+  async decide(s: SkillState): Promise<TrainChoice> {
     const started = performance.now();
     const options = trainOptions(s);
     const keys = Object.keys(options);
@@ -254,7 +314,7 @@ export class ModelTrainBrain implements TrainBrain {
     let model = "forced";
     let probabilities: Record<string, number> | undefined;
     if (keys.length > 1) {
-      const d = await systemOne(this.backend, describeTraining(s), { move: { type: "choice", instructions: TRAIN_QUESTION, criteria: options } });
+      const d = await systemOne(this.backend, describeTraining(s), { move: { type: "choice", instructions: trainQuestion(s), criteria: options } });
       const answer = d.answers.move;
       probabilities = answer?.probabilities;
       // The answer's own choice when it is one of the options, else its likeliest option.
@@ -262,7 +322,7 @@ export class ModelTrainBrain implements TrainBrain {
       model = d.model;
     }
     await pace(started, this.decisionMs);
-    return { key, model, latencyMs: performance.now() - started, probabilities };
+    return { key: key ?? "meditate", model, latencyMs: performance.now() - started, probabilities };
   }
 }
 

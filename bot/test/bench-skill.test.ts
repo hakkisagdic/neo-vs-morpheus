@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { type SkillTrack, skillLeaderboard, skillPlayer, skillProblems, skillValue } from "../src/bench/skill.ts";
+import { type SkillTrack, skillLeaderboard, skillMarkdown, skillPlayer, skillProblems, skillValue } from "../src/bench/skill.ts";
 import { meanInterval, t975 } from "../src/bench/stats.ts";
-import { type SkillResult, longestStep, mageryAt } from "../src/game/skill-session.ts";
+import { type SkillResult, describeSkillResult, longestStep, missingForTraining, skillAt } from "../src/game/skill-session.ts";
 import { TRAIN_FORMAT } from "../src/game/train-brain.ts";
 
 const session = (over: Partial<SkillResult> = {}): SkillResult => ({
@@ -45,8 +45,8 @@ const TRACKS: Record<string, SkillTrack> = {
 
 describe("UO Bench skill tracks", () => {
   it("reads Magery at a time from a session's progress", () => {
-    expect(mageryAt(session(), 0)).toBe(50);
-    expect(mageryAt(session(), 1200)).toBe(54);
+    expect(skillAt(session(), 0)).toBe(50);
+    expect(skillAt(session(), 1200)).toBe(54);
     expect(skillValue(session(), "gain")).toBe(4);
     expect(skillValue(session(), "time")).toBe(60); // never reached: the cap
     expect(skillValue(session({ reachedAt: 2700 }), "time")).toBe(45);
@@ -96,6 +96,48 @@ describe("UO Bench skill tracks", () => {
     expect(time[0].player).toBe("random mage-trainee"); // one session got there in 30 min
     expect(time[0].score).toBeCloseTo((30 + 4 * 60) / 5);
     expect(time[0].reached).toBe(1);
+  });
+
+  it("scores a Necromancy session on Necromancy, and leaves out one recorded in another format", () => {
+    const necro = (over: Partial<SkillResult> = {}): SkillResult =>
+      session({
+        trainee: { name: "Neo", brain: "oracle", template: "necro-trainee" },
+        skill: "Necromancy",
+        start: { Necromancy: 50, "Spirit Speak": 50, Meditation: 50 },
+        end: { Necromancy: 57, "Spirit Speak": 52, Meditation: 50 },
+        progress: [
+          [600, 53],
+          [1100, 56],
+          [3000, 57],
+        ],
+        ...over,
+      });
+    expect(skillAt(necro(), 1200)).toBe(56);
+    expect(skillValue(necro(), "gain")).toBe(6);
+    expect(describeSkillResult(necro())).toMatch(/^Necromancy 50\.0 -> 57\.0 \(\+6\.0 in 20 min; 70 not reached/);
+    const tracks: Record<string, SkillTrack> = {
+      "ml/skill-necromancy": { kind: "skill", minutes: 20, goal: 70, cap: 60, scores: [{ name: "necro gain", metric: "gain", half_width: 0.5 }] },
+    };
+    const rows = skillLeaderboard(
+      [
+        { file: "n1", bench: "uo-bench/1:ml/skill-necromancy", format: "necromancy-1", result: necro() },
+        { file: "n2", bench: "uo-bench/1:ml/skill-necromancy", format: "skill-3", result: necro() }, // Magery's format
+      ],
+      "uo-bench/1",
+      tracks,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ skill: "Necromancy", player: "oracle necro-trainee", sessions: 1, flagged: 1, score: 6 });
+    expect(skillMarkdown(rows)).toContain("| # | player | Necromancy gained |");
+  });
+
+  it("refuses to train without the school's book, or Chivalry without tithing points", () => {
+    const world = (books: number[], tithing: number) => ({ carries: (g: number) => books.includes(g), stats: { tithing } }) as Parameters<typeof missingForTraining>[1];
+    expect(missingForTraining("magery", world([], 0))).toBeUndefined();
+    expect(missingForTraining("necromancy", world([], 0))).toBe("no Necromancy spellbook in the trainee's pack");
+    expect(missingForTraining("necromancy", world([0x2253], 0))).toBeUndefined();
+    expect(missingForTraining("chivalry", world([0x2252], 0))).toBe("0 tithing points");
+    expect(missingForTraining("chivalry", world([0x2252], 300_000))).toBeUndefined();
   });
 
   it("gives Student's t and an interval of a mean no narrower than t's", () => {

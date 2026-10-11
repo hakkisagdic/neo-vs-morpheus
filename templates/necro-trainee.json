@@ -1,0 +1,12 @@
+{
+  "id": "necro-trainee",
+  "title": "Necromancer in training (UO Bench skill tracks): Necromancy, Spirit Speak and Meditation at 50, Int 100",
+  "stats": { "str": 90, "dex": 35, "int": 100 },
+  "skills": { "Necromancy": 50, "SpiritSpeak": 50, "Meditation": 50 },
+  "wear": [],
+  "pack": { "BatWing": 3000, "DaemonBlood": 3000, "GraveDust": 3000, "NoxCrystal": 3000, "PigIron": 3000 },
+  "spellbook": false,
+  "books": ["NecromancerSpellbook"],
+  "modules": ["mage"],
+  "train": "necromancy"
+}

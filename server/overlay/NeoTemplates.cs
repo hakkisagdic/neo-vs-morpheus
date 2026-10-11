@@ -2,8 +2,10 @@
 //
 // Character templates as data. templates/<id>.json in the repository (mounted at
 // NEO_TEMPLATES_DIR, default /app/NeoTemplates) names a build's stats, skills, the items it
-// wears and the consumables it carries. [NeoTemplate applies one to a player; every prep then
-// restocks that template's consumables and puts back any gear that went missing.
+// wears and the consumables it carries, its spellbooks (Magery's with "spellbook", the other
+// schools' by class name in "books", every spell in them) and its tithing points. [NeoTemplate
+// applies one to a player; every prep then restocks that template's consumables and tithing
+// points and puts back any gear or book that went missing.
 
 using System;
 using System.Collections.Generic;
@@ -22,6 +24,12 @@ public sealed class NeoTemplate
     public string[] Wear { get; set; } = [];
     public Dictionary<string, int> Pack { get; set; } = new();
     public bool Spellbook { get; set; }
+
+    // Spellbooks of the other schools by class name ("NecromancerSpellbook", "BookOfChivalry").
+    public string[] Books { get; set; } = [];
+
+    // Chivalry's tithing points, set again at every prep.
+    public int Tithing { get; set; }
 }
 
 public static class NeoTemplates
@@ -148,10 +156,27 @@ public static class NeoTemplates
             }
         }
 
+        foreach (var name in t.Books)
+        {
+            if (Create(name) is { } probe)
+            {
+                if (probe is not Spellbook)
+                {
+                    problems.Add($"{name} is not a spellbook");
+                }
+
+                probe.Delete();
+            }
+            else
+            {
+                problems.Add($"unknown item {name}");
+            }
+        }
+
         return problems;
     }
 
-    /// <summary>Fresh consumables for the mobile's template, its spellbook, and any gear it lost.</summary>
+    /// <summary>Fresh consumables for the mobile's template, its spellbooks and tithing points, and any gear it lost.</summary>
     public static void Restock(Mobile m)
     {
         var t = Of(m);
@@ -218,6 +243,32 @@ public static class NeoTemplates
             }
         }
 
+        // Casting looks for a book worn or at the top of the pack, not deeper (Spellbook.Find).
+        foreach (var name in t.Books)
+        {
+            var book = pack.FindItemByType<Spellbook>(
+                false,
+                b => b.GetType().Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            );
+            if (book == null)
+            {
+                var item = Create(name);
+                if (item is not Spellbook created)
+                {
+                    item?.Delete();
+                    continue;
+                }
+
+                book = created;
+                book.LootType = LootType.Blessed;
+                pack.DropItem(book);
+            }
+
+            // Every spell of the book's school, as [AllSpells fills one.
+            book.Content = book.BookCount == 64 ? ulong.MaxValue : (1ul << book.BookCount) - 1;
+        }
+
+        m.TithingPoints = t.Tithing;
         Dress(m, t);
     }
 

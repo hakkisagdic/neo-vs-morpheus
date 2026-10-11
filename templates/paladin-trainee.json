@@ -1,0 +1,13 @@
+{
+  "id": "paladin-trainee",
+  "title": "Paladin in training (UO Bench skill tracks): a swordsman (Swordsmanship and Tactics 50) taking up Chivalry at 50, with Focus and Meditation 50 and no armour, Int 50",
+  "stats": { "str": 100, "dex": 75, "int": 50 },
+  "skills": { "Chivalry": 50, "Swords": 50, "Tactics": 50, "Focus": 50, "Meditation": 50 },
+  "wear": [],
+  "pack": {},
+  "spellbook": false,
+  "books": ["BookOfChivalry"],
+  "tithing": 300000,
+  "modules": ["melee"],
+  "train": "chivalry"
+}

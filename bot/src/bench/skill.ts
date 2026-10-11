@@ -1,17 +1,18 @@
 // UO Bench's skill tracks: training sessions (runs/*-skill.json, from src/game/skill-session.ts),
-// each one an independent draw, scored two ways: Magery gained in the first minutes, and the
-// minutes to a goal, the cap when it was not reached (a restricted mean, so that a player that
-// never gets there is not left out). Intervals: bench/stats.ts's meanInterval over sessions.
+// each one an independent draw, scored two ways: the skill (Magery, Necromancy, Chivalry) gained in
+// the first minutes, and the minutes to a goal, the cap when it was not reached (a restricted mean,
+// so that a player that never gets there is not left out). Intervals: bench/stats.ts's
+// meanInterval over sessions.
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { RUNS_DIR } from "../fleet/results.ts";
-import { type SkillResult, longestStep, mageryAt } from "../game/skill-session.ts";
-import { TRAIN_FORMAT } from "../game/train-brain.ts";
+import { type SkillResult, longestStep, skillAt, skillName, trainSkillOfResult } from "../game/skill-session.ts";
+import { TRAIN_FORMATS } from "../game/train-brain.ts";
 import type { TrainStep } from "../game/train.ts";
 import { BENCH_LATENCY_MS } from "./leaderboard.ts";
 import { meanInterval } from "./stats.ts";
 
-/** format: the training prompt and odds of the session (TRAIN_FORMAT); none before "skill-2". */
+/** format: the training prompt and odds of the session (its skill's TRAIN_FORMATS); none before "skill-2". */
 export type SkillRun = { file: string; bench?: string; format?: string; result: SkillResult };
 
 export type SkillScore = {
@@ -28,6 +29,8 @@ export type SkillTrack = { kind: "skill"; about?: string; minutes: number; goal:
 export type SkillRow = {
   track: string;
   metric: "gain" | "time";
+  /** The skill the track trains ("Magery"). */
+  skill: string;
   player: string;
   sessions: number;
   /** Sessions a check flagged (failed decisions, a restock, too slow for the bench): left out. */
@@ -99,7 +102,7 @@ export function skillProblems(r: SkillResult): string[] {
 /** A session's value for a score: the gain in its first minutes, or its minutes to the goal (the cap if never). */
 export function skillValue(r: SkillResult, metric: "gain" | "time"): number {
   if (metric === "gain") {
-    return mageryAt(r, r.minutes * 60) - r.start.Magery;
+    return skillAt(r, r.minutes * 60) - r.start[skillName(r)];
   }
   return Math.min(r.cap, (r.reachedAt ?? r.cap * 60) / 60);
 }
@@ -109,12 +112,13 @@ export function skillLeaderboard(runs: SkillRun[], bench: string, tracks: Record
   const rows: SkillRow[] = [];
   for (const [name, track] of Object.entries(tracks)) {
     const sessions = runs.filter((r) => r.bench === `${bench}:${name}`);
+    const skill = sessions.length ? skillName(sessions[0].result) : "Magery";
     const players = new Map<string, SkillResult[]>();
     const flagged = new Map<string, number>();
     for (const { result, format } of sessions) {
       const player = skillPlayer(result);
       // An older format is another test: models read another prompt, scripted players knew other odds.
-      const stale = format !== TRAIN_FORMAT;
+      const stale = format !== TRAIN_FORMATS[trainSkillOfResult(result)];
       if (stale || skillProblems(result).length) {
         flagged.set(player, (flagged.get(player) ?? 0) + 1);
         continue;
@@ -129,6 +133,7 @@ export function skillLeaderboard(runs: SkillRun[], bench: string, tracks: Record
         scored.push({
           track: score.name,
           metric: score.metric,
+          skill,
           player,
           sessions: results.length,
           flagged: flagged.get(player) ?? 0,
@@ -156,7 +161,7 @@ export function skillMarkdown(rows: SkillRow[], about: Record<string, string> = 
     const time = own[0]?.metric === "time";
     parts.push(`## ${track}`, "", ...(about[track] ? [about[track], ""] : []));
     parts.push(
-      `| # | player | ${time ? "minutes" : "Magery gained"} | 95% interval | sessions${time ? " (reached)" : ""} | flagged | settled |`,
+      `| # | player | ${time ? "minutes" : `${own[0]?.skill ?? "Magery"} gained`} | 95% interval | sessions${time ? " (reached)" : ""} | flagged | settled |`,
       "|---|---|---|---|---|---|---|",
     );
     own.forEach((r, k) => {

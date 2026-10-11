@@ -37,7 +37,7 @@ import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { describeSkillResult, runSkillSession } from "./game/skill-session.ts";
 import { SkillTrainer } from "./game/train.ts";
-import { OracleTrainBrain, TRAIN_QUESTION, describeTraining, makeTrainBrain, trainOptions } from "./game/train-brain.ts";
+import { OracleTrainBrain, SKILL_NAME, TRAIN_QUESTION, type TrainSkill, describeTraining, levelOf, makeTrainBrain, trainOptions } from "./game/train-brain.ts";
 import { MonitorHub } from "./monitor/hub.ts";
 import { PanelServer, startFleetPulls } from "./panel/server.ts";
 
@@ -80,9 +80,11 @@ const USAGE = `usage: npm run nvm -- <command>
   skillcheck <laya url> [n]  how often a Laya server picks what the oracle trainer picks on n sampled
                       skill-training states (the gate's evidence that a candidate can train skills)
   train <Name> [--partner Name] [--resist] [--minutes N] [--goal N] [--brain rules|laya|jev|random[@ms]]
+        [--skill magery|necromancy|chivalry]
                       level a bot: Magery, Meditation and Eval Int, every step chosen by --brain
                       (the scripted trainer by default); with --partner and --resist they also
-                      curse each other for Resisting Spells
+                      curse each other for Resisting Spells. --skill: Necromancy or Chivalry
+                      instead, for a bot that has the skill, its book (and tithing points)
   login <Name>        log a bot in (creates account and character) and report
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
   eval [laya] [jev] [--suite duel|movement|sight|melee]
@@ -101,8 +103,9 @@ const USAGE = `usage: npm run nvm -- <command>
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
   distill credits           the FreeJev credits left (states --set laya + label --set laya use them)
-  distill skill [n] [seed]  n sampled skill-training states answered by the oracle trainer
-                            -> training/data/labeled-skill.jsonl
+  distill skill [n] [seed] [--skill necromancy|chivalry]
+                            n sampled skill-training states answered by the oracle trainer
+                            -> training/data/labeled-skill.jsonl (labeled-skill-<skill>.jsonl)
                             (default training/data/test.jsonl, written by training/split.py)
 `;
 
@@ -199,8 +202,8 @@ const SLOT_NAMES = [
 
 /**
  * bench: the benchmark track the match belongs to ("uo-bench/1:ml/duel-mage"), recorded with the run.
- * kind "skill": a training session for `a` alone (no `b`): at least `minutes`, up to Magery `goal`,
- * `cap` minutes at most.
+ * kind "skill": a training session for `a` alone (no `b`): at least `minutes`, up to `goal` in the
+ * skill its template trains (Magery, or the template's "train"), `cap` minutes at most.
  */
 type SeriesEntry = {
   label: string;
@@ -468,12 +471,17 @@ async function train(args: string[]): Promise<void> {
       minutes: { type: "string", default: "30" },
       goal: { type: "string", default: "100" },
       brain: { type: "string", default: "rules" },
+      skill: { type: "string", default: "magery" },
     },
   });
   const name = positionals[0] ?? "Neo";
   const brain = parseBrain(values.brain);
   if (!brain) {
     throw new Error(`bad --brain ${values.brain}; expected laya|jev|rules|random[@ms]`);
+  }
+  const skill = values.skill as TrainSkill;
+  if (!(skill in SKILL_NAME)) {
+    throw new Error(`bad --skill ${values.skill}; expected ${Object.keys(SKILL_NAME).join("|")}`);
   }
   const gm = await Session.gm();
   const sessions = [await Session.bot(name)];
@@ -490,7 +498,7 @@ async function train(args: string[]): Promise<void> {
   const ac = new AbortController();
   const deadline = setTimeout(() => ac.abort(), Number(values.minutes) * 60_000);
   // The scripted trainer keeps practising Eval Int while it waits for mana; a model chooses for itself.
-  const trainers = sessions.map((s) => new SkillTrainer(s, brain.brain === "rules" ? undefined : makeTrainBrain(brain.brain, brain.reactionMs)));
+  const trainers = sessions.map((s) => new SkillTrainer(s, brain.brain === "rules" ? undefined : makeTrainBrain(brain.brain, brain.reactionMs), skill));
   if (trainers.length === 2) {
     trainers[0].partner = sessions[1].world.playerSerial;
     trainers[1].partner = sessions[0].world.playerSerial;
@@ -512,7 +520,7 @@ async function train(args: string[]): Promise<void> {
   }
   try {
     await Promise.all(
-      trainers.map((t) => t.run(ac.signal, (s) => s.magery >= Number(values.goal), async () => void (await gm.command(`[NeoPrep ${t.session.name}`)))),
+      trainers.map((t) => t.run(ac.signal, (s) => levelOf(s) >= Number(values.goal), async () => void (await gm.command(`[NeoPrep ${t.session.name}`)))),
     );
   } finally {
     clearTimeout(deadline);
@@ -800,9 +808,17 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     console.log(`labeled ${n} states`);
   } else if (sub === "skill") {
     // Sampled skill-training states with the oracle trainer's answers (see distill/skill.ts).
+    const skillFlag = rest.indexOf("--skill");
+    const skill = (skillFlag >= 0 ? rest[skillFlag + 1] : "magery") as TrainSkill;
+    if (skillFlag >= 0) {
+      rest.splice(skillFlag, 2);
+    }
+    if (!(skill in SKILL_NAME)) {
+      throw new Error(`unknown skill ${skill}; one of ${Object.keys(SKILL_NAME).join(", ")}`);
+    }
     const n = Number(rest[0] ?? 8000);
-    const rows = await skillRows(n, Number(rest[1] ?? 20261007));
-    const path = join(DATA, "labeled-skill.jsonl");
+    const rows = await skillRows(n, Number(rest[1] ?? 20261007), skill);
+    const path = join(DATA, skill === "magery" ? "labeled-skill.jsonl" : `labeled-skill-${skill}.jsonl`);
     await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const chosen = Object.entries(Object.groupBy(rows, (r) => Object.entries(r.teacher.probabilities).reduce((a, b) => (b[1] > a[1] ? b : a))[0]));
     console.log(`${rows.length} skill states -> ${path}; the oracle chose ${chosen.map(([k, rs]) => `${k} ${rs?.length}`).join(", ")}`);

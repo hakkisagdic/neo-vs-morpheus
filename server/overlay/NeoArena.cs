@@ -7,7 +7,7 @@
 // Everything here is driven by environment variables (see docker-compose.yml) and by
 // GM commands that the bot's orchestrator sends as speech:
 //
-//   [NeoPrep <name>                         resurrect, heal, cure, end lasting spells, restock one player
+//   [NeoPrep <name>                         resurrect, heal, cure, end lasting spells and forms, restock one player
 //   [NeoDuel <nameA> <nameB> [distance] [slot]  prep both and face them off in the arena
 //   [NeoPlace <name> <west|east> [distance] [slot] prep one player and put them on one side
 //   [NeoTemplate <name> [template]          apply templates/<template>.json (default mage)
@@ -27,6 +27,7 @@ using Server.Logging;
 using Server.Misc;
 using Server.Mobiles;
 using Server.Network;
+using Server.Spells;
 using Server.Spells.Fifth;
 using Server.Spells.First;
 using Server.Spells.Fourth;
@@ -394,6 +395,10 @@ public static class ArenaCommands
         CurseSpell.RemoveEffect(m);
         MortalStrike.EndWound(m);
         BleedAttack.EndBleed(m, false);
+
+        // A necromancer's form outlives the session that took it, and Lich Form's faster mana and
+        // Horrific Beast's ban on other spells would carry into the next one.
+        TransformationSpellHelper.RemoveContext(m, true);
 
         // StatMods is null until the mobile has had one
         if (m.StatMods is { Count: > 0 } mods)

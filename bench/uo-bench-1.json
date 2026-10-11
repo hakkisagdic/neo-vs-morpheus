@@ -300,6 +300,54 @@
         }
       ]
     },
+    "ml/skill-necromancy": {
+      "shard": "modernuo-ml",
+      "kind": "skill",
+      "about": "A necromancer in training (templates/necro-trainee.json: Necromancy, Spirit Speak and Meditation 50, Int 100) alone in its arena, choosing every step: a practice spell (the forms it casts on itself, Wraith Form, Horrific Beast, Lich Form and Vampiric Embrace, which a success takes or ends, and Wither; told each one's mana, cast time and chance to succeed) or meditation (told its chance of a trance). It trains at least 20 minutes and until Necromancy 70, 90 minutes at most.",
+      "player": "{player}:necro-trainee",
+      "minutes": 20,
+      "goal": 70,
+      "cap": 90,
+      "sessions": 5,
+      "scores": [
+        {
+          "name": "ml/skill-necromancy: Necromancy gained in 20 min",
+          "metric": "gain",
+          "half_width": 0.5,
+          "about": "Necromancy points gained in the first 20 minutes, the mean over sessions; settled within \u00b10.5 points over at least 20 sessions."
+        },
+        {
+          "name": "ml/skill-necromancy: minutes from 50 to 70",
+          "metric": "time",
+          "half_width": 3,
+          "about": "Minutes from Necromancy 50 to 70, counted as 90 when not reached by then (a restricted mean, so that a player that never gets there still counts); settled within \u00b13 minutes over at least 20 sessions."
+        }
+      ]
+    },
+    "ml/skill-chivalry": {
+      "shard": "modernuo-ml",
+      "kind": "skill",
+      "about": "A paladin in training (templates/paladin-trainee.json: Chivalry 50 on Swordsmanship, Tactics, Focus and Meditation 50, Int 50, no armour, 300,000 tithing points) alone in its arena, choosing every step: a practice spell (Divine Fury, Dispel Evil, Enemy of One, Holy Light, Noble Sacrifice; told each one's mana, tithing points, cast time and chance to succeed) or meditation (told its chance of a trance). Every cast spends tithing points, a success mana too, and a fizzle has no recovery. It trains at least 20 minutes and until Chivalry 70, 90 minutes at most.",
+      "player": "{player}:paladin-trainee",
+      "minutes": 20,
+      "goal": 70,
+      "cap": 90,
+      "sessions": 5,
+      "scores": [
+        {
+          "name": "ml/skill-chivalry: Chivalry gained in 20 min",
+          "metric": "gain",
+          "half_width": 0.5,
+          "about": "Chivalry points gained in the first 20 minutes, the mean over sessions; settled within \u00b10.5 points over at least 20 sessions."
+        },
+        {
+          "name": "ml/skill-chivalry: minutes from 50 to 70",
+          "metric": "time",
+          "half_width": 3,
+          "about": "Minutes from Chivalry 50 to 70, counted as 90 when not reached by then (a restricted mean, so that a player that never gets there still counts); settled within \u00b13 minutes over at least 20 sessions."
+        }
+      ]
+    },
     "ml/spar-mage": {
       "shard": "modernuo-ml",
       "about": "Mage against a frozen model, neo-duel-v8r-s2 (the champion of 6 October), both at their own speed, on five arenas, from both seats: a stronger opponent than the scripted bot, and a fixed one, so that scores stay comparable.",

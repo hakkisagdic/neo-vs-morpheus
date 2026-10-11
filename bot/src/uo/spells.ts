@@ -1,16 +1,32 @@
-// Magery spells: ids are the 1-based numbers the cast packet uses.
+// Spells: ids are the 1-based numbers the cast packet uses (Magery 1-64, Necromancy 101-117,
+// Chivalry 201-210; the server takes one off and looks the spell up in a book of its school).
 
 export type SpellTarget = "mobile" | "location" | "self" | "none";
+
+export type SpellSchool = "magery" | "necromancy" | "chivalry";
 
 export type Spell = {
   id: number;
   key: string;
   name: string;
+  school: SpellSchool;
+  /** Magery's circle; 0 for the other schools, which have none. */
   circle: number;
   mana: number;
+  /** Power words; Chivalry's mantra is shown as a localized message, not spoken. */
   words: string;
   target: SpellTarget;
   harmful: boolean;
+  /** Cast delay without faster casting, ms: Magery (2 + circle) / 4 s, the others their own (ModernUO, ML). */
+  delayMs: number;
+  /** Cast recovery, ms: 1.5 s, Chivalry's 1.75 s. */
+  recoveryMs: number;
+  /** Necromancy and Chivalry: the skill from which a cast can succeed (ModernUO's RequiredSkill). */
+  requiredSkill?: number;
+  /** Necromancy's reagents (the bot's keys); Magery's are in brain/spellbook.ts. */
+  reagents?: readonly string[];
+  /** Chivalry: tithing points a cast spends, whether it succeeds or fizzles. */
+  tithing?: number;
 };
 
 const MANA_BY_CIRCLE = [4, 6, 9, 11, 14, 20, 40, 50];
@@ -94,16 +110,102 @@ const ROWS: Row[] = [
   ["waterElemental", "Water Elemental", "Kal Vas Xen An Flam", "none", false],
 ];
 
-export const SPELLS: readonly Spell[] = ROWS.map(([key, name, words, target, harmful], i) => ({
+const MAGERY: Spell[] = ROWS.map(([key, name, words, target, harmful], i) => ({
   id: i + 1,
   key,
   name,
+  school: "magery",
   circle: Math.floor(i / 8) + 1,
   mana: MANA_BY_CIRCLE[Math.floor(i / 8)],
   words,
   target,
   harmful,
+  delayMs: (2 + Math.floor(i / 8) + 1) * 250,
+  recoveryMs: 1500,
 }));
+
+// [key, name, words, target, harmful, cast delay s, required skill, mana, reagents], in the order
+// of ModernUO's spell registry (Spells/Initializer.cs) and SpellInfo: id 101 is Animate Dead.
+type NecroRow = [string, string, string, SpellTarget, boolean, number, number, number, string[]];
+
+// The forms (Horrific Beast, Lich Form, Vampiric Embrace, Wraith Form) are cast on oneself and
+// toggle: cast again, they end. Wither hits everyone around. Curse Weapon needs a weapon in hand,
+// Animate Dead a corpse, Summon Familiar answers with a gump, Exorcism needs Spirit Speak 100 and a
+// champion spawn; the rest are curses on another mobile.
+// prettier-ignore
+const NECRO_ROWS: NecroRow[] = [
+  ["animateDead", "Animate Dead", "Uus Corp", "mobile", false, 1.5, 40, 23, ["graveDust", "daemonBlood"]],
+  ["bloodOath", "Blood Oath", "In Jux Mani Xen", "mobile", true, 1.5, 20, 13, ["daemonBlood"]],
+  ["corpseSkin", "Corpse Skin", "In Agle Corp Ylem", "mobile", true, 1.5, 20, 11, ["batWing", "graveDust"]],
+  ["curseWeapon", "Curse Weapon", "An Sanct Gra Char", "self", false, 0.75, 0, 7, ["pigIron"]],
+  ["evilOmen", "Evil Omen", "Pas Tym An Sanct", "mobile", true, 0.75, 20, 11, ["batWing", "noxCrystal"]],
+  ["horrificBeast", "Horrific Beast", "Rel Xen Vas Bal", "self", false, 2, 40, 11, ["batWing", "daemonBlood"]],
+  ["lichForm", "Lich Form", "Rel Xen Corp Ort", "self", false, 2, 70, 23, ["graveDust", "daemonBlood", "noxCrystal"]],
+  ["mindRot", "Mind Rot", "Wis An Ben", "mobile", true, 1.5, 30, 17, ["batWing", "pigIron", "daemonBlood"]],
+  ["painSpike", "Pain Spike", "In Sar", "mobile", true, 1, 20, 5, ["graveDust", "pigIron"]],
+  ["poisonStrike", "Poison Strike", "In Vas Nox", "mobile", true, 1.75, 50, 17, ["noxCrystal"]],
+  ["strangle", "Strangle", "In Bal Nox", "mobile", true, 2, 65, 29, ["daemonBlood", "noxCrystal"]],
+  ["summonFamiliar", "Summon Familiar", "Kal Xen Bal", "none", false, 2, 30, 17, ["batWing", "graveDust", "daemonBlood"]],
+  ["vampiricEmbrace", "Vampiric Embrace", "Rel Xen An Sanct", "self", false, 2, 99, 23, ["batWing", "noxCrystal", "pigIron"]],
+  ["vengefulSpirit", "Vengeful Spirit", "Kal Xen Bal Beh", "mobile", true, 2, 80, 41, ["batWing", "graveDust", "pigIron"]],
+  ["wither", "Wither", "Kal Vas An Flam", "none", true, 1.5, 60, 23, ["noxCrystal", "graveDust", "pigIron"]],
+  ["wraithForm", "Wraith Form", "Rel Xen Um", "self", false, 2, 20, 17, ["noxCrystal", "pigIron"]],
+  ["exorcism", "Exorcism", "Ort Corp Grav", "none", true, 2, 80, 40, ["noxCrystal", "graveDust"]],
+];
+
+const NECROMANCY: Spell[] = NECRO_ROWS.map(([key, name, words, target, harmful, delay, requiredSkill, mana, reagents], i) => ({
+  id: 101 + i,
+  key,
+  name,
+  school: "necromancy",
+  circle: 0,
+  mana,
+  words,
+  target,
+  harmful,
+  delayMs: delay * 1000,
+  recoveryMs: 1500,
+  requiredSkill,
+  reagents,
+}));
+
+// [key, name, mantra, target, harmful, cast delay s, required skill, mana, tithing points]
+type ChivalryRow = [string, string, string, SpellTarget, boolean, number, number, number, number];
+
+// Divine Fury, Enemy of One, Consecrate Weapon (a weapon in hand) and the area spells (Dispel Evil,
+// Holy Light, Noble Sacrifice: only others around are hit or helped) need no target; Close Wounds
+// wants a wounded mobile, Cleanse by Fire a poisoned one, Sacred Journey a rune.
+// prettier-ignore
+const CHIVALRY_ROWS: ChivalryRow[] = [
+  ["cleanseByFire", "Cleanse By Fire", "Expor Flamus", "mobile", false, 1, 5, 10, 10],
+  ["closeWounds", "Close Wounds", "Obsu Vulni", "mobile", false, 1.5, 0, 10, 10],
+  ["consecrateWeapon", "Consecrate Weapon", "Consecrus Arma", "self", false, 0.5, 15, 10, 10],
+  ["dispelEvil", "Dispel Evil", "Dispiro Malas", "none", true, 0.25, 35, 10, 10],
+  ["divineFury", "Divine Fury", "Divinum Furis", "self", false, 1, 25, 15, 10],
+  ["enemyOfOne", "Enemy of One", "Forul Solum", "self", false, 0.5, 45, 20, 10],
+  ["holyLight", "Holy Light", "Augus Luminos", "none", true, 1.75, 55, 10, 10],
+  ["nobleSacrifice", "Noble Sacrifice", "Dium Prostra", "none", false, 1.5, 65, 20, 30],
+  ["removeCurse", "Remove Curse", "Extermo Vomica", "mobile", false, 1.5, 5, 20, 10],
+  ["sacredJourney", "Sacred Journey", "Sanctum Viatas", "mobile", false, 1.5, 15, 10, 15],
+];
+
+const CHIVALRY: Spell[] = CHIVALRY_ROWS.map(([key, name, words, target, harmful, delay, requiredSkill, mana, tithing], i) => ({
+  id: 201 + i,
+  key,
+  name,
+  school: "chivalry",
+  circle: 0,
+  mana,
+  words,
+  target,
+  harmful,
+  delayMs: delay * 1000,
+  recoveryMs: 1750,
+  requiredSkill,
+  tithing,
+}));
+
+export const SPELLS: readonly Spell[] = [...MAGERY, ...NECROMANCY, ...CHIVALRY];
 
 const byKey = new Map(SPELLS.map((s) => [s.key, s]));
 const byWords = new Map(SPELLS.map((s) => [s.words.toLowerCase(), s]));

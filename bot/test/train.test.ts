@@ -1,4 +1,7 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { random } from "../src/bench/stats.ts";
+import { sampleTrainState, skillRows } from "../src/distill/skill.ts";
 import { bestCircle, circleMin, successChance } from "../src/game/train.ts";
 import {
   OracleTrainBrain,
@@ -106,6 +109,22 @@ describe("the oracle trainer", () => {
     expect(describeTraining(state())).toContain("a fizzle uses reagents but no mana");
     expect(trainOptions(state()).evalInt).toBe("Use Evaluating Intelligence: trains only Eval Int");
     expect(TRAIN_FORMAT).toBe("skill-3");
+  });
+});
+
+describe("Magery beside the other schools", () => {
+  it("keeps format skill-3: the same prompt, options, scripted and oracle choices, and training rows", async () => {
+    const next = random(424242);
+    const rules = new RuleTrainBrain();
+    const oracle = new OracleTrainBrain();
+    const out: unknown[] = [];
+    for (let i = 0; i < 500; i++) {
+      const s = sampleTrainState(next);
+      out.push([describeTraining(s), trainOptions(s), (await rules.decide(s)).key, (await oracle.decide(s)).key]);
+    }
+    const rows = await skillRows(50, 7);
+    // What the code gave before Necromancy and Chivalry joined it.
+    expect(createHash("sha256").update(JSON.stringify({ out, rows })).digest("hex")).toBe("38b6015b7714db41b2829e3f649094302f954fa5f154e86347623cdcaf973e8e");
   });
 });
 

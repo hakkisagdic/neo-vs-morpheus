@@ -69,6 +69,10 @@ type WorldEvents = {
   moveAck: [seq: number];
   moveReject: [seq: number];
   skills: [];
+  /** A sound played where it was made (0x54): a Chivalry fizzle is heard, not told. */
+  sound: [id: number, x: number, y: number, z: number];
+  /** The player's mana changed (0xA2 or a full status): a successful cast spends it as its delay ends. */
+  mana: [before: number, after: number];
 };
 
 export const LAYER_BACKPACK = 0x15;
@@ -83,6 +87,15 @@ export const REAGENTS: Record<number, string> = {
   0x0f88: "nightshade",
   0x0f8c: "sulfurousAsh",
   0x0f8d: "spidersSilk",
+};
+
+/** Necromancy's reagents, apart from Magery's: the duel states count those alone. */
+export const NECRO_REAGENTS: Record<number, string> = {
+  0x0f78: "batWing",
+  0x0f7d: "daemonBlood",
+  0x0f8a: "pigIron",
+  0x0f8e: "noxCrystal",
+  0x0f8f: "graveDust",
 };
 
 const newMobile = (serial: number): Mobile => ({
@@ -115,7 +128,8 @@ export class World extends EventEmitter<WorldEvents> {
   mapHeight = 0;
   warMode = false;
   backpack = 0;
-  stats = { str: 0, dex: 0, int: 0, statCap: 0, weight: 0, maxWeight: 0 };
+  /** tithing: Chivalry's points (status version 4 and later). */
+  stats = { str: 0, dex: 0, int: 0, statCap: 0, weight: 0, maxWeight: 0, tithing: 0 };
   readonly mobiles = new Map<number, Mobile>();
   readonly items = new Map<number, Item>();
   readonly skills = new Map<number, Skill>();
@@ -143,16 +157,26 @@ export class World extends EventEmitter<WorldEvents> {
     return m;
   }
 
-  /** Reagent counts in the backpack (recursively), by reagent key. */
-  reagents(): Record<string, number> {
-    const counts: Record<string, number> = Object.fromEntries(Object.values(REAGENTS).map((k) => [k, 0]));
+  /** Reagent counts in the backpack (recursively), by reagent key: Magery's, or those of `kinds`. */
+  reagents(kinds: Record<number, string> = REAGENTS): Record<string, number> {
+    const counts: Record<string, number> = Object.fromEntries(Object.values(kinds).map((k) => [k, 0]));
     for (const item of this.items.values()) {
-      const key = REAGENTS[item.graphic];
+      const key = kinds[item.graphic];
       if (key && this.#inBackpack(item)) {
         counts[key] += item.amount;
       }
     }
     return counts;
+  }
+
+  /** Whether an item with this graphic (a spellbook, say) is in the backpack. */
+  carries(graphic: number): boolean {
+    for (const item of this.items.values()) {
+      if (item.graphic === graphic && this.#inBackpack(item)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   #inBackpack(item: Item): boolean {
@@ -232,6 +256,15 @@ export class World extends EventEmitter<WorldEvents> {
         return this.#extended(r);
       case 0xdf:
         return this.#buff(r);
+      case 0x54: {
+        r.skip(1); // flags
+        const sound = r.u16();
+        r.skip(2); // volume
+        const x = r.u16();
+        const y = r.u16();
+        this.emit("sound", sound, x, y, r.i16());
+        return;
+      }
     }
   }
 
@@ -345,7 +378,7 @@ export class World extends EventEmitter<WorldEvents> {
       this.stats.int = r.u16();
       m.stam = r.u16();
       m.stamMax = r.u16();
-      m.mana = r.u16();
+      this.#setMana(m, r.u16());
       m.manaMax = r.u16();
       r.skip(4 + 2); // gold, armor
       this.stats.weight = r.u16();
@@ -354,6 +387,11 @@ export class World extends EventEmitter<WorldEvents> {
         r.skip(1); // race
       }
       this.stats.statCap = r.u16();
+      // Followers, then (AOS and later) four resistances, luck, damage min and max, tithing points.
+      if (version >= 4 && r.remaining >= 2 + 14 + 4) {
+        r.skip(2 + 14);
+        this.stats.tithing = r.u32();
+      }
     }
     m.updatedAt = this.now();
   }
@@ -367,12 +405,20 @@ export class World extends EventEmitter<WorldEvents> {
       m.hits = current;
     } else if (id === 0xa2) {
       m.manaMax = max;
-      m.mana = current;
+      this.#setMana(m, current);
     } else {
       m.stamMax = max;
       m.stam = current;
     }
     m.updatedAt = this.now();
+  }
+
+  #setMana(m: Mobile, mana: number): void {
+    const before = m.mana;
+    m.mana = mana;
+    if (m.serial === this.playerSerial && mana !== before) {
+      this.emit("mana", before, mana);
+    }
   }
 
   #healthbar(r: PacketReader): void {

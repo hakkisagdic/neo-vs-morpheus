@@ -9,6 +9,9 @@ export const CLILOC = {
   insufficientMana: 502625, // Insufficient mana for this spell.
   insufficientManaNew: 1060174, // You must have at least ~1_MANA_REQUIREMENT~ Mana to use this ability.
   moreReagents: 502630, // More reagents are needed for this spell.
+  noTithing: 1060173, // You must have at least ~1_TITHE_REQUIREMENT~ Tithing Points to use this ability,
+  wrongForm: 1061091, // You cannot cast that spell in this form.
+  noSpell: 500015, // You do not have that spell!
   targetNotSeen: 500237, // Target can not be seen.
   tooFar: 500446, // That is too far away.
   cannotTeleport: 501942, // That location is blocked.
