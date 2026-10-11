@@ -55,6 +55,8 @@ MIN_NEW_JEV = 1000
 #: z for 95% confidence; the scripted bot at this reaction time or quicker is "matched speed".
 GATE_ROUNDS = 400
 GATE_Z = 1.645
+#: Points a candidate that can train skills may trail a champion that cannot, at duels (non-inferiority).
+SKILL_MARGIN = 0.05
 MATCHED_MS = 60
 #: States asked of Jev per labeling batch, and the credits below which labeling waits.
 LABEL_BATCH = 2000
@@ -162,8 +164,10 @@ def evaluate(state, name):
         old = candidates[str(lane)]
         results = duel_results(state.get("eval_since", {}).get(old, ""))
         (w, l), (bw, bl) = results.get(old, (0, 0)), results.get(state.get("champion", "neo-duel-v8"), (0, 0))
+        enough = min(w + l, bw + bl) >= GATE_ROUNDS
         state.setdefault("history", []).append({"replaced": old, "at": state.get("eval_since", {}).get(old),
-            "result": f"{old} {100 * w / max(1, w + l):.0f}% ({w}-{l}) against {state.get('champion')} {100 * bw / max(1, bw + bl):.0f}% ({bw}-{bl}), replaced before {GATE_ROUNDS} rounds"})
+            "result": f"{old} {100 * w / max(1, w + l):.0f}% ({w}-{l}) against {state.get('champion')} {100 * bw / max(1, bw + bl):.0f}% ({bw}-{bl}), "
+                      + ("replaced undecided" if enough else f"replaced before {GATE_ROUNDS} rounds")})
     code, out = sh([sys.executable, "lab/evaluate.py", "--model", name, "--lane", str(lane)])
     log(f"{name}: evaluating on lane {lane}" if not code else f"{name}: evaluation start failed: {out[-300:]}")
     candidates[str(lane)] = name
@@ -223,6 +227,8 @@ def gate(state):
         # A candidate that brings something new (skill training) needs only to be no worse at duels:
         # a non-inferiority test, its share plus the margin against the champion's.
         margin = state.get("margins", {}).get(name, 0.0)
+        if not margin and name in skilled and champion not in skilled:
+            margin = SKILL_MARGIN  # it brings skill training; at duels it needs only to be no worse
         z = (cw / n1 - bw / n2 + margin) / se
         verdict = (f"{name} {100 * cw / n1:.0f}% ({cw}-{cl}) against {champion} {100 * bw / n2:.0f}% ({bw}-{bl}), z {z:+.2f}"
                    + (f" (no worse by {100 * margin:.0f} points)" if margin else ""))
