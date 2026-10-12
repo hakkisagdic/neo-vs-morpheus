@@ -46,6 +46,8 @@ export type DuelSnapshot = {
     weapon?: WeaponView | null;
     /** ms left on a bandage being applied (0 = none). */
     bandagingForMs?: number;
+    /** Mortal Strike on us (a yellow health bar): no healing until it wears off, 6 s after the hit. */
+    mortalStrike?: boolean;
     /** ms until another heal potion can be drunk (0 = now). */
     healPotionReadyInMs?: number;
     /** ms since the last weapon ability; within 3 s another costs double. */

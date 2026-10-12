@@ -1,5 +1,6 @@
 // Walking: move requests carry a sequence number the server acknowledges in order.
-// A request in a direction we are not facing only turns us.
+// A request in a direction we are not facing only turns us. A turn costs no time (ModernUO's
+// movement.delay.turn is 0), so only a real step waits out the running pace.
 import * as out from "../uo/outgoing.ts";
 import type { Grid, Point } from "../world/grid.ts";
 import type { Session } from "./session.ts";
@@ -8,6 +9,9 @@ const DX = [0, 1, 1, 1, 0, -1, -1, -1];
 const DY = [-1, -1, 0, 1, 1, 1, 0, -1];
 /** A running step takes 200 ms on foot (Movement.RunFootDelay); a little more keeps the server from refusing one. */
 export const RUN_STEP_MS = 210;
+
+/** The wait after a running step, before the next one. */
+const pace = () => new Promise((r) => setTimeout(r, RUN_STEP_MS));
 
 export const chebyshev = (a: { x: number; y: number }, b: { x: number; y: number }) =>
   Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
@@ -83,8 +87,8 @@ export class Mover {
       if (facing) {
         steps++;
         i++;
+        await pace();
       }
-      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
     }
     return steps;
   }
@@ -114,8 +118,8 @@ export class Mover {
       }
       if (facing) {
         steps++;
+        await pace();
       }
-      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
     }
     return steps;
   }
@@ -143,8 +147,8 @@ export class Mover {
       if (facing) {
         steps++;
         refused.clear();
+        await pace();
       }
-      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
     }
     return steps;
   }
@@ -169,8 +173,8 @@ export class Mover {
       }
       if (facing) {
         steps++;
+        await pace();
       }
-      await new Promise((r) => setTimeout(r, RUN_STEP_MS));
     }
     return steps;
   }

@@ -135,12 +135,30 @@ export function wielded(session: Session, serial = session.world.playerSerial): 
 export type UseResult = "used" | "none" | "refused" | "timeout";
 
 /**
+ * ModernUO ignores a double-click within ActionDelay of the last one ("You must wait to perform
+ * another action"), and ActionDelay is 1 s from AOS on (ExpansionConfiguration). The fighters
+ * paused 350 ms between moves, so a cure right after a bandage, or a drink right after a throw,
+ * was simply dropped.
+ */
+export const ACTION_DELAY_MS = 1_000;
+const lastUse = new WeakMap<object, number>();
+
+/** Waits out the server's pause since this session's last item use, and counts this one. */
+async function actionReady(session: Session): Promise<void> {
+  const wait = (lastUse.get(session.world) ?? Number.NEGATIVE_INFINITY) + ACTION_DELAY_MS + 30 - Date.now();
+  if (wait > 0) {
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  lastUse.set(session.world, Date.now());
+}
+
+/**
  * Double-clicks an item from the backpack and, when a target cursor follows (bandages, explosion
  * potions), answers it. It worked when the stack shrank: the server consumes an item as it is
  * used, and says no in many ways ("You must have a free hand to drink a potion", "You must wait
  * 10 seconds", ...), so the count is the one reliable signal.
  */
-export function useItem(
+export async function useItem(
   session: Session,
   graphic: number,
   target: { kind: "self" } | { kind: "mobile"; serial: number } | null,
@@ -148,8 +166,9 @@ export function useItem(
   const { client, world } = session;
   const serial = packItem(session, graphic);
   if (serial === null) {
-    return Promise.resolve("none");
+    return "none";
   }
+  await actionReady(session);
   const before = packCount(session, graphic);
   const consumed = () => packCount(session, graphic) < before;
   if (world.target) {
@@ -187,6 +206,77 @@ export function useItem(
     const timer = setTimeout(() => finish(consumed() ? "used" : "refused"), target ? 2_000 : 800);
     world.on("target", onTarget);
     client.send(out.doubleClick(serial));
+  });
+}
+
+/**
+ * ModernUO (ML) bursts a primed explosion potion 6 s after priming, on the tile its target stood on
+ * when it was thrown, or as it lands if the fuse would end in the air. Thrown at once, it lay there
+ * for five seconds and a target on the move was long gone: it is held ("cooked") first.
+ */
+export const EXPLOSION_FUSE_MS = 6_000;
+/** The longest a primed potion is held: a slow round trip still gets the throw in before the fuse ends. */
+export const EXPLOSION_COOK_MS = 5_000;
+
+/** Where a cooked potion goes, asked at the throw. */
+export type ThrowAim = { kind: "mobile"; serial: number } | { kind: "location"; x: number; y: number; z: number };
+
+/**
+ * Primes a throwable potion, holds it until `ready()` or `cookMs` after priming, then throws it
+ * at `aim()`. Nothing else may answer a target cursor meanwhile: that would cancel this one and
+ * the potion would burst in the pack.
+ */
+export async function throwCooked(
+  session: Session,
+  graphic: number,
+  aim: () => ThrowAim,
+  ready: () => boolean,
+  cookMs = EXPLOSION_COOK_MS,
+): Promise<{ result: UseResult; heldMs: number }> {
+  const { client, world } = session;
+  const serial = packItem(session, graphic);
+  if (serial === null) {
+    return { result: "none", heldMs: 0 };
+  }
+  await actionReady(session);
+  if (world.target) {
+    client.send(out.cancelTarget(world.target.id));
+    world.target = null;
+  }
+  return new Promise((resolve) => {
+    const primedAt = Date.now();
+    let cursor: TargetCursor | null = null;
+    const onTarget = (c: TargetCursor) => {
+      cursor = c;
+      world.off("target", onTarget);
+    };
+    world.on("target", onTarget);
+    client.send(out.doubleClick(serial));
+    const tick = setInterval(() => {
+      const held = Date.now() - primedAt;
+      if (!cursor) {
+        // No cursor within a second: refused (paralysed, casting, or none left).
+        if (held >= 1_000) {
+          clearInterval(tick);
+          world.off("target", onTarget);
+          resolve({ result: "refused", heldMs: held });
+        }
+        return;
+      }
+      if (held < cookMs && !ready()) {
+        return;
+      }
+      clearInterval(tick);
+      const a = aim();
+      if (a.kind === "mobile") {
+        const m = world.mobiles.get(a.serial);
+        client.send(out.targetObject(cursor.id, cursor.flags, a.serial, m?.x ?? 0, m?.y ?? 0, m?.z ?? 0, m?.body ?? 0));
+      } else {
+        client.send(out.targetLocation(cursor.id, cursor.flags, a.x, a.y, a.z));
+      }
+      world.target = null;
+      resolve({ result: "used", heldMs: held });
+    }, 50);
   });
 }
 

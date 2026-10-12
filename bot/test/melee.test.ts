@@ -71,12 +71,22 @@ describe("melee guardrails", () => {
     expect(overrides[0]).toMatch(/cure:potion → attack:swing/);
   });
 
-  it("offers no potions without a free hand, and bandages when poisoned", () => {
+  it("drinks no potion without a free hand but still throws one, and bandages when poisoned", () => {
     const archer = fighter({ poisoned: true, hits: 90 });
     archer.us.freeHand = false;
     const options = Object.keys(meleeOptions(archer));
-    expect(options.some((k) => k.endsWith(":potion") || k.startsWith("throw:"))).toBe(false);
+    expect(options.some((k) => k.endsWith(":potion"))).toBe(false);
+    expect(options).toContain("throw:explosion");
     expect(meleeBaseline(archer)).toBe("heal:bandage");
+  });
+
+  it("drinks no heal potion poisoned or mortally struck, as the server refuses it", () => {
+    expect(blockedMelee("heal:potion", fighter({ hits: 40, poisoned: true }))).toMatch(/poisoned/);
+    const struck = fighter({ hits: 40 });
+    struck.us.mortalStrike = true;
+    expect(blockedMelee("heal:potion", struck)).toMatch(/mortally struck/);
+    expect(blockedMelee("heal:bandage", struck)).toBeNull(); // a bandage that ends after the strike wears off still heals
+    expect(meleeBaseline(struck)).toBe("heal:bandage");
   });
 
   it("offers explosion potions only to fighters who carry them", () => {

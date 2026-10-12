@@ -19,6 +19,8 @@ import {
   selfBandageSeconds,
   setAbility,
   swingDelayMs,
+  type ThrowAim,
+  throwCooked,
   useItem,
   wielded,
 } from "./items.ts";
@@ -115,6 +117,25 @@ export class DuelController extends EventEmitter<DuelEvents> {
       this.#recent.shift();
     }
     this.emit("log", text);
+  }
+
+  /**
+   * Where a cooked explosion potion goes: at them while they stand 3 to 12 tiles away (closer, the
+   * blast reaches us; farther, the throw does not); otherwise onto a tile 4 away, away from them
+   * when they are close, so that it cannot burst on us.
+   */
+  #throwAim(): ThrowAim {
+    const w = this.session.world;
+    const me = w.player;
+    const them = w.mobiles.get(this.opponent);
+    const d = them ? chebyshev(me, them) : Number.POSITIVE_INFINITY;
+    if (them && !them.dead && d >= 3 && d <= 12) {
+      return { kind: "mobile", serial: this.opponent };
+    }
+    const sx = them ? Math.sign(them.x - me.x) : 0;
+    const sy = them ? Math.sign(them.y - me.y) : 0;
+    const [dx, dy] = sx === 0 && sy === 0 ? [1, 0] : d < 3 ? [-sx, -sy] : [sx, sy];
+    return { kind: "location", x: me.x + 4 * dx, y: me.y + 4 * dy, z: me.z };
   }
 
   /** Skills that make weapon abilities cheaper (ModernUO WeaponAbility.CalculateMana), by 0-based id. */
@@ -255,6 +276,7 @@ export class DuelController extends EventEmitter<DuelEvents> {
         lastSpellAgoMs: this.#lastSpell ? now - this.#lastSpell.at : 0,
         weapon: this.#weaponView(),
         bandagingForMs: Math.max(0, this.#bandageUntil - now),
+        mortalStrike: p.yellow,
         healPotionReadyInMs: Math.max(0, this.#healPotionReadyAt - now),
         lastAbilityAgoMs: now - this.#lastAbilityAt,
         freeHand: freeHand(this.session),
@@ -543,9 +565,17 @@ export class DuelController extends EventEmitter<DuelEvents> {
         break;
       }
       case "throw": {
-        const used = await useItem(this.session, GRAPHIC.explosionPotion, { kind: "mobile", serial: this.opponent });
-        record.outcome = { result: used };
-        this.#note(`${this.name} ${used === "used" ? "threw an explosion potion" : `could not throw (${used})`}`);
+        // Cooked: primed now and thrown as late as it can still burst on them, when they come
+        // within 3 tiles (any closer and the blast reaches us) or as the fuse runs short.
+        const near = () => {
+          const them = w.mobiles.get(this.opponent);
+          return !them || them.dead || chebyshev(w.player, them) <= 3;
+        };
+        const { result, heldMs } = await throwCooked(this.session, GRAPHIC.explosionPotion, () => this.#throwAim(), near);
+        record.outcome = { result };
+        this.#note(
+          `${this.name} ${result === "used" ? `threw an explosion potion after ${(heldMs / 1000).toFixed(1)} s` : `could not throw (${result})`}`,
+        );
         await sleep(SWING_PAUSE_MS, signal);
         break;
       }

@@ -90,7 +90,8 @@ export function meleeOptions(s: DuelSnapshot): Record<string, string> {
   }
   if (sup) {
     o["heal:bandage"] = "heal: bandage yourself (cures poison too; takes a few seconds, you keep fighting)";
-    // Potions need a free hand: a bow, a halberd or a shield rules them out.
+    // Drinking needs a free hand: a bow, a halberd or a shield rules it out. Throwing does not
+    // (ModernUO: an explosion potion's RequireFreeHand is false).
     if (s.us.freeHand !== false) {
       if (sup.healPotions > 0) {
         o["heal:potion"] = "heal: drink a Greater Heal potion (once every 10 s)";
@@ -101,9 +102,9 @@ export function meleeOptions(s: DuelSnapshot): Record<string, string> {
       if (sup.refreshPotions > 0) {
         o["refresh:potion"] = "refresh: drink a Total Refresh potion (stamina)";
       }
-      if (sup.explosionPotions > 0) {
-        o["throw:explosion"] = "throw: an Explosion potion at them (bursts after a moment)";
-      }
+    }
+    if (sup.explosionPotions > 0) {
+      o["throw:explosion"] = "throw: an Explosion potion at them (bursts after a moment)";
     }
   }
   o["move:retreat"] = "move: run out of their reach";
@@ -155,13 +156,18 @@ export function blockedMelee(key: string, s: DuelSnapshot, t: Tactics = NEUTRAL)
             ? "not hurt"
             : null;
     case "heal:potion":
+      // ModernUO refuses a heal potion to the poisoned and the mortally struck (BaseHealPotion).
       return !sup?.healPotions
         ? "no heal potions"
         : (us.healPotionReadyInMs ?? 0) > 0
           ? "heal potion not ready"
           : us.hits >= us.hitsMax
             ? "at full health"
-            : null;
+            : us.poisoned
+              ? "poisoned: a heal potion does nothing until cured"
+              : us.mortalStrike
+                ? "mortally struck: no healing until it wears off"
+                : null;
     case "cure:potion":
       return !sup?.curePotions ? "no cure potions" : us.poisoned ? null : "not poisoned";
     case "refresh:potion":

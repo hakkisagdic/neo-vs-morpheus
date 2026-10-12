@@ -80,6 +80,16 @@ describe("the player's status and pack", () => {
     expect(w.carries(0x2252)).toBe(false);
   });
 
+  it("reads a yellow health bar (Mortal Strike) apart from poison", () => {
+    const w = new World();
+    const bar = (type: number, level: number) => new PacketWriter().u8(0x17).u16(12).u32(7).u16(1).u16(type).u8(level).finish();
+    w.apply(0x17, bar(2, 1));
+    expect(w.mobile(7)).toMatchObject({ yellow: true, poison: 0 });
+    w.apply(0x17, bar(1, 3));
+    w.apply(0x17, bar(2, 0));
+    expect(w.mobile(7)).toMatchObject({ yellow: false, poison: 3 });
+  });
+
   it("hears a sound where it is played", () => {
     const w = new World();
     const heard: number[][] = [];

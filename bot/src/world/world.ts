@@ -24,6 +24,8 @@ export type Mobile = {
   stamMax: number;
   /** 0 = not poisoned, otherwise poison level + 1. */
   poison: number;
+  /** A yellow health bar: Mortal Strike (no healing for a while), or invulnerable. */
+  yellow: boolean;
   dead: boolean;
   /** Set when the mobile speaks a spell's power words, cleared when the spell resolves. */
   casting: { spell: Spell; since: number } | null;
@@ -116,6 +118,7 @@ const newMobile = (serial: number): Mobile => ({
   stam: 0,
   stamMax: 0,
   poison: 0,
+  yellow: false,
   dead: false,
   casting: null,
   lastSpell: null,
@@ -429,6 +432,8 @@ export class World extends EventEmitter<WorldEvents> {
     const level = r.u8();
     if (type === 1) {
       m.poison = level;
+    } else if (type === 2) {
+      m.yellow = level > 0;
     }
     m.updatedAt = this.now();
   }
