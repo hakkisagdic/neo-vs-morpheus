@@ -11,8 +11,10 @@ lanes to keep busy, each with its series file and, on a GPU machine, its model a
      "alastyr": [{"lane": 1, "series": "lab/series-rules-variety-b.json"}]}
 
 A lane that is running is left alone; one the plan does not name is never touched. Edit the plan
-while the keeper runs: it is read again on every round. Standard library only; it drives the fleet
-CLI (npm run nvm -- fleet status/start), so it sees what the dashboard sees.
+while the keeper runs: it is read again on every round. A Colab VM that came back empty (Colab ends
+a runtime after 24 hours and gives the tab a fresh one) is set up again first, and its lanes start
+once that is done. Standard library only; it drives the fleet CLI (npm run nvm -- fleet
+status/start/setup), so it sees what the dashboard sees.
 """
 import argparse
 import json
@@ -42,6 +44,32 @@ def idle_lanes(machine):
     return (idle, running), text
 
 
+def machine_kind(name):
+    """The fleet's kind of machine (fleet.json): local (this Mac), ssh-lab, colab, kaggle, camber."""
+    try:
+        with open(os.path.join(ROOT, "fleet.json")) as f:
+            return json.load(f)["instances"][name]["kind"]
+    except (OSError, KeyError, ValueError):
+        return "local" if name == "mac" else "unknown"
+
+
+def set_up(machine, text):
+    """Whether a machine can start lanes. A Colab VM with no lane and no finished setup is a fresh
+    runtime: its setup is started (or left to go on), and the lanes wait for a later round."""
+    if machine_kind(machine) != "colab" or re.search(r"^lane \d+ ", text, re.M):
+        return True
+    setup = re.search(r"^setup: (.*)$", text, re.M)
+    if setup and "ready" in setup.group(1):
+        return True
+    if setup and "(finished)" not in setup.group(1):
+        print(f"{time.strftime('%H:%M')} {machine}: being set up ({setup.group(1).strip()}); its lanes start after", flush=True)
+        return False
+    # Never set up, or a setup that stopped short of "ready": (re)started, it goes on from its last finished step.
+    code, out = fleet("setup", machine)
+    print(f"{time.strftime('%H:%M')} {machine}: an empty VM, setting it up: {out.splitlines()[-1] if out else code}", flush=True)
+    return False
+
+
 def round_once():
     try:
         with open(PLAN) as f:
@@ -57,6 +85,8 @@ def round_once():
             continue
         idle, running = state
         seen.append(f"{machine} {sum(lane['lane'] in running for lane in lanes)}/{len(lanes)}")
+        if not set_up(machine, text):
+            continue
         for lane in lanes:
             n = lane["lane"]
             if n in running:

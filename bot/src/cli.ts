@@ -27,7 +27,7 @@ import type { DuelSnapshot, ModuleName } from "./brain/types.ts";
 import { config, requireSetting } from "./config.ts";
 import { type BrainKind, type Fighter, type Opponent, makeBrain, parseBrain, runMatch } from "./game/match.ts";
 import { type Instance, formatInfo, loadFleet, pick } from "./fleet/instances.ts";
-import { formatRows, readRuns, tally } from "./fleet/results.ts";
+import { type TallyOptions, formatRows, formatRuns, readRuns, tally } from "./fleet/results.ts";
 import { ratings } from "./bench/ladder.ts";
 import { leaderboard, leaderboardMarkdown, ratingPairings, ratingsMarkdown } from "./bench/leaderboard.ts";
 import { type SkillTrack, readSkillRuns, skillLeaderboard, skillMarkdown } from "./bench/skill.ts";
@@ -66,11 +66,14 @@ const USAGE = `usage: npm run nvm -- <command>
   fleet status|pull [instance]
                       the machines in fleet.json (fleet.example.json): what each lane plays; their
                       new runs brought into runs/ as <instance>--<stamp>.json
-  fleet results [--since T] [--instance X] [--flagged] [--by-arena]
-                      round wins by matchup over runs/, from every machine
+  fleet results [--since T] [--instance X] [--flagged] [--by-arena] [--no-bench] [--runs]
+                      round wins by matchup over runs/, from every machine; --runs: one line a run
   fleet start <instance> <series.json> [--lane N] [--parallel N] [--model TAG]
   fleet stop <instance> [--lane N]
   fleet logs <instance> [--lane N] [--lines N]
+  fleet there <instance> <cli args...>
+                      this CLI run on that machine (a Colab VM), on its own runs and servers:
+                      fleet there colab-pro fleet results --since T --no-bench
                       the same tools for an assistant: the MCP server in src/fleet/mcp.ts
   leaderboard [--bench uo-bench/1] [--write]
                       UO Bench's scores with 95% intervals (bench/<id>.json; lab/bench.py plays it);
@@ -321,6 +324,16 @@ async function series(args: string[]): Promise<void> {
 }
 
 async function fleet(args: string[]): Promise<void> {
+  if (args[0] === "there") {
+    // fleet there <machine> <cli args...>: the rest goes to that machine's own CLI untouched.
+    const [, name, ...rest] = args;
+    const machine = pick(await loadFleet(), name)[0];
+    if (!machine?.there || !rest.length) {
+      throw new Error(`fleet there <machine> <cli args...>: ${name ?? "?"} cannot run the CLI there`);
+    }
+    console.log(await machine.there(rest));
+    return;
+  }
   const { values, positionals } = parseArgs({
     args,
     allowPositionals: true,
@@ -331,6 +344,7 @@ async function fleet(args: string[]): Promise<void> {
       "by-arena": { type: "boolean" },
       bench: { type: "string" },
       "no-bench": { type: "boolean" },
+      runs: { type: "boolean" },
       lane: { type: "string" },
       parallel: { type: "string" },
       model: { type: "string" },
@@ -343,7 +357,8 @@ async function fleet(args: string[]): Promise<void> {
   if (action === "results") {
     const since = values.since ? Date.parse(values.since) : undefined;
     const bench = values["no-bench"] ? false : values.bench;
-    console.log(formatRows(tally(await readRuns(), { since, instance: values.instance, includeFlagged: values.flagged, byArena: values["by-arena"], bench })));
+    const options: TallyOptions = { since, instance: values.instance, includeFlagged: values.flagged, byArena: values["by-arena"], bench };
+    console.log(values.runs ? formatRuns(await readRuns(), options) : formatRows(tally(await readRuns(), options)));
     return;
   }
   if (!["setup", "status", "pull", "start", "stop", "logs"].includes(action) || (["setup", "start", "stop", "logs"].includes(action) && !name)) {

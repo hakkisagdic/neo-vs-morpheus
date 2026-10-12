@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { importedName, importRuns } from "../src/fleet/instances.ts";
-import { type RunFile, describeSide, formatRows, instanceOf, runInfo, tally } from "../src/fleet/results.ts";
+import { type RunFile, describeSide, formatRows, formatRuns, instanceOf, runInfo, tally } from "../src/fleet/results.ts";
 
 const run = (a: object, b: object, winners: (string | null)[], extra: Partial<RunFile> = {}): RunFile => ({
   versions: { models: {} },
@@ -48,6 +48,25 @@ describe("tally", () => {
     expect(tally([flagged], { since: Date.parse("2026-10-02T00:00:00Z") })).toEqual([]);
     expect(tally([flagged], { instance: "colab" })).toHaveLength(1);
     expect(tally([flagged], { instance: "alastyr" })).toEqual([]);
+  });
+
+  it("lists the counted runs one a line, in seat order and oldest first", () => {
+    const model = { versions: { models: { Morpheus: "v8" } } };
+    const late = runInfo("b.json", run({ brain: "rules", template: "dexer", reactionMs: 40 }, { brain: "laya", template: "dexer" }, ["Morpheus", null, "Neo"], model));
+    late.startedAt += 60_000;
+    const early = runInfo("a.json", { ...run({ brain: "laya" }, { brain: "rules", reactionMs: 40 }, ["Neo", "Neo"], { versions: { models: { Neo: "v8" } } }) });
+    const flagged = runInfo("c.json", run({ brain: "rules" }, { brain: "rules", reactionMs: 250 }, ["Neo"]));
+    flagged.problems = ["Neo cast late"];
+    const bench = runInfo("d.json", run({ brain: "laya" }, { brain: "rules" }, ["Neo"], { versions: { models: { Neo: "v8" }, bench: "uo-bench/1:ml/duel-mage" } }));
+    expect(formatRuns([late, flagged, early, bench], { bench: false })).toBe(
+      [
+        "run: v8 mage | rules@40 mage | open 8 | 2-0-0 | 2026-10-01T22:00:00.000Z",
+        "run: rules@40 dexer | v8 dexer | open 8 | 1-1-1 | 2026-10-01T22:01:00.000Z",
+        "runs: 2 counted, 1 flagged runs left out",
+      ].join("\n"),
+    );
+    expect(formatRuns([flagged], { includeFlagged: true }).split("\n")).toHaveLength(2);
+    expect(formatRuns([], {})).toBe("runs: 0 counted, 0 flagged runs left out");
   });
 
   it("names the model from the decisions when the run recorded a guardrail's move, and flags a silent model", () => {

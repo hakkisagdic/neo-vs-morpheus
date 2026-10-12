@@ -150,12 +150,17 @@ export function summarise(file: string, run: RunFile, checks: Pick<RunCheck, "bo
 /** bench: runs of that benchmark track only; false: no benchmark runs (selection keeps away from them). */
 export type TallyOptions = { since?: number; instance?: string; includeFlagged?: boolean; byArena?: boolean; bench?: string | false };
 
+/** Whether the options ask for a run, whatever its checks said. */
+function asked(run: RunInfo, o: TallyOptions): boolean {
+  const benchOut = o.bench === false ? Boolean(run.bench) : o.bench !== undefined && run.bench !== o.bench;
+  return !((o.since && run.startedAt < o.since) || (o.instance && run.instance !== o.instance) || run.sides.length !== 2 || benchOut);
+}
+
 /** Rows by matchup (sides sorted so that both seatings add up), most rounds first. */
 export function tally(runs: RunInfo[], o: TallyOptions = {}): Row[] {
   const rows = new Map<string, Row>();
   for (const run of runs) {
-    const benchOut = o.bench === false ? Boolean(run.bench) : o.bench !== undefined && run.bench !== o.bench;
-    if ((o.since && run.startedAt < o.since) || (o.instance && run.instance !== o.instance) || run.sides.length !== 2 || benchOut) {
+    if (!asked(run, o)) {
       continue;
     }
     const order = run.sides[0] <= run.sides[1] ? [0, 1] : [1, 0];
@@ -187,6 +192,21 @@ export function formatRows(rows: Row[]): string {
       return `${r.sides[0]} vs ${r.sides[1]}: ${r.wins[0]}-${r.wins[1]}${share}${draws}; ${r.runs} runs${flagged}`;
     })
     .join("\n");
+}
+
+/**
+ * The counted runs one a line, oldest first, for a test that needs every run and not only the sums
+ * (lab/trainer.py's gate: rounds of a run go together, and arenas and seats differ):
+ * "run: <first seat> | <second seat> | <arena> | <wins>-<wins>-<draws> | <started>", then how many
+ * the checks left out.
+ */
+export function formatRuns(runs: RunInfo[], o: TallyOptions = {}): string {
+  const wanted = runs.filter((run) => asked(run, o)).sort((a, b) => a.startedAt - b.startedAt);
+  const counted = wanted.filter((run) => o.includeFlagged || !run.problems.length);
+  return [
+    ...counted.map((r) => `run: ${r.sides[0]} | ${r.sides[1]} | ${r.arena} | ${r.wins[0]}-${r.wins[1]}-${r.draws} | ${new Date(r.startedAt).toISOString()}`),
+    `runs: ${counted.length} counted, ${wanted.length - counted.length} flagged runs left out`,
+  ].join("\n");
 }
 
 export const RUNS_DIR = join(import.meta.dirname, "..", "..", "..", "runs");

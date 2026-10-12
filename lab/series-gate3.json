@@ -1,0 +1,212 @@
+[
+ {
+  "label": "gate archer 8 tiles, laya first",
+  "a": "Neo:laya:archer",
+  "b": "Morpheus:rules@40:archer",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "gate dexer wall, laya first",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "gate dexer 4 tiles, laya second",
+  "a": "Neo:rules@40:dexer",
+  "b": "Morpheus:laya:dexer",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "gate dexer 8 tiles, laya second",
+  "a": "Neo:rules@40:dexer",
+  "b": "Morpheus:laya:dexer",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "gate mage 4 tiles, laya first",
+  "a": "Neo:laya:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "gate dexer 8 tiles, laya first",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "gate archer pillars, laya second",
+  "a": "Neo:rules@40:archer",
+  "b": "Morpheus:laya:archer",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "gate mage pillars, laya first",
+  "a": "Neo:laya:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "gate archer 12 tiles, laya first",
+  "a": "Neo:laya:archer",
+  "b": "Morpheus:rules@40:archer",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "gate archer wall, laya second",
+  "a": "Neo:rules@40:archer",
+  "b": "Morpheus:laya:archer",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "gate mage wall, laya second",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:laya:mage",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "gate archer 12 tiles, laya second",
+  "a": "Neo:rules@40:archer",
+  "b": "Morpheus:laya:archer",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "gate mage 12 tiles, laya second",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:laya:mage",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "gate dexer 4 tiles, laya first",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "gate mage wall, laya first",
+  "a": "Neo:laya:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "gate dexer wall, laya second",
+  "a": "Neo:rules@40:dexer",
+  "b": "Morpheus:laya:dexer",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "gate mage 4 tiles, laya second",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:laya:mage",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "gate archer 4 tiles, laya first",
+  "a": "Neo:laya:archer",
+  "b": "Morpheus:rules@40:archer",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "gate dexer 12 tiles, laya first",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "gate mage pillars, laya second",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:laya:mage",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "gate mage 12 tiles, laya first",
+  "a": "Neo:laya:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 10,
+  "distance": 12
+ },
+ {
+  "label": "gate archer 8 tiles, laya second",
+  "a": "Neo:rules@40:archer",
+  "b": "Morpheus:laya:archer",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "gate dexer pillars, laya first",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "gate dexer pillars, laya second",
+  "a": "Neo:rules@40:dexer",
+  "b": "Morpheus:laya:dexer",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "gate archer pillars, laya first",
+  "a": "Neo:laya:archer",
+  "b": "Morpheus:rules@40:archer",
+  "rounds": 10,
+  "arena": "pillars"
+ },
+ {
+  "label": "gate archer wall, laya first",
+  "a": "Neo:laya:archer",
+  "b": "Morpheus:rules@40:archer",
+  "rounds": 10,
+  "arena": "wall"
+ },
+ {
+  "label": "gate mage 8 tiles, laya second",
+  "a": "Neo:rules@40:mage",
+  "b": "Morpheus:laya:mage",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "gate archer 4 tiles, laya second",
+  "a": "Neo:rules@40:archer",
+  "b": "Morpheus:laya:archer",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "gate mage 8 tiles, laya first",
+  "a": "Neo:laya:mage",
+  "b": "Morpheus:rules@40:mage",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "gate dexer 12 tiles, laya second",
+  "a": "Neo:rules@40:dexer",
+  "b": "Morpheus:laya:dexer",
+  "rounds": 10,
+  "distance": 12
+ }
+]

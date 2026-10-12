@@ -64,6 +64,12 @@ export interface Instance {
   start(o: StartOptions): Promise<string>;
   stop(lane?: number): Promise<string>;
   logs(lane?: number, lines?: number): Promise<string>;
+  /**
+   * The bot's CLI run on that machine, against its own runs and servers (`fleet there <machine>
+   * fleet results --since ...`, `... skillcheck http://127.0.0.1:8021`): what a gate on a far VM
+   * reads without bringing every run home first. Only where a machine can run it.
+   */
+  there?(args: string[]): Promise<string>;
 }
 
 export async function loadFleet(path = join(ROOT, "fleet.json")): Promise<Instance[]> {
@@ -475,7 +481,7 @@ class SshLab implements Instance {
 
 /** Python run in the Colab kernel through colab-bridge; it answers after a FLEET>>> marker. */
 const PY_HELPERS = `
-import glob, json, os, re, subprocess, sys, time, urllib.request
+import glob, json, os, re, subprocess, sys, time, urllib.error, urllib.request
 def sh(c):
     # Patterns for pgrep/pkill start "[a]rena-": the shell running them has the pattern in its own command line.
     return subprocess.run(c, shell=True, capture_output=True, text=True).stdout.strip()
@@ -559,13 +565,23 @@ elif os.path.exists(f"{A}/working-tree.patch"):
     os.remove(f"{A}/working-tree.patch")
 if sh("pgrep -f '[s]etup.sh'"):
     print("FLEET>>>setup is running already; see " + A + "/setup.log"); return
+# A VM set up before keeps its checkout (setup.sh's steps are done): bring that to this commit and
+# patch. Lanes that are playing go on with the code they started with; the next start has the new.
+moved = ""
+if os.path.exists(f"{A}/.done-repo") and os.path.isdir(f"{A}/nvm/.git"):
+    # Untracked files an earlier patch left are cleaned first (runs/ and node_modules are ignored, so they stay).
+    out = subprocess.run(f"cd {A}/nvm && git fetch -q origin && git checkout -q -f ${commit} && git clean -fdq"
+                         + (f" && git apply {A}/working-tree.patch" if patch else ""), shell=True, capture_output=True, text=True)
+    if out.returncode:
+        print("FLEET>>>the checkout there could not be brought to ${commit.slice(0, 7)}: " + (out.stdout + out.stderr).strip()[-400:]); return
+    moved = "; the checkout there moved to it"
 urllib.request.urlretrieve(${JSON.stringify(`https://raw.githubusercontent.com/hakkisagdic/neo-vs-morpheus/${commit}/lab/vm/setup.sh`)}, f"{A}/setup.sh")
 subprocess.Popen(["bash", f"{A}/setup.sh"], cwd=A, env=dict(os.environ, ARENA_DIR=A, COMMIT=${JSON.stringify(commit)}),
                  stdout=open(f"{A}/setup.log", "a"), stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
 gpu = sh("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader")
 cpus, ram = sh("nproc"), sh("free -g | awk 'NR==2{print $2}'")
 extra = " plus this checkout" if patch else ""
-print(f"FLEET>>>setup started at ${commit.slice(0, 7)}{extra} ({len(patch)} bytes of patch); {cpus} CPUs, {ram} GB, {gpu}; log {A}/setup.log")`,
+print(f"FLEET>>>setup started at ${commit.slice(0, 7)}{extra} ({len(patch)} bytes of patch){moved}; {cpus} CPUs, {ram} GB, {gpu}; log {A}/setup.log")`,
     );
   }
 
@@ -729,6 +745,9 @@ print("FLEET>>>" + ("ok" if os.path.exists(f"{A}/models/{tag}/rl_agent_config.js
     return this.#cell(
       "start",
       `A, name, lane, model, model_b = ${JSON.stringify(this.#dir)}, ${JSON.stringify(this.name)}, ${lane}, ${JSON.stringify(o.model ?? "")}, ${JSON.stringify(o.modelB ?? "")}
+# A runtime Colab gave the tab afresh has nothing on it: no model is fetched for it until it is set up.
+if not os.path.exists(f"{A}/.done-npm") or not os.path.exists(f"{A}/nvm/lab/vm/lane.sh"):
+    print("FLEET>>>not set up: run fleet setup " + name + " first" + (" (it is running)" if sh("pgrep -f '[s]etup.sh'") else "")); return
 if sh(f"pgrep -f '[a]rena-series-{lane} '"):
     print(f"FLEET>>>lane {lane} is busy; stop it first"); return
 os.makedirs(f"{A}/series", exist_ok=True)
@@ -771,6 +790,27 @@ for port, m, note in ((8001 + lane, model, f"lane {lane} now plays {model}"), (8
         print(f"FLEET>>>the Laya server for {m} did not come up; see {A}/laya-{port}.log"); return
     if up:
         said.append(note)
+# A series with "clef" fighters needs Clef on 8300 (lab/vm/clef.sh: its env and weights on first use).
+if ":clef" in open(path).read():
+    def clef_up():
+        try:
+            urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8300/v1/systemone", data=b"{}"), timeout=3)
+        except urllib.error.HTTPError:
+            return True  # it answered "bad request": up
+        except Exception:
+            return False
+        return True
+    if not clef_up():
+        if not sh("pgrep -f '[c]lef.sh'"):
+            subprocess.Popen(["bash", f"{A}/nvm/lab/vm/clef.sh"], env=dict(os.environ, ARENA_DIR=A), stdout=open("/content/clef-8300.log", "a"),
+                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+        for _ in range(140):
+            if clef_up():
+                break
+            time.sleep(5)
+        else:
+            print("FLEET>>>Clef did not come up on 8300 yet (first use downloads ~54 GB); see /content/clef-8300.log, then start the lane again"); return
+        said.append("Clef serving on 8300")
 # Runs go to the runs dataset every 10 minutes, whoever is watching: a recycled VM takes its disk along.
 # (Through the CLI there are no secrets to push with; the Mac's pull fetches instead.)
 if ${this.#cli ? "False" : "True"} and not sh("pgrep -f '[s]hip.py'"):
@@ -787,6 +827,18 @@ subprocess.Popen(["bash", f"{A}/nvm/lab/vm/lane.sh", str(lane), path, "--paralle
                  stdin=subprocess.DEVNULL, start_new_session=True)
 said.append(f"started ${file} on lane {lane} (${o.parallel ?? 8} arenas)")
 print("FLEET>>>" + "; ".join(said))`,
+      900_000,
+    );
+  }
+
+  async there(args: string[]): Promise<string> {
+    return this.#cell(
+      "there",
+      `A, args = ${JSON.stringify(this.#dir)}, ${JSON.stringify(args)}
+import shlex
+out = subprocess.run(["bash", "-c", f"cd {A}/nvm/bot && PATH={A}/node/bin:$PATH FLEET_INSTANCE=${this.name} node src/cli.ts " + " ".join(shlex.quote(a) for a in args)],
+                     capture_output=True, text=True, timeout=840)
+print("FLEET>>>" + (out.stdout + out.stderr).strip())`,
       900_000,
     );
   }
