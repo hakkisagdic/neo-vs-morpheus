@@ -234,14 +234,19 @@ def put_on_lane(state, lane, name):
                "--series", gate_series(state), *arenas])
 
 
-RUN_LINE = re.compile(r"^run: (.+?) \| (.+?) \| (.+?) \| (\d+)-(\d+)-\d+ \| \S+$", re.M)
+RUN_LINE = re.compile(r"^run: (.+?) \| (.+?) \| (.+?) \| (\d+)-(\d+)-\d+ \| (\S+)$", re.M)
+
+
+def moment(iso):
+    """A time from an ISO string, "Z" or not."""
+    return datetime.datetime.fromisoformat(iso.replace("Z", "+00:00"))
 
 
 def gate_runs(state, since):
     """Every counted run against the scripted bot at matched speed (rules@60 or quicker, the same
     build) on the gate's machine since a time, by checkpoint: {checkpoint: [(build, stratum, wins,
-    losses)]}, a stratum being the run's arena and the checkpoint's seat. A Colab VM lists its own
-    runs (fleet there): they need not come to this Mac first."""
+    losses, started)]}, a stratum being the run's arena and the checkpoint's seat. A Colab VM lists
+    its own runs (fleet there): they need not come to this Mac first."""
     # Benchmark runs stay out: a bench score must come from rounds no selection has seen.
     machine = gate_machine(state)
     where = ["fleet", "results", "--instance", "mac"] if machine == "mac" else ["fleet", "there", machine, "fleet", "results"]
@@ -249,12 +254,18 @@ def gate_runs(state, since):
     if code or not re.search(r"^runs: \d+ counted", out, re.M):
         raise RuntimeError(f"no results from {machine}: {out[-200:]}")
     runs = {}
-    for first, second, arena, w0, w1 in RUN_LINE.findall(out):
+    for first, second, arena, w0, w1, started in RUN_LINE.findall(out):
         for seat, (me, other, wins, losses) in enumerate(((first, second, w0, w1), (second, first, w1, w0))):
             model, rules = re.fullmatch(r"(neo-\S+) (\w+)", me), re.fullmatch(r"rules@(\d+) (\w+)", other)
             if model and rules and model.group(2) == rules.group(2) and int(rules.group(1)) <= MATCHED_MS:
-                runs.setdefault(model.group(1), []).append((model.group(2), f"{arena}, seat {seat + 1}", int(wins), int(losses)))
+                runs.setdefault(model.group(1), []).append((model.group(2), f"{arena}, seat {seat + 1}", int(wins), int(losses), moment(started)))
     return runs
+
+
+def runs_since(runs, since):
+    """gate_runs' runs that started at or after a time, as (build, stratum, wins, losses)."""
+    t = moment(since)
+    return {name: [r[:4] for r in rs if r[4] >= t] for name, rs in runs.items()}
 
 
 def shares(state, runs):
@@ -277,15 +288,16 @@ def strata_of(runs, build):
 
 def gate_waits(mine, best, builds, need, runs_each=None):
     """Why the gate does not look yet ("" when it does): either side has fewer than `need` decided
-    rounds of a build, or fewer than `runs_each` runs in an arena and seat that one of them played."""
+    rounds of a build, or fewer than `runs_each` runs in an arena and seat both of them played. (One
+    whose runs there were all flagged has none: that stratum is left out rather than waited for.)"""
     runs_each = GATE_STRATUM_RUNS if runs_each is None else runs_each
     for b in builds:
         sides = [strata_of(mine, b), strata_of(best, b)]
         played = [sum(w + l for rs in side.values() for w, l in rs) for side in sides]
         if min(played) < need:
             return f"waiting for {need} decided rounds of {b} each ({played[0]} and {played[1]})"
-        for stratum in sorted(set(sides[0]) | set(sides[1])):
-            if min(len(side.get(stratum, [])) for side in sides) < runs_each:
+        for stratum in sorted(set(sides[0]) & set(sides[1])):
+            if min(len(side[stratum]) for side in sides) < runs_each:
                 return f"waiting for {runs_each} runs each of {b} at {stratum}"
     return ""
 
@@ -332,17 +344,21 @@ def switch_lanes(state, old, new):
 def gate(state):
     """Each candidate against the champion over the same hours, on the gate's machine, series and
     builds: once both have the gate's rounds of every build, one look. A one-sided z-test on the
-    difference in shares (gate_difference) promotes a better candidate, or one no worse by the
-    margin when it brings skill training (the champion's gate lanes become its), and otherwise drops
-    it (its lane goes back to the champion). At most one promotion a pass: the rest were measured
-    against the old champion. Checkpoints in line take the lanes that come free."""
+    difference in shares (gate_difference) passes a better candidate, or one no worse by the margin
+    when it brings skill training, and otherwise drops it (its lane goes to the next in line, or back
+    to the champion). Of those that pass in a pass, the strongest is promoted (the champion's gate
+    lanes become its); the others were measured against the old champion and meet the new one at
+    the next pass."""
     champion = state.setdefault("champion", "neo-duel-v8")
     seat_waiting(state)
-    for lane, name in list(state.get("candidates", {}).items()):
-        since = state.get("eval_since", {}).get(name)
-        if not since or name == champion:
-            continue
-        skilled = state.get("skills", [])
+    since_of = state.get("eval_since", {})
+    candidates = [(lane, name) for lane, name in state.get("candidates", {}).items() if since_of.get(name) and name != champion]
+    skilled = state.get("skills", [])
+    # One listing a pass, from the earliest candidate's start: each candidate counts its own hours of it.
+    everything = gate_runs(state, min(since_of[n] for _, n in candidates)) if candidates else {}
+    passed = []
+    for lane, name in candidates:
+        since = since_of[name]
         if champion in skilled and name not in skilled:
             # The champion trains skills too; a version that cannot would lose that, however it duels.
             state.setdefault("history", []).append({"dropped": name, "at": since, "result": f"{name} cannot train skills; {champion} can"})
@@ -354,7 +370,7 @@ def gate(state):
             track(name)
             save(state)
             continue
-        runs = gate_runs(state, since)
+        runs = runs_since(everything, since)
         mine, best = runs.get(name, []), runs.get(champion, [])
         builds = gate_builds(state)
         waits = gate_waits(mine, best, builds, gate_rounds(state))
@@ -373,16 +389,8 @@ def gate(state):
         verdict = (f"{name} {shares(state, mine)} against {champion} {shares(state, best)}: {100 * diff:+.1f} points within arenas and seats"
                    f" (standard error {100 * se:.1f}), z {z:+.2f}" + (f" (no worse by {100 * margin:.0f} points)" if margin else ""))
         if z > GATE_Z:
-            moved = switch_lanes(state, champion, name)
-            state["champion"] = name
-            state.setdefault("label_since", {})[name] = since[:16].replace(":", "-")
-            state.setdefault("history", []).append({"promoted": name, "over": champion, "at": since, "result": verdict})
-            del state["candidates"][lane]
-            log(f"promoted: {verdict}; lanes {moved} now play it")
-            track(name, champion)
-            # The other candidates were measured against the old champion: they wait for the next pass.
-            save(state)
-            return
+            passed.append((z, lane, name, since, verdict))
+            continue
         # Not shown better (or no worse): it leaves at its one look; its lane goes to the next in line,
         # or back to the champion.
         state.setdefault("history", []).append({"dropped": name, "at": since, "result": verdict})
@@ -393,6 +401,16 @@ def gate(state):
         log(f"dropped: {verdict}; lane {lane} plays {state['candidates'].get(lane, champion)}")
         track(name)
         save(state)
+    if passed:
+        z, lane, name, since, verdict = max(passed)
+        others = [p[2] for p in passed if p[2] != name]
+        moved = switch_lanes(state, champion, name)
+        state["champion"] = name
+        state.setdefault("label_since", {})[name] = since[:16].replace(":", "-")
+        state.setdefault("history", []).append({"promoted": name, "over": champion, "at": since, "result": verdict})
+        del state["candidates"][lane]
+        log(f"promoted: {verdict}; lanes {moved} now play it" + (f"; {', '.join(others)} passed too and meet {name} next" if others else ""))
+        track(name, champion)
     seat_waiting(state)
     save(state)
 

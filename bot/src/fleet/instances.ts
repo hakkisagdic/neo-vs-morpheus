@@ -763,6 +763,14 @@ def serve(port, model):
     ckpt = f"{A}/models/{model}"
     if ${this.#cli ? "True" : "False"} or os.path.exists(f"{ckpt}/rl_agent_config.json"):
         pass  # sent over from the Mac, or already here
+    elif model == "laya-base":
+        # Laya's own typed-decisions model, fine-tuned by no one: linked under the bench's name for it, as on the Mac.
+        from huggingface_hub import snapshot_download
+        base = os.path.join(snapshot_download("convaiinnovations/laya", allow_patterns=["typed-decisions/*"]), "typed-decisions")
+        os.makedirs(f"{A}/models", exist_ok=True)
+        if os.path.islink(ckpt):
+            os.remove(ckpt)
+        os.symlink(base, ckpt)
     else:
         from google.colab import userdata
         from huggingface_hub import snapshot_download
