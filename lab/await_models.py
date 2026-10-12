@@ -11,7 +11,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -47,10 +46,14 @@ def main():
     if args.eval_lanes:
         orders["eval_lanes"] = [int(x) for x in args.eval_lanes.split(",")]
     inbox = os.path.join(ROOT, ".fleet", "trainer-inbox.json")
+    # Orders the trainer has not read yet are not overwritten: these wait for its next round.
     if os.path.exists(inbox):
-        sys.exit(f"{inbox} has orders the trainer has not read yet; not overwriting them")
-    with open(inbox, "w") as f:
+        print(f"{time.strftime('%H:%M')} the trainer has unread orders; waiting for its next round", flush=True)
+    while os.path.exists(inbox):
+        time.sleep(60)
+    with open(f"{inbox}.tmp", "w") as f:
         json.dump(orders, f, indent=1)
+    os.replace(f"{inbox}.tmp", inbox)
     print(f"{time.strftime('%H:%M')} handed {', '.join(args.names)} to the trainer", flush=True)
 
 
