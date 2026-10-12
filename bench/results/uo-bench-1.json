@@ -1,0 +1,1658 @@
+{
+ "bench": "uo-bench/1",
+ "at": "2026-10-12T18:56:49.724Z",
+ "rows": [
+  {
+   "track": "ml/duel-archer",
+   "player": "neo-duel-v8r-s2 archer",
+   "rounds": 100,
+   "runs": 10,
+   "flagged": 0,
+   "score": 0.495,
+   "interval": [
+    0.39901943335773693,
+    0.595
+   ],
+   "wilson": [
+    0.39901943335773693,
+    0.591350514717023
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-archer",
+   "player": "random archer",
+   "rounds": 800,
+   "runs": 80,
+   "flagged": 0,
+   "score": 0.441875,
+   "interval": [
+    0.4078206718034488,
+    0.4764848928749655
+   ],
+   "wilson": [
+    0.4078206718034488,
+    0.4764848928749655
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-archer",
+   "player": "neo-skill-v1 archer",
+   "rounds": 360,
+   "runs": 36,
+   "flagged": 3,
+   "score": 0.37777777777777777,
+   "interval": [
+    0.325,
+    0.4361111111111111
+   ],
+   "wilson": [
+    0.3292330185923168,
+    0.42890348916270626
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-archer",
+   "player": "neo-duel-v8s4 archer",
+   "rounds": 580,
+   "runs": 58,
+   "flagged": 16,
+   "score": 0.22413793103448276,
+   "interval": [
+    0.1793103448275862,
+    0.2681034482758621
+   ],
+   "wilson": [
+    0.19207779036472028,
+    0.25982834307969344
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-archer",
+   "player": "laya-base archer",
+   "rounds": 450,
+   "runs": 45,
+   "flagged": 14,
+   "score": 0.051111111111111114,
+   "interval": [
+    0.03333333333333333,
+    0.0755253831019346
+   ],
+   "wilson": [
+    0.03429619341286705,
+    0.0755253831019346
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/duel-dexer",
+   "player": "neo-duel-v8r-s2 dexer",
+   "rounds": 110,
+   "runs": 11,
+   "flagged": 1,
+   "score": 0.6,
+   "interval": [
+    0.36363636363636365,
+    0.8181818181818182
+   ],
+   "wilson": [
+    0.5065687300827921,
+    0.6866822431993824
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-dexer",
+   "player": "random dexer",
+   "rounds": 790,
+   "runs": 79,
+   "flagged": 0,
+   "score": 0.4588607594936709,
+   "interval": [
+    0.40569620253164557,
+    0.5088607594936709
+   ],
+   "wilson": [
+    0.4243948366101703,
+    0.4937248487275595
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-dexer",
+   "player": "neo-duel-v8s4 dexer",
+   "rounds": 590,
+   "runs": 59,
+   "flagged": 18,
+   "score": 0.45084745762711864,
+   "interval": [
+    0.35423728813559324,
+    0.5508474576271186
+   ],
+   "wilson": [
+    0.411143705644668,
+    0.49118715160750154
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-dexer",
+   "player": "neo-skill-v1 dexer",
+   "rounds": 400,
+   "runs": 40,
+   "flagged": 0,
+   "score": 0.39125,
+   "interval": [
+    0.30875,
+    0.47625
+   ],
+   "wilson": [
+    0.34467432742350484,
+    0.4398946719069257
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-dexer",
+   "player": "laya-base dexer",
+   "rounds": 450,
+   "runs": 45,
+   "flagged": 17,
+   "score": 0.0022222222222222222,
+   "interval": [
+    0,
+    0.012479076725963167
+   ],
+   "wilson": [
+    0.00039237445876736613,
+    0.012479076725963167
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/duel-mage",
+   "player": "neo-skill-v1 mage",
+   "rounds": 340,
+   "runs": 34,
+   "flagged": 5,
+   "score": 0.6588235294117647,
+   "interval": [
+    0.5882352941176471,
+    0.7264705882352941
+   ],
+   "wilson": [
+    0.6069045902395003,
+    0.7071935293597571
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-mage",
+   "player": "neo-duel-v8r-s2 mage",
+   "rounds": 100,
+   "runs": 10,
+   "flagged": 2,
+   "score": 0.64,
+   "interval": [
+    0.47,
+    0.79
+   ],
+   "wilson": [
+    0.542352199811621,
+    0.7272892540950986
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-mage",
+   "player": "neo-duel-v8s4 mage",
+   "rounds": 380,
+   "runs": 38,
+   "flagged": 1,
+   "score": 0.6368421052631579,
+   "interval": [
+    0.5657894736842105,
+    0.7078947368421052
+   ],
+   "wilson": [
+    0.5873421376402952,
+    0.6836029605460401
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-mage",
+   "player": "laya-base mage",
+   "rounds": 440,
+   "runs": 44,
+   "flagged": 16,
+   "score": 0.24545454545454545,
+   "interval": [
+    0.19090909090909092,
+    0.30227272727272725
+   ],
+   "wilson": [
+    0.20755934137783338,
+    0.2877561044929457
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/duel-mage",
+   "player": "random mage",
+   "rounds": 790,
+   "runs": 79,
+   "flagged": 4,
+   "score": 0.14810126582278482,
+   "interval": [
+    0.12278481012658228,
+    0.17721518987341772
+   ],
+   "wilson": [
+    0.12503616292591133,
+    0.17457222242451628
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/equal-archer",
+   "player": "neo-duel-v8r-s2@4000 archer",
+   "rounds": 70,
+   "runs": 7,
+   "flagged": 0,
+   "score": 0.5,
+   "interval": [
+    0.3859551898733622,
+    0.6140448101266378
+   ],
+   "wilson": [
+    0.3859551898733622,
+    0.6140448101266378
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-archer",
+   "player": "typesafe/jev-1.13-20260917@4000 archer",
+   "rounds": 40,
+   "runs": 4,
+   "flagged": 0,
+   "score": 0.4,
+   "interval": [
+    0.25,
+    0.6
+   ],
+   "wilson": [
+    0.2634811061240136,
+    0.5540438017260649
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-archer",
+   "player": "neo-duel-v8s4@4000 archer",
+   "rounds": 400,
+   "runs": 40,
+   "flagged": 0,
+   "score": 0.34,
+   "interval": [
+    0.2925,
+    0.3925
+   ],
+   "wilson": [
+    0.2952948324121193,
+    0.38774921257977857
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-archer",
+   "player": "random@4000 archer",
+   "rounds": 790,
+   "runs": 79,
+   "flagged": 0,
+   "score": 0.30063291139240506,
+   "interval": [
+    0.26962025316455696,
+    0.33354430379746836
+   ],
+   "wilson": [
+    0.2696853653755171,
+    0.3335100327996352
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-archer",
+   "player": "laya-base@4000 archer",
+   "rounds": 540,
+   "runs": 54,
+   "flagged": 0,
+   "score": 0.20833333333333334,
+   "interval": [
+    0.175,
+    0.2445884207567781
+   ],
+   "wilson": [
+    0.17619880846584846,
+    0.2445884207567781
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-dexer",
+   "player": "neo-duel-v8r-s2@4000 dexer",
+   "rounds": 140,
+   "runs": 14,
+   "flagged": 0,
+   "score": 0.5071428571428571,
+   "interval": [
+    0.3357142857142857,
+    0.6785714285714286
+   ],
+   "wilson": [
+    0.42524858696311707,
+    0.5886555965276117
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-dexer",
+   "player": "neo-duel-v8s4@4000 dexer",
+   "rounds": 400,
+   "runs": 40,
+   "flagged": 0,
+   "score": 0.455,
+   "interval": [
+    0.345,
+    0.5625
+   ],
+   "wilson": [
+    0.4068577044508926,
+    0.5039984332030787
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-dexer",
+   "player": "random@4000 dexer",
+   "rounds": 800,
+   "runs": 80,
+   "flagged": 0,
+   "score": 0.35375,
+   "interval": [
+    0.30875,
+    0.39875
+   ],
+   "wilson": [
+    0.3213879041519419,
+    0.38750996826471334
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-dexer",
+   "player": "typesafe/jev-1.13-20260917@4000 dexer",
+   "rounds": 60,
+   "runs": 6,
+   "flagged": 0,
+   "score": 0.35,
+   "interval": [
+    0.06666666666666667,
+    0.6666666666666666
+   ],
+   "wilson": [
+    0.24167601723815488,
+    0.4763761619052249
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-dexer",
+   "player": "laya-base@4000 dexer",
+   "rounds": 590,
+   "runs": 59,
+   "flagged": 0,
+   "score": 0.2033898305084746,
+   "interval": [
+    0.1694915254237288,
+    0.23898305084745763
+   ],
+   "wilson": [
+    0.17287691945784178,
+    0.23774032258111272
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-mage",
+   "player": "laya-base@4000 mage",
+   "rounds": 566,
+   "runs": 57,
+   "flagged": 1,
+   "score": 0.46908127208480566,
+   "interval": [
+    0.4001766784452297,
+    0.5403508771929825
+   ],
+   "wilson": [
+    0.42831436016162666,
+    0.5102650626112983
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-mage",
+   "player": "neo-duel-v8r-s2@4000 mage",
+   "rounds": 100,
+   "runs": 10,
+   "flagged": 1,
+   "score": 0.46,
+   "interval": [
+    0.36,
+    0.57
+   ],
+   "wilson": [
+    0.36560643853331865,
+    0.5573531460647615
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-mage",
+   "player": "neo-duel-v8s4@4000 mage",
+   "rounds": 400,
+   "runs": 40,
+   "flagged": 0,
+   "score": 0.345,
+   "interval": [
+    0.2775,
+    0.41
+   ],
+   "wilson": [
+    0.30008703653936986,
+    0.39286188204653105
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-mage",
+   "player": "random@4000 mage",
+   "rounds": 800,
+   "runs": 80,
+   "flagged": 0,
+   "score": 0.22625,
+   "interval": [
+    0.195,
+    0.2575
+   ],
+   "wilson": [
+    0.19860422048825155,
+    0.2565123099326672
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/equal-mage",
+   "player": "typesafe/jev-1.13-20260917@4000 mage",
+   "rounds": 400,
+   "runs": 40,
+   "flagged": 0,
+   "score": 0.15125,
+   "interval": [
+    0.11375,
+    0.18966990371947268
+   ],
+   "wilson": [
+    0.11946516309880462,
+    0.18966990371947268
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "neo-skill-v1@4000 archer",
+   "rounds": 1560,
+   "runs": 156,
+   "flagged": 0,
+   "score": 0.43974358974358974,
+   "interval": [
+    0.41474358974358977,
+    0.4653846153846154
+   ],
+   "wilson": [
+    0.4152901592328878,
+    0.46449306177875416
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "typesafe/jev-1.13-20260917@4000 archer",
+   "rounds": 227,
+   "runs": 23,
+   "flagged": 0,
+   "score": 0.4008810572687225,
+   "interval": [
+    0.3392877652367177,
+    0.4657733675920272
+   ],
+   "wilson": [
+    0.3392877652367177,
+    0.4657733675920272
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "neo-duel-v8s4@4000 archer",
+   "rounds": 1740,
+   "runs": 174,
+   "flagged": 0,
+   "score": 0.35977011494252875,
+   "interval": [
+    0.3350574712643678,
+    0.3847701149425287
+   ],
+   "wilson": [
+    0.33755096901179515,
+    0.38260710039083856
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "random@4000 archer",
+   "rounds": 3103,
+   "runs": 311,
+   "flagged": 0,
+   "score": 0.30921688688366095,
+   "interval": [
+    0.29282034771410176,
+    0.32607994842037397
+   ],
+   "wilson": [
+    0.2931993709623564,
+    0.32570620825996366
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "clef@4000 archer",
+   "rounds": 2280,
+   "runs": 228,
+   "flagged": 0,
+   "score": 0.22807017543859648,
+   "interval": [
+    0.2100877192982456,
+    0.24574228830018968
+   ],
+   "wilson": [
+    0.21131287699673812,
+    0.24574228830018968
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "laya-base@4000 archer",
+   "rounds": 2250,
+   "runs": 225,
+   "flagged": 0,
+   "score": 0.1922222222222222,
+   "interval": [
+    0.17377777777777778,
+    0.212
+   ],
+   "wilson": [
+    0.1764700652662598,
+    0.20902357368334512
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-archer",
+   "player": "jev (model not recorded)@4000 archer",
+   "rounds": 0,
+   "runs": 0,
+   "flagged": 1,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "wilson": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "neo-skill-v1@4000 dexer",
+   "rounds": 1560,
+   "runs": 156,
+   "flagged": 0,
+   "score": 0.4666666666666667,
+   "interval": [
+    0.4108974358974359,
+    0.517948717948718
+   ],
+   "wilson": [
+    0.44202192641121885,
+    0.49147517457394474
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "neo-duel-v8s4@4000 dexer",
+   "rounds": 1770,
+   "runs": 177,
+   "flagged": 0,
+   "score": 0.3751412429378531,
+   "interval": [
+    0.3248587570621469,
+    0.4293785310734463
+   ],
+   "wilson": [
+    0.3528786879759172,
+    0.3979446098878831
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "random@4000 dexer",
+   "rounds": 3067,
+   "runs": 309,
+   "flagged": 0,
+   "score": 0.3263775676556896,
+   "interval": [
+    0.30484237894052646,
+    0.3500491642084562
+   ],
+   "wilson": [
+    0.31000909771645246,
+    0.343180438337768
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "typesafe/jev-1.13-20260917@4000 dexer",
+   "rounds": 300,
+   "runs": 30,
+   "flagged": 2,
+   "score": 0.285,
+   "interval": [
+    0.18,
+    0.39
+   ],
+   "wilson": [
+    0.23688720224403095,
+    0.33854947265499535
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "clef@4000 dexer",
+   "rounds": 2340,
+   "runs": 234,
+   "flagged": 0,
+   "score": 0.25427350427350426,
+   "interval": [
+    0.22564102564102564,
+    0.2833333333333333
+   ],
+   "wilson": [
+    0.23704246767215606,
+    0.2723100414735131
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "laya-base@4000 dexer",
+   "rounds": 2480,
+   "runs": 248,
+   "flagged": 0,
+   "score": 0.2217741935483871,
+   "interval": [
+    0.20120967741935483,
+    0.24233870967741936
+   ],
+   "wilson": [
+    0.2058607083531818,
+    0.2385483071009438
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-dexer",
+   "player": "jev (model not recorded)@4000 dexer",
+   "rounds": 0,
+   "runs": 0,
+   "flagged": 1,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "wilson": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "laya-base@4000 mage",
+   "rounds": 2380,
+   "runs": 238,
+   "flagged": 0,
+   "score": 0.5014705882352941,
+   "interval": [
+    0.46680672268907564,
+    0.5365546218487395
+   ],
+   "wilson": [
+    0.4813964561541204,
+    0.5215399805621446
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "clef@4000 mage",
+   "rounds": 2330,
+   "runs": 233,
+   "flagged": 0,
+   "score": 0.463519313304721,
+   "interval": [
+    0.43390557939914165,
+    0.4927038626609442
+   ],
+   "wilson": [
+    0.44334762091276547,
+    0.48381110314117215
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "neo-skill-v1@4000 mage",
+   "rounds": 1660,
+   "runs": 166,
+   "flagged": 0,
+   "score": 0.4566265060240964,
+   "interval": [
+    0.42409638554216866,
+    0.48975903614457833
+   ],
+   "wilson": [
+    0.43279163697789,
+    0.48066166290354095
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "neo-duel-v8s4@4000 mage",
+   "rounds": 1830,
+   "runs": 183,
+   "flagged": 0,
+   "score": 0.4453551912568306,
+   "interval": [
+    0.4087431693989071,
+    0.48415300546448087
+   ],
+   "wilson": [
+    0.4227217587715681,
+    0.4682175677220614
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "random@4000 mage",
+   "rounds": 2481,
+   "runs": 249,
+   "flagged": 77,
+   "score": 0.2365981459089077,
+   "interval": [
+    0.21442966545747683,
+    0.25783132530120484
+   ],
+   "wilson": [
+    0.22028992521834415,
+    0.2537208125284805
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "typesafe/jev-1.13-20260917@4000 mage",
+   "rounds": 220,
+   "runs": 22,
+   "flagged": 3,
+   "score": 0.22954545454545455,
+   "interval": [
+    0.16136363636363638,
+    0.3
+   ],
+   "wilson": [
+    0.17889921738425346,
+    0.28947484713279786
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/paced-mage",
+   "player": "jev (model not recorded)@4000 mage",
+   "rounds": 0,
+   "runs": 0,
+   "flagged": 1,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "wilson": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/spar-archer",
+   "player": "neo-skill-v1 archer",
+   "rounds": 1670,
+   "runs": 167,
+   "flagged": 0,
+   "score": 0.4050898203592814,
+   "interval": [
+    0.3790419161676647,
+    0.4293413173652695
+   ],
+   "wilson": [
+    0.381788644990954,
+    0.42882664859477126
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/spar-archer",
+   "player": "neo-duel-v8s4 archer",
+   "rounds": 1640,
+   "runs": 164,
+   "flagged": 2,
+   "score": 0.2807926829268293,
+   "interval": [
+    0.2548780487804878,
+    0.3070121951219512
+   ],
+   "wilson": [
+    0.2595746116156335,
+    0.30303531381757126
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/spar-dexer",
+   "player": "neo-skill-v1 dexer",
+   "rounds": 1760,
+   "runs": 176,
+   "flagged": 0,
+   "score": 0.5298295454545454,
+   "interval": [
+    0.4713068181818182,
+    0.5889204545454545
+   ],
+   "wilson": [
+    0.5064716688363206,
+    0.5530574861626317
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/spar-dexer",
+   "player": "neo-duel-v8s4 dexer",
+   "rounds": 1700,
+   "runs": 170,
+   "flagged": 6,
+   "score": 0.38794117647058823,
+   "interval": [
+    0.32588235294117646,
+    0.4511764705882353
+   ],
+   "wilson": [
+    0.3650547101940603,
+    0.4113329540113448
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/spar-mage",
+   "player": "neo-skill-v1 mage",
+   "rounds": 1740,
+   "runs": 174,
+   "flagged": 0,
+   "score": 0.39798850574712646,
+   "interval": [
+    0.3635057471264368,
+    0.43333333333333335
+   ],
+   "wilson": [
+    0.37523794300353425,
+    0.4211885214184637
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/spar-mage",
+   "player": "neo-duel-v8s4 mage",
+   "rounds": 1760,
+   "runs": 176,
+   "flagged": 5,
+   "score": 0.3806818181818182,
+   "interval": [
+    0.3528409090909091,
+    0.40795454545454546
+   ],
+   "wilson": [
+    0.3582799725476424,
+    0.4036034074565485
+   ],
+   "settled": true
+  }
+ ],
+ "skills": [
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "neo-skill-v1 mage-trainee",
+   "sessions": 108,
+   "flagged": 1,
+   "score": 10.344444444444445,
+   "interval": [
+    10.19074074074074,
+    10.497222222222227
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "neo-skill-v2 mage-trainee",
+   "sessions": 120,
+   "flagged": 0,
+   "score": 10.157499999999997,
+   "interval": [
+    10.008855527118907,
+    10.306144472881087
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "oracle mage-trainee",
+   "sessions": 344,
+   "flagged": 14,
+   "score": 10.030232558139534,
+   "interval": [
+    9.946791738408857,
+    10.113673377870212
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "rules mage-trainee",
+   "sessions": 281,
+   "flagged": 20,
+   "score": 8.606405693950174,
+   "interval": [
+    8.523409707442806,
+    8.69003558718862
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "random mage-trainee",
+   "sessions": 18,
+   "flagged": 18,
+   "score": 2.744444444444444,
+   "interval": [
+    2.4015149442485253,
+    3.0873739446403627
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "clef mage-trainee",
+   "sessions": 0,
+   "flagged": 116,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-magery: Magery gained in 20 min",
+   "metric": "gain",
+   "skill": "Magery",
+   "player": "neo-duel-v8s4 mage-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "neo-skill-v1 mage-trainee",
+   "sessions": 108,
+   "flagged": 1,
+   "score": 44.77422839506172,
+   "interval": [
+    44.26514049955379,
+    45.292129629629606
+   ],
+   "reached": 108,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "oracle mage-trainee",
+   "sessions": 344,
+   "flagged": 14,
+   "score": 45.53696705426358,
+   "interval": [
+    45.215843305487354,
+    45.8580908030398
+   ],
+   "reached": 344,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "neo-skill-v2 mage-trainee",
+   "sessions": 120,
+   "flagged": 0,
+   "score": 45.79291666666666,
+   "interval": [
+    45.3215073782819,
+    46.264325955051426
+   ],
+   "reached": 120,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "rules mage-trainee",
+   "sessions": 281,
+   "flagged": 20,
+   "score": 50.71453143534996,
+   "interval": [
+    50.36020166073548,
+    51.07574139976275
+   ],
+   "reached": 281,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "random mage-trainee",
+   "sessions": 18,
+   "flagged": 18,
+   "score": 90,
+   "interval": [
+    90,
+    90
+   ],
+   "reached": 0,
+   "settled": false
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "clef mage-trainee",
+   "sessions": 0,
+   "flagged": 116,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "reached": 0,
+   "settled": false
+  },
+  {
+   "track": "ml/skill-magery: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Magery",
+   "player": "neo-duel-v8s4 mage-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "reached": 0,
+   "settled": false
+  },
+  {
+   "track": "ml/skill-necromancy: Necromancy gained in 20 min",
+   "metric": "gain",
+   "skill": "Necromancy",
+   "player": "oracle necro-trainee",
+   "sessions": 122,
+   "flagged": 0,
+   "score": 10.707377049180334,
+   "interval": [
+    10.565621203838608,
+    10.849132894522059
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-necromancy: Necromancy gained in 20 min",
+   "metric": "gain",
+   "skill": "Necromancy",
+   "player": "rules necro-trainee",
+   "sessions": 112,
+   "flagged": 0,
+   "score": 10.476785714285713,
+   "interval": [
+    10.328306791331958,
+    10.625264637239468
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-necromancy: Necromancy gained in 20 min",
+   "metric": "gain",
+   "skill": "Necromancy",
+   "player": "random necro-trainee",
+   "sessions": 56,
+   "flagged": 0,
+   "score": 5.855357142857144,
+   "interval": [
+    5.6982142857142835,
+    6.01058302179582
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-necromancy: Necromancy gained in 20 min",
+   "metric": "gain",
+   "skill": "Necromancy",
+   "player": "neo-v10s1 necro-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-necromancy: Necromancy gained in 20 min",
+   "metric": "gain",
+   "skill": "Necromancy",
+   "player": "neo-v10s2 necro-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-necromancy: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Necromancy",
+   "player": "oracle necro-trainee",
+   "sessions": 122,
+   "flagged": 0,
+   "score": 38.912158469945346,
+   "interval": [
+    38.468422139151116,
+    39.35589480073958
+   ],
+   "reached": 122,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-necromancy: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Necromancy",
+   "player": "rules necro-trainee",
+   "sessions": 112,
+   "flagged": 0,
+   "score": 43.319642857142874,
+   "interval": [
+    42.84546237481831,
+    43.79382333946744
+   ],
+   "reached": 112,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-necromancy: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Necromancy",
+   "player": "random necro-trainee",
+   "sessions": 56,
+   "flagged": 0,
+   "score": 83.52767857142855,
+   "interval": [
+    82.26526137882618,
+    84.79009576403092
+   ],
+   "reached": 50,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-necromancy: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Necromancy",
+   "player": "neo-v10s1 necro-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "reached": 0,
+   "settled": false
+  },
+  {
+   "track": "ml/skill-necromancy: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Necromancy",
+   "player": "neo-v10s2 necro-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "reached": 0,
+   "settled": false
+  },
+  {
+   "track": "ml/skill-chivalry: Chivalry gained in 20 min",
+   "metric": "gain",
+   "skill": "Chivalry",
+   "player": "oracle paladin-trainee",
+   "sessions": 207,
+   "flagged": 0,
+   "score": 16.61207729468599,
+   "interval": [
+    16.417955893728,
+    16.80772946859903
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-chivalry: Chivalry gained in 20 min",
+   "metric": "gain",
+   "skill": "Chivalry",
+   "player": "random paladin-trainee",
+   "sessions": 98,
+   "flagged": 0,
+   "score": 9.192857142857141,
+   "interval": [
+    9.02236695174043,
+    9.366326530612245
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-chivalry: Chivalry gained in 20 min",
+   "metric": "gain",
+   "skill": "Chivalry",
+   "player": "rules paladin-trainee",
+   "sessions": 99,
+   "flagged": 0,
+   "score": 8.275757575757577,
+   "interval": [
+    7.996255113899904,
+    8.55526003761525
+   ],
+   "settled": true
+  },
+  {
+   "track": "ml/skill-chivalry: Chivalry gained in 20 min",
+   "metric": "gain",
+   "skill": "Chivalry",
+   "player": "neo-v10s1 paladin-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-chivalry: Chivalry gained in 20 min",
+   "metric": "gain",
+   "skill": "Chivalry",
+   "player": "neo-v10s2 paladin-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "settled": false
+  },
+  {
+   "track": "ml/skill-chivalry: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Chivalry",
+   "player": "oracle paladin-trainee",
+   "sessions": 207,
+   "flagged": 0,
+   "score": 24.107326892109498,
+   "interval": [
+    23.861191626408996,
+    24.347186414355992
+   ],
+   "reached": 207,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-chivalry: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Chivalry",
+   "player": "rules paladin-trainee",
+   "sessions": 99,
+   "flagged": 0,
+   "score": 46.92592592592593,
+   "interval": [
+    46.33951727320607,
+    47.51233457864579
+   ],
+   "reached": 99,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-chivalry: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Chivalry",
+   "player": "random paladin-trainee",
+   "sessions": 98,
+   "flagged": 0,
+   "score": 46.93214285714288,
+   "interval": [
+    46.271380051836246,
+    47.59290566244951
+   ],
+   "reached": 98,
+   "settled": true
+  },
+  {
+   "track": "ml/skill-chivalry: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Chivalry",
+   "player": "neo-v10s1 paladin-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "reached": 0,
+   "settled": false
+  },
+  {
+   "track": "ml/skill-chivalry: minutes from 50 to 70",
+   "metric": "time",
+   "skill": "Chivalry",
+   "player": "neo-v10s2 paladin-trainee",
+   "sessions": 0,
+   "flagged": 8,
+   "score": null,
+   "interval": [
+    null,
+    null
+   ],
+   "reached": 0,
+   "settled": false
+  }
+ ],
+ "ratings": {
+  "mage": [
+   {
+    "player": "neo-duel-v8r-s2 mage",
+    "rating": 1172.0873423170926,
+    "interval": [
+     1135.9948333631278,
+     1213.0554600324292
+    ],
+    "rounds": 3600,
+    "opponents": 3
+   },
+   {
+    "player": "neo-skill-v1 mage",
+    "rating": 1102.360951009814,
+    "interval": [
+     1066.7008637178378,
+     1142.5950513184227
+    ],
+    "rounds": 2080,
+    "opponents": 2
+   },
+   {
+    "player": "neo-duel-v8s4 mage",
+    "rating": 1089.2580749942601,
+    "interval": [
+     1054.4948919390156,
+     1132.930121884287
+    ],
+    "rounds": 2140,
+    "opponents": 2
+   },
+   {
+    "player": "rules@40 mage",
+    "rating": 1000,
+    "interval": [
+     1000,
+     1000
+    ],
+    "rounds": 2050,
+    "opponents": 5
+   },
+   {
+    "player": "laya-base mage",
+    "rating": 805.5822254583446,
+    "interval": [
+     751.9095857841305,
+     847.8313766728047
+    ],
+    "rounds": 440,
+    "opponents": 1
+   },
+   {
+    "player": "random mage",
+    "rating": 696.748655754204,
+    "interval": [
+     656.9629268184558,
+     730.0541531086167
+    ],
+    "rounds": 790,
+    "opponents": 1
+   }
+  ],
+  "dexer": [
+   {
+    "player": "rules@40 dexer",
+    "rating": 1000,
+    "interval": [
+     1000,
+     1000
+    ],
+    "rounds": 2340,
+    "opponents": 5
+   },
+   {
+    "player": "neo-skill-v1 dexer",
+    "rating": 998.3185885229453,
+    "interval": [
+     947.3432840374271,
+     1054.6947290607527
+    ],
+    "rounds": 2160,
+    "opponents": 2
+   },
+   {
+    "player": "neo-duel-v8r-s2 dexer",
+    "rating": 994.4203576619234,
+    "interval": [
+     946.7324519918835,
+     1045.0043320161521
+    ],
+    "rounds": 3570,
+    "opponents": 3
+   },
+   {
+    "player": "random dexer",
+    "rating": 971.3148790307371,
+    "interval": [
+     934.3570700981608,
+     1002.8486442087059
+    ],
+    "rounds": 790,
+    "opponents": 1
+   },
+   {
+    "player": "neo-duel-v8s4 dexer",
+    "rating": 928.4104657538948,
+    "interval": [
+     876.440737044052,
+     980.7631451637028
+    ],
+    "rounds": 2290,
+    "opponents": 2
+   },
+   {
+    "player": "laya-base dexer",
+    "rating": 9.26832233683399,
+    "interval": [
+     -210.3760583273854,
+     165.14675503526848
+    ],
+    "rounds": 450,
+    "opponents": 1
+   }
+  ],
+  "archer": [
+   {
+    "player": "rules@40 archer",
+    "rating": 1000,
+    "interval": [
+     1000,
+     1000
+    ],
+    "rounds": 2290,
+    "opponents": 5
+   },
+   {
+    "player": "neo-duel-v8r-s2 archer",
+    "rating": 967.5908133209565,
+    "interval": [
+     937.2451582872909,
+     999.5345997407874
+    ],
+    "rounds": 3410,
+    "opponents": 3
+   },
+   {
+    "player": "random archer",
+    "rating": 959.3525896032073,
+    "interval": [
+     933.9557295976927,
+     983.2649824107999
+    ],
+    "rounds": 800,
+    "opponents": 1
+   },
+   {
+    "player": "neo-skill-v1 archer",
+    "rating": 902.9713625102999,
+    "interval": [
+     870.2766254820085,
+     931.4736624901864
+    ],
+    "rounds": 2030,
+    "opponents": 2
+   },
+   {
+    "player": "neo-duel-v8s4 archer",
+    "rating": 799.5107301413855,
+    "interval": [
+     765.6662076870452,
+     826.2321671077364
+    ],
+    "rounds": 2220,
+    "opponents": 2
+   },
+   {
+    "player": "laya-base archer",
+    "rating": 495.83902687617024,
+    "interval": [
+     398.08462308065873,
+     555.7709978837081
+    ],
+    "rounds": 450,
+    "opponents": 1
+   }
+  ]
+ }
+}
