@@ -118,6 +118,28 @@ class Gate(unittest.TestCase):
         self.assertEqual([h.get("dropped") or h.get("promoted") for h in state["history"]], ["neo-c", "neo-a"])
         self.assertEqual(state["waiting"], [])
 
+    def test_a_candidate_keeps_every_skill_the_champion_trains(self):
+        state = {"skills": ["neo-skill", "neo-all"], "skill_sets": {"neo-all": ["magery", "necromancy", "chivalry"]}}
+        self.assertEqual(trainer.skills_of(state, "neo-skill"), {"magery"})
+        self.assertEqual(trainer.skills_of(state, "neo-all"), {"magery", "necromancy", "chivalry"})
+        self.assertEqual(trainer.skills_of(state, "neo-duel"), set())
+        put = []
+        saved = dict(put_on_lane=trainer.put_on_lane, gate_runs=trainer.gate_runs, gate_lanes=trainer.gate_lanes,
+                     track=trainer.track, save=trainer.save, log=trainer.log)
+        trainer.put_on_lane = lambda st, lane, name: put.append((lane, name)) or (0, "")
+        trainer.gate_runs, trainer.gate_lanes = (lambda st, since: {}), (lambda st: {})
+        trainer.track, trainer.save, trainer.log = (lambda *a: None), (lambda st: None), (lambda m: None)
+        try:
+            state.update({"champion": "neo-all", "candidates": {"16": "neo-skill"}, "eval_lanes": [16],
+                          "eval_since": {"neo-skill": "2026-10-12T17:00:00+00:00"}, "gate_builds": BUILDS, "gate_rounds": 600})
+            trainer.gate(state)
+        finally:
+            for k, v in saved.items():
+                setattr(trainer, k, v)
+        self.assertEqual(state["candidates"], {})
+        self.assertIn("cannot train chivalry, necromancy", state["history"][-1]["result"])
+        self.assertEqual(put, [("16", "neo-all")])
+
 
 if __name__ == "__main__":
     unittest.main()

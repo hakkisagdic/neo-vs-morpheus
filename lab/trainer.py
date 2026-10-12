@@ -60,6 +60,9 @@ MIN_NEW_JEV = 1000
 GATE_ROUNDS = 800
 #: Runs each side needs in every arena and seat it is compared in: the error comes from their spread.
 GATE_STRATUM_RUNS = 3
+#: The skills a checkpoint listed in state "skills" trains when state "skill_sets" does not say: the
+#: v9 family and the neo-skill versions learned Magery only.
+DEFAULT_SKILLS = ["magery"]
 #: Agreement with the oracle trainer on sampled training states that counts as "can train skills".
 SKILL_AGREEMENT = 0.8
 GATE_Z = 1.645
@@ -341,6 +344,15 @@ def switch_lanes(state, old, new):
     return lanes
 
 
+def skills_of(state, name):
+    """The skills a checkpoint can train: state "skill_sets" names them; one listed in "skills" alone
+    trains Magery; any other none."""
+    sets = state.get("skill_sets", {})
+    if name in sets:
+        return set(sets[name])
+    return set(DEFAULT_SKILLS) if name in state.get("skills", []) else set()
+
+
 def gate(state):
     """Each candidate against the champion over the same hours, on the gate's machine, series and
     builds: once both have the gate's rounds of every build, one look. A one-sided z-test on the
@@ -353,20 +365,21 @@ def gate(state):
     seat_waiting(state)
     since_of = state.get("eval_since", {})
     candidates = [(lane, name) for lane, name in state.get("candidates", {}).items() if since_of.get(name) and name != champion]
-    skilled = state.get("skills", [])
     # One listing a pass, from the earliest candidate's start: each candidate counts its own hours of it.
     everything = gate_runs(state, min(since_of[n] for _, n in candidates)) if candidates else {}
     passed = []
     for lane, name in candidates:
         since = since_of[name]
-        if champion in skilled and name not in skilled:
-            # The champion trains skills too; a version that cannot would lose that, however it duels.
-            state.setdefault("history", []).append({"dropped": name, "at": since, "result": f"{name} cannot train skills; {champion} can"})
+        lacks = sorted(skills_of(state, champion) - skills_of(state, name))
+        if lacks:
+            # The champion trains these skills; a version that cannot would lose them, however it duels.
+            why = f"{name} cannot train {', '.join(lacks)}; {champion} can"
+            state.setdefault("history", []).append({"dropped": name, "at": since, "result": why})
             del state["candidates"][lane]
             seat_waiting(state)
             if lane not in state["candidates"]:
                 put_on_lane(state, lane, champion)
-            log(f"dropped: {name} cannot train skills; lane {lane} plays {state['candidates'].get(lane, champion)}")
+            log(f"dropped: {why}; lane {lane} plays {state['candidates'].get(lane, champion)}")
             track(name)
             save(state)
             continue
@@ -382,7 +395,7 @@ def gate(state):
         # a non-inferiority test, its share plus the margin against the champion's. The margin needs
         # evidence that it does train skills: agreement with the oracle on sampled training states.
         margin = state.get("margins", {}).get(name, 0.0)
-        if not margin and name in skilled and champion not in skilled:
+        if not margin and skills_of(state, name) - skills_of(state, champion):
             agreement = skill_agreement(state, name, lane)
             margin = SKILL_MARGIN if agreement is not None and agreement >= SKILL_AGREEMENT else 0.0
         z = (diff + margin) / se
@@ -470,6 +483,8 @@ def build_seeds(state):
     jobs = [{"name": f"{prefix}{s}", "data": state["set"], "args": ["--seed", str(s)]} for s in (seed, seed + 1)]
     if state.get("set_trains_skills"):
         state.setdefault("skills", []).extend(j["name"] for j in jobs)
+        if state.get("set_skills"):
+            state.setdefault("skill_sets", {}).update({j["name"]: state["set_skills"] for j in jobs})
     return jobs
 
 
@@ -556,7 +571,8 @@ def label(state):
 def read_inbox(state):
     """Orders left in .fleet/trainer-inbox.json between rounds, applied once and then removed, so that
     nothing edits the state while a round has it: {"candidates": [{"name": N, "margin": 0.05}],
-    "set": PATH, "queue": [...], "seed_prefix": P, "next_seed": N, "skills": [names that train skills],
+    "set": PATH, "queue": [...], "seed_prefix": P, "next_seed": N, "skills": [names that train Magery]
+    or {name: [the skills it trains]}, "set_skills": [the skills the current set teaches],
     "eval_lanes": [the gate machine's lanes for candidates], "gate_machine": "colab-pro",
     "gate_builds": ["mage", "dexer", "archer"], "gate_rounds": 600, "gate_series": "lab/series-gate3.json",
     "gate_parallel": 8}. A candidate takes a free lane or waits in line for one."""
@@ -570,11 +586,14 @@ def read_inbox(state):
         os.replace(path, path + ".bad")  # set aside, so that one bad file does not stop every round
         log(f"inbox: unreadable ({err}); kept as {path}.bad")
         return
-    for name in orders.get("skills", []):
+    skills = orders.get("skills", [])
+    for name in skills:
         if name not in state.setdefault("skills", []):
             state["skills"].append(name)
-            log(f"inbox: {name} trains skills")
-    for key in ("set", "set_trains_skills", "queue", "seed_prefix", "next_seed", "recipe", "train_args", "eval_lanes",
+        if isinstance(skills, dict):
+            state.setdefault("skill_sets", {})[name] = list(skills[name])
+        log(f"inbox: {name} trains {', '.join(sorted(skills_of(state, name)))}")
+    for key in ("set", "set_trains_skills", "set_skills", "queue", "seed_prefix", "next_seed", "recipe", "train_args", "eval_lanes",
                 "gate_machine", "gate_builds", "gate_rounds", "gate_series", "gate_parallel"):
         if key in orders:
             state[key] = orders[key]
