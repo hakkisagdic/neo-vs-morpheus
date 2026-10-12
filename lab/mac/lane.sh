@@ -14,9 +14,12 @@ if ! up; then
   docker run -d --name "$name" -p "127.0.0.1:$port:$port" -v "$name-world:/app/World" -v "$ROOT/templates:/app/NeoTemplates:ro" \
     -e NEO_PORT="$port" -e NEO_PUBLIC_ADDRESS=127.0.0.1 -e NEO_SERVER_NAME="mac lab $i" -e NEO_EXPANSION=7 -e NEO_REAGENTS=200 \
     -e NEO_OWNER_USER="${NEO_OWNER_USER:-architect}" -e NEO_OWNER_PASS neo-vs-morpheus/modernuo:225c634 >/dev/null
-  for _ in $(seq 120); do up && break; sleep 1; done
-  up || { echo "arena server $i did not open port $port"; exit 1; }
-  sleep 3  # the owner account is made right after the port opens
+  # Docker's proxy takes connections on the port at once, before the server inside listens (a
+  # login then dies at the server list): wait for the server's own word instead.
+  listening() { docker logs "$name" 2>&1 | grep -q "Listening: "; }
+  for _ in $(seq 120); do listening && break; sleep 1; done
+  listening || { echo "arena server $i did not start listening on $port"; exit 1; }
+  sleep 3  # the owner account is made right after the server listens
   echo "arena server $i up on $port"
 fi
 cd "$ROOT/bot"
