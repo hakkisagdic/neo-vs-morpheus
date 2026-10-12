@@ -40,3 +40,6 @@ __pycache__/
 
 # Agents' git worktrees
 .claude/worktrees/
+
+# the project diary (Turkish): private until the user decides to share it
+/gunluk/
