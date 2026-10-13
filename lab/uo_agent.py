@@ -68,7 +68,8 @@ Fights: you have fast fighting reflexes, Laya, a small model that decides every 
 a few hundredths of a second. `fight` hands it one creature: you choose what to fight, when, and how
 carefully (tactics: cautious heals early and may run when hurt; balanced; aggressive fights on), and
 Laya fights until the creature dies, you die, you get away or it goes out of view, then tells you
-how it went. Use `fight` rather than `attack` for anything that fights back."""
+how it went. Use `fight` rather than `attack` for anything that fights back, and start cautious
+against a creature you do not know yet."""
 FIGHT_TOOL = {"type": "function", "function": {
     "name": "fight", "description": "Hand a fight with one creature to Laya, which makes every move (swing, bandage, potion, retreat) "
     "until it ends, within the tactics you choose. Returns how it ended and your health.",
@@ -93,7 +94,8 @@ Your tools:
 - look: your hit points, stamina, mana, position, equipment, backpack, how your walk is going, and
   the creatures, corpses and items around you with their serials. Use it often; it is free.
 - command: one game command (the list is below). Answers come back as text.
-- wait: let a few seconds pass (walking, fighting, healing take time) and see what happened.
+- wait: let a few seconds pass (walking, fighting, healing take time) and see what happened; it
+  ends early when you are hurt.
 - decide: note a decision and its reason.
 
 Game commands (serials look like 0x0000ABCD; take them from `look` or `mobiles`):
@@ -151,7 +153,8 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "e.g. 'attack 0x00000215'"}},
                        "required": ["command"]}}},
     {"type": "function", "function": {
-        "name": "wait", "description": "Let time pass, up to 30 seconds, and get the messages, damage and speech meanwhile.",
+        "name": "wait", "description": "Let time pass, up to 30 seconds, and get the messages, damage and speech meanwhile; "
+        "it ends early when you are hurt.",
         "parameters": {"type": "object", "properties": {"seconds": {"type": "integer", "minimum": 1, "maximum": 30}},
                        "required": ["seconds"]}}},
     {"type": "function", "function": {
@@ -251,7 +254,7 @@ def direction(dx, dy):
     return ns + ew
 
 
-def look():
+def look(deaths=()):
     s, w = read_json(STATE), read_json(WORLD)
     if not s.get("inGame"):
         return "The client is not in the game."
@@ -299,6 +302,8 @@ def look():
     items = [i for i in w.get("items", []) if i.get("distance", 99) <= 8][:8]
     if items:
         out.append("Items on the ground: " + "; ".join(f"{i['serial']} {i['name']} {i['distance']} tiles" for i in items))
+    if deaths:
+        out.append(f"You have died {len(deaths)} time(s) this session: " + "; ".join(deaths[-5:]))
     return "\n".join(out)
 
 
@@ -353,6 +358,9 @@ class Player:
         self.events = open(os.path.join(folder, "agent.jsonl"), "a")
         self.decisions = open(os.path.join(folder, "decisions.jsonl"), "a")
         self.counts = {"command": 0, "look": 0, "wait": 0, "decide": 0, **({"fight": 0} if laya else {})}
+        # Where the character died and what stood around it: a model sent back to the same spot four times
+        # running (2026-10-13) had it in its history but not in front of it.
+        self.deaths, self.ghost = [], bool(read_json(STATE).get("charGhost"))
 
     def record(self, **event):
         self.events.write(json.dumps({"t": time.time(), **event}) + "\n")
@@ -370,14 +378,34 @@ class Player:
         self.record(kind="tool", name=name, args=args, result=result, ms=round(1000 * (time.time() - started)))
         return result
 
+    def note_death(self):
+        s = read_json(STATE)
+        ghost = bool(s.get("charGhost"))
+        if ghost and not self.ghost:
+            near = sorted((m for m in read_json(WORLD).get("mobiles", []) if m.get("notoriety") in ("Criminal", "Murderer", "Enemy", "Gray")
+                           and m.get("distance", 99) <= 4), key=lambda m: m.get("distance", 99))
+            names = sorted({m["name"] for m in near[:3]})
+            self.deaths.append(f"at ({s.get('charPosX')}, {s.get('charPosY')}) on {time.strftime('%H:%M')}"
+                               + (f", with {' and '.join(names)} next to you" if names else ""))
+        self.ghost = ghost
+
     def run_tool(self, name, args):
+        self.note_death()
         if name == "look":
-            return look()
+            return look(self.deaths)
         if name == "command":
             return command(str(args.get("command", "")))
         if name == "wait":
             seconds = max(1, min(30, int(args.get("seconds") or 5)))
-            time.sleep(seconds)
+            # The wait ends early when the character is hurt or dies: a model waiting out a walk into a
+            # graveyard was killed before it could answer (2026-10-13).
+            start, hurt = read_json(STATE).get("hits"), False
+            for _ in range(seconds * 2):
+                time.sleep(0.5)
+                s = read_json(STATE)
+                if s.get("charGhost") or (start is not None and s.get("hits", start) < start):
+                    hurt = True
+                    break
             lines, self.log_offset = log_since(self.log_offset)
             # Navrey narrates itself too (command replies, which the model has had already, labels, gump dumps
             # `gumps` repeats): what the game said is what matters.
@@ -388,7 +416,8 @@ class Player:
                 elif not replying and not l.startswith(("[LABEL]", "[PERF]", "[DEBUG", "[GUMP]", "  ")):
                     said.append(l)
             lines = said
-            return "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
+            text = "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
+            return text + ("\n(The wait ended early: you are being hurt.)" if hurt else "")
         if name == "fight" and self.laya:
             return fight(str(args.get("target", "")), str(args.get("tactics") or "balanced"), int(args.get("max_seconds") or 120),
                          self.laya, os.path.join(self.folder, "fights.jsonl"))
