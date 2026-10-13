@@ -51,7 +51,7 @@ COMMANDS = {"mobiles", "attack", "war", "goto", "gotoexact", "travel", "closest"
             "container", "get", "equip", "unequip", "inv", "status", "skills", "say", "shop", "buy", "sell", "selllist", "click",
             "drop", "props", "canwalk", "path", "opendoor", "dead", "gumps", "gumpresponse", "items", "nearest", "attacknearest",
             "backpack", "hp", "los", "useskill", "cast", "dropground", "mount", "dismount", "pos"}
-HISTORY_CHARS = 60_000  # the conversation kept beyond the instructions, about 15k tokens
+HISTORY_CHARS = 60_000  # the most conversation kept beyond the instructions, about 17k tokens
 SESSIONS = os.path.expanduser("~/UO/sessions")
 POI = os.path.expanduser("~/UO/poi")  # lab/poi.py's output, the folder Navrey's settings.json names
 PLACES = None
@@ -344,9 +344,15 @@ class Player:
             seconds = max(1, min(30, int(args.get("seconds") or 5)))
             time.sleep(seconds)
             lines, self.log_offset = log_since(self.log_offset)
-            # Navrey narrates itself too ([CMD] blocks, labels, gump dumps `gumps` repeats): what the game said
-            # is what matters.
-            lines = [l for l in lines if not l.startswith(("[CMD", "[LABEL]", "[PERF]", "[DEBUG", "[GUMP]", "  "))]
+            # Navrey narrates itself too (command replies, which the model has had already, labels, gump dumps
+            # `gumps` repeats): what the game said is what matters.
+            said, replying = [], False
+            for l in lines:
+                if l.startswith(("[CMD] ", "[CMD-END] ")):
+                    replying = l.startswith("[CMD] ")
+                elif not replying and not l.startswith(("[LABEL]", "[PERF]", "[DEBUG", "[GUMP]", "  ")):
+                    said.append(l)
+            lines = said
             return "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
         if name == "decide":
             entry = {"t": time.time(), "decision": str(args.get("decision", "")), "reason": str(args.get("reason", "")), **snapshot()}
@@ -366,16 +372,17 @@ def ask(base, model, messages, timeout=600):
         return json.load(r)
 
 
-def trimmed(system, turns):
-    """The instructions plus the latest turns that fit; a turn is a model reply with its tool results."""
-    kept, size = [], 0
-    for turn in reversed(turns):
-        n = sum(len(json.dumps(m)) for m in turn)
-        if kept and size + n > HISTORY_CHARS:
-            break
-        kept.append(turn)
-        size += n
-    return [system] + [m for turn in reversed(kept) for m in turn]
+def trimmed(system, turns, start):
+    """The instructions and the turns from `start` on (a turn is a model reply with its tool results), and the
+    new start. Past HISTORY_CHARS the oldest turns go until half of it is left, all at once: the server keeps
+    the prompt it has seen (Ollama's cache), and trimming a turn per call changed its beginning every time. In a
+    30-minute session that took replies from 0.8 s to 15 s once the history was full."""
+    size = sum(len(json.dumps(m)) for turn in turns[start:] for m in turn)
+    if size > HISTORY_CHARS:
+        while start < len(turns) - 1 and size > HISTORY_CHARS // 2:
+            size -= sum(len(json.dumps(m)) for m in turns[start])
+            start += 1
+    return [system] + [m for turn in turns[start:] for m in turn], start
 
 
 def fresh_start(name):
@@ -396,11 +403,12 @@ def play_openai(base, model, system, folder, deadline):
     player = Player(folder)
     system = {"role": "system", "content": system}
     turns = [[{"role": "user", "content": FIRST}]]
-    failures, replies = 0, 0
+    failures, replies, start = 0, 0, 0
     while time.time() < deadline:
         started = time.time()
+        messages, start = trimmed(system, turns, start)
         try:
-            answer = ask(base, model, trimmed(system, turns))
+            answer = ask(base, model, messages)
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             failures += 1
             player.record(kind="error", error=str(e))

@@ -10,7 +10,8 @@ server's own data, so that they describe the shard the agents play on:
   or the healer's, and walkable;
 - moongates from the server's public moongate list;
 - hunting grounds from the creature spawners: `closest hunt` (monsters), `closest animals`
-  (wildlife), `findpoi skeleton`; named by what spawns there and the place.
+  (wildlife), `findpoi skeleton`; named by what spawns there and the place. Inside a dungeon a
+  walk cannot reach them, so a dungeon's creatures are named on its entrance instead.
 Spawners count only from the sets the world was generated from (lab/world-spawns.json).
 
 Navrey reads every *.json in the directory settings.json's "poi_directory" names, when it starts.
@@ -132,10 +133,6 @@ def points(data, expansion, sets):
     for t in towns:
         g = t["GoLocation"]
         add(t["Map"], g["x"], g["y"], g.get("z", 0), t["Name"], "town", major=True)
-    for d in regions:
-        if d["$type"] == "DungeonRegion" and d.get("Entrance"):
-            e = d["Entrance"]
-            add(d["Map"], e["x"], e["y"], e.get("z", 0), f"{d['Name']} entrance", "dungeon")
     for facet, gates in MOONGATES.items():
         for name, x, y, z in gates:
             add(facet, x, y, z, f"{name} Moongate", "moongate", major=True)
@@ -158,6 +155,8 @@ def points(data, expansion, sets):
                 add(facet, x, y, z, f"{town} {label}" if town else label, category, major=category in ("bank", "healer"))
 
     # Hunting grounds: one point per creature mix and place, spawners within 40 tiles merged.
+    dungeons = [r for r in regions if r["$type"] == "DungeonRegion" and r.get("Area")]
+    within = {}  # (facet, dungeon) -> {creature: spawners}
     hunts = []
     for path in spawn_files(data, sets):
         kind = os.path.splitext(os.path.basename(path))[0]
@@ -170,11 +169,25 @@ def points(data, expansion, sets):
             if facet not in MAPS or not creatures:
                 continue
             x, y, z = s["location"]
+            dungeon = next((d["Name"] for d in dungeons if d["Map"] == facet and any(inside(a, x, y) for a in d["Area"])), None)
+            if dungeon:
+                counts = within.setdefault((facet, dungeon), {})
+                for c in creatures:
+                    counts[c] = counts.get(c, 0) + 1
+                continue
             if any(f == facet and c == creatures and max(abs(x - a), abs(y - b)) <= 40 for f, c, a, b in hunts):
                 continue
             hunts.append((facet, creatures, x, y))
             mix = ", ".join(creatures[:5]) + (f" and {len(creatures) - 5} more" if len(creatures) > 5 else "")
             add(facet, x, y, z, f"{mix} - {place_of(regions, towns, facet, x, y)}", "animals" if kind == "WildLife" else "hunt")
+
+    # Dungeons by their entrances, with what lives inside (the commonest first); one without an entrance is left out.
+    for d in dungeons:
+        if d.get("Entrance"):
+            e, counts = d["Entrance"], within.get((d["Map"], d["Name"]), {})
+            common = sorted(counts, key=lambda c: (-counts[c], c))
+            mix = ", ".join(common[:6]) + (f" and {len(common) - 6} more" if len(common) > 6 else "")
+            add(d["Map"], e["x"], e["y"], e.get("z", 0), f"{d['Name']} entrance" + (f" - {mix} inside" if mix else ""), "dungeon")
     return out
 
 

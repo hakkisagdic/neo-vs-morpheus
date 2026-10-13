@@ -32,7 +32,8 @@ def report(folder):
     replies = [e for e in events if e.get("kind") == "model"]
     tools = [e for e in events if e.get("kind") == "tool"]
     decisions = [json.loads(l) for l in lines(os.path.join(folder, "decisions.jsonl"))]
-    states = [json.loads(l)["state"] for l in lines(os.path.join(folder, "state.jsonl"))]
+    rows = [json.loads(l) for l in lines(os.path.join(folder, "state.jsonl"))]
+    states = [r["state"] for r in rows]
     log = lines(os.path.join(folder, "cuolog.txt"))
 
     dealt = taken = 0
@@ -60,7 +61,7 @@ def report(folder):
         if name and (not facets or facets[-1] != name):
             facets.append(name)
     gold = [s["gold"] for s in states if "gold" in s]
-    minutes = (states[-1]["updatedAtMs"] - states[0]["updatedAtMs"]) / 60000 if len(states) > 1 else 0
+    minutes = (rows[-1]["t"] - rows[0]["t"]) / 60 if len(rows) > 1 else 0
     pace = sum(e.get("ms", 0) for e in replies) / len(replies) / 1000 if replies else 0
     return {
         "session": os.path.basename(folder.rstrip("/")),
