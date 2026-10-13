@@ -1,0 +1,182 @@
+[
+  {
+    "id": "_AOYGhrv9fE",
+    "url": "https://www.youtube.com/watch?v=_AOYGhrv9fE",
+    "title": "Stormwind in Ultima Online?",
+    "published": "2026-09-29T16:31:08-07:00",
+    "length_s": 236,
+    "views": 381,
+    "summary_one_line": "Tour of a WoW-style Stormwind built on a local ServUO shard by Claude Code driving an admin character through Navrey, from concept art and natural-language iteration."
+  },
+  {
+    "id": "Ug2qrKrA2f0",
+    "url": "https://www.youtube.com/watch?v=Ug2qrKrA2f0",
+    "title": "Building King's Landing in Ultima Online with Opus 5.5 and Navrey",
+    "published": "2026-09-25T08:16:15-07:00",
+    "length_s": 503,
+    "views": 1994,
+    "summary_one_line": "Opus 5.5 in Claude Code builds a King's Landing-style harbour city through Navrey from AI concept art: concept vs. finished map, progress on the phone app, then an in-game tour."
+  },
+  {
+    "id": "VinDltuoA0k",
+    "url": "https://www.youtube.com/watch?v=VinDltuoA0k",
+    "title": "Ultima Online World Building with Claude and Navrey",
+    "published": "2026-09-22T19:12:13-07:00",
+    "length_s": 609,
+    "views": 2533,
+    "summary_one_line": "Live first attempt: one prompt has Claude Code, as an admin on a private ServUO shard via Navrey, build a spooky Halloween village, checking its work with screenshots."
+  },
+  {
+    "id": "tjX3UoD7HPQ",
+    "url": "https://www.youtube.com/watch?v=tjX3UoD7HPQ",
+    "title": "Jev AI vs Jev AI Ultima Online Duels",
+    "published": "2026-09-19T14:41:27-07:00",
+    "length_s": 249,
+    "views": 2290,
+    "summary_one_line": "Jev (jev-1.13.0) controls both mages in duels on a stock local ServUO, choosing spells, movement, heals, cures and interrupts, with a duel monitor per side."
+  },
+  {
+    "id": "t3eCkQY3Jk0",
+    "url": "https://www.youtube.com/watch?v=t3eCkQY3Jk0",
+    "title": "Jev Playing Ultima Online - Prominently Displaying the Jev Monitor UI",
+    "published": "2026-09-18T14:31:31-07:00",
+    "length_s": 344,
+    "views": 496,
+    "summary_one_line": "Jev PvM against orcs with the full Jev monitor: the game state sent on one side, the scored answers (action, position, target, loot) on the other."
+  },
+  {
+    "id": "cP-GWKteHKo",
+    "url": "https://www.youtube.com/watch?v=cP-GWKteHKo",
+    "title": "Jev as the combat AI for Ultima Online",
+    "published": "2026-09-16T20:00:53-07:00",
+    "length_s": 173,
+    "views": 1961,
+    "summary_one_line": "First Jev video: TypeSafe's System One model replaces the scripted combat loop, choosing tile, action, target and loot from JSON state through the hosted API."
+  },
+  {
+    "id": "AS-_oidzefY",
+    "url": "https://www.youtube.com/watch?v=AS-_oidzefY",
+    "title": "Fable 5.1 Plays Ultima Online For 2+ Hours",
+    "published": "2026-09-08T20:28:47-07:00",
+    "length_s": 7825,
+    "views": 2240,
+    "summary_one_line": "Claude Code with Fable 5.1 plays a new character on UOAlive through Navrey for 2+ hours: quests, gear, hunting, a near-death retreat, restocking, banking, a festival, Britain."
+  },
+  {
+    "id": "fsXLxis1XU8",
+    "url": "https://www.youtube.com/watch?v=fsXLxis1XU8",
+    "title": "Claude Plays UO - Singing songs to players at West Britain Bank",
+    "published": "2026-09-04T08:57:36-07:00",
+    "length_s": 165,
+    "views": 369,
+    "summary_one_line": "Claude's character sings improvised songs to players at a busy West Britain Bank, with verses about what they wear and ride."
+  },
+  {
+    "id": "Bb30ucvV_vo",
+    "url": "https://www.youtube.com/watch?v=Bb30ucvV_vo",
+    "title": "Ultima Online Hands-Free with Claude Code Remote Control + Voice Dictation",
+    "published": "2026-09-01T16:29:56-07:00",
+    "length_s": 298,
+    "views": 184,
+    "summary_one_line": "Hands-free play: voice dictation into the Claude phone app steers a Claude Code session (Opus 5) over Remote Control from the Britain sewers to the cemetery."
+  },
+  {
+    "id": "84cGLqFoc40",
+    "url": "https://www.youtube.com/watch?v=84cGLqFoc40",
+    "title": "Claude Plays Ultima Online - The Ultimate UO Assist?",
+    "published": "2026-08-27T06:59:20-07:00",
+    "length_s": 281,
+    "views": 2030,
+    "summary_one_line": "The pivot to a ClassicUO mod (later Navrey): Claude dresses, makes bandages, buys arrows and reaches the sewers on its own, using task skills and a POI lookup."
+  },
+  {
+    "id": "jrBryt3RyCk",
+    "url": "https://www.youtube.com/watch?v=jrBryt3RyCk",
+    "title": "Getting Ultima Online's Open World Running in Unity",
+    "published": "2026-01-22T15:06:38-08:00",
+    "length_s": 332,
+    "views": 705,
+    "summary_one_line": "Educational Unity devlog: UO map data to tilemap prefabs, open-world chunk streaming, and hysteresis against chunk flicker."
+  },
+  {
+    "id": "0FHf7StAG-A",
+    "url": "https://www.youtube.com/watch?v=0FHf7StAG-A",
+    "title": "Instant Ultima Online Maps and Animations in Unity",
+    "published": "2026-01-03T09:28:28-08:00",
+    "length_s": 520,
+    "views": 1310,
+    "summary_one_line": "Intro to the author's UO-look Unity game and two editor tools that turn UO map data and animations into Unity assets."
+  },
+  {
+    "id": "2NCMg5k-3yQ",
+    "url": "https://www.youtube.com/watch?v=2NCMg5k-3yQ",
+    "title": "Multiplayer Lobbies using AWS GameLift",
+    "published": "2025-12-26T13:33:10-08:00",
+    "length_s": 56,
+    "views": 140,
+    "summary_one_line": "Rough create/join lobby screen for the Unity game using AWS GameLift."
+  },
+  {
+    "id": "Uu2U94gFQWM",
+    "url": "https://www.youtube.com/watch?v=Uu2U94gFQWM",
+    "title": "Instant Ultima Animations in Unity using Custom Editor Tool",
+    "published": "2025-12-22T19:19:34-08:00",
+    "length_s": 83,
+    "views": 130,
+    "summary_one_line": "Unity editor tool that turns UO animation files into clips, transitions and footstep events in one click."
+  },
+  {
+    "id": "yWQYoPzQydc",
+    "url": "https://www.youtube.com/watch?v=yWQYoPzQydc",
+    "title": "Ultima Online Unity (Multiplayer) Demo",
+    "published": "2023-01-15T18:15:15-08:00",
+    "length_s": 75,
+    "views": 742,
+    "summary_one_line": "Unity multiplayer demo: first customizable action bar, sound effects, spell fizzle on interrupt."
+  },
+  {
+    "id": "IkaJC7W4aKk",
+    "url": "https://www.youtube.com/watch?v=IkaJC7W4aKk",
+    "title": "Ultima Online in Unity with Multiplayer",
+    "published": "2022-12-31T11:11:04-08:00",
+    "length_s": 105,
+    "views": 367,
+    "summary_one_line": "Unity multiplayer with Netcode: regeneration, death, heal and resurrection spells, fizzles and full controller support."
+  },
+  {
+    "id": "UfYqYEnxVxI",
+    "url": "https://www.youtube.com/shorts/UfYqYEnxVxI",
+    "title": "Clayton or not app",
+    "published": "2022-04-12T19:37:16-07:00",
+    "length_s": 52,
+    "views": 1956,
+    "summary_one_line": "Short, unrelated to UO: a joke phone app that says whether a photo shows 'Clayton' or not."
+  },
+  {
+    "id": "7_QTFivspfU",
+    "url": "https://www.youtube.com/watch?v=7_QTFivspfU",
+    "title": "Ultima Online in Unity playing on Xbox Demo",
+    "published": "2022-01-05T14:57:34-08:00",
+    "length_s": 144,
+    "views": 2153,
+    "summary_one_line": "The author's Unity UO client on an Xbox One, connected to the official Atlantic shard through his own UO protocol library."
+  },
+  {
+    "id": "_MsnoJDXSVY",
+    "url": "https://www.youtube.com/watch?v=_MsnoJDXSVY",
+    "title": "Ultima Online Unity",
+    "published": "2021-04-13T20:11:36-07:00",
+    "length_s": 54,
+    "views": 1005,
+    "summary_one_line": "Early Unity prototype: an action bar and better tab targeting."
+  },
+  {
+    "id": "5ry3npVaduw",
+    "url": "https://www.youtube.com/watch?v=5ry3npVaduw",
+    "title": "UO Unity. Pre casting and tab targeting",
+    "published": "2021-04-11T12:41:54-07:00",
+    "length_s": 55,
+    "views": 394,
+    "summary_one_line": "Earliest UO Unity clip: pre-casting, tab targeting, a ready-to-release target marker and UO-style spell words."
+  }
+]

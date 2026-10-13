@@ -89,6 +89,9 @@ const USAGE = `usage: npm run nvm -- <command>
                       curse each other for Resisting Spells. --skill: Necromancy or Chivalry
                       instead, for a bot that has the skill, its book (and tithing points)
   login <Name>        log a bot in (creates account and character) and report
+  gm [--wait S] <command>...
+                      say each GM command as the owner and print what the server answers, S
+                      seconds each (default 20): "[Decorate" "[GenerateSpawners Data/Spawns/uoml/**/*.json"
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
   eval [laya] [jev] [--suite duel|movement|sight|melee]
                       decision quality on canonical moments, no clock involved
@@ -560,6 +563,29 @@ async function login(name: string): Promise<void> {
   s.close();
 }
 
+/**
+ * Says each command as the owner's character and prints the server's messages meanwhile: for the
+ * server's own commands ([Decorate, [GenerateSpawners, ...), which answer in plain text, not with
+ * NeoArena's "NEO ..." replies.
+ */
+async function gmCommands(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { wait: { type: "string", default: "20" } } });
+  if (!positionals.length) {
+    throw new Error("gm [--wait S] <command>...");
+  }
+  const gm = await Session.gm((m) => console.log(m));
+  gm.world.on("journal", (e: { text: string }) => console.log(`  ${e.text}`));
+  try {
+    for (const text of positionals) {
+      console.log(`> ${text}`);
+      gm.say(text);
+      await new Promise((r) => setTimeout(r, Number(values.wait) * 1000));
+    }
+  } finally {
+    gm.close();
+  }
+}
+
 /** A mid-duel state, to time the backend without a game running. */
 function sampleSnapshot(): DuelSnapshot {
   const s: DuelSnapshot = {
@@ -909,6 +935,9 @@ try {
       break;
     case "login":
       await login(args[0] ?? "Neo");
+      break;
+    case "gm":
+      await gmCommands(args);
       break;
     case "bench":
       await bench(args[0] ?? "laya", Number(args[1] ?? 20));
