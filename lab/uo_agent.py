@@ -4,6 +4,11 @@
     python3 lab/uo_agent.py gemma --model gemma4-32k --minutes 30
     python3 lab/uo_agent.py qwen --model qwen3.8:27b --minutes 30
     python3 lab/uo_agent.py fable --claude claude-fable-5-1 --minutes 30
+    python3 lab/uo_agent.py gemma-laya --name Gemma --model gemma4-32k --laya http://127.0.0.1:8100
+
+With --laya the model also gets `fight`, which hands a fight to Laya (a Laya server at that URL):
+the model chooses what to fight and with which tactics, Laya makes every move of the fight
+(bot/src/navrey/fight.ts, `npm run nvm -- fight`), and the fight's decisions go to fights.jsonl.
 
 The model gets four tools and nothing else: no shell, no files. `command` sends one Navrey client
 command (one line, a few client-side ones refused), `look` reads the character and its surroundings
@@ -56,6 +61,22 @@ SESSIONS = os.path.expanduser("~/UO/sessions")
 POI = os.path.expanduser("~/UO/poi")  # lab/poi.py's output, the folder Navrey's settings.json names
 PLACES = None
 FIRST = "You are in the game now. Begin: look around and decide what to do."
+BOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bot")
+FIGHT = """
+
+Fights: you have fast fighting reflexes, Laya, a small model that decides every move of a fight in
+a few hundredths of a second. `fight` hands it one creature: you choose what to fight, when, and how
+carefully (tactics: cautious heals early and may run when hurt; balanced; aggressive fights on), and
+Laya fights until the creature dies, you die, you get away or it goes out of view, then tells you
+how it went. Use `fight` rather than `attack` for anything that fights back."""
+FIGHT_TOOL = {"type": "function", "function": {
+    "name": "fight", "description": "Hand a fight with one creature to Laya, which makes every move (swing, bandage, potion, retreat) "
+    "until it ends, within the tactics you choose. Returns how it ended and your health.",
+    "parameters": {"type": "object", "properties": {
+        "target": {"type": "string", "description": "the creature's serial, e.g. 0x0000925D"},
+        "tactics": {"type": "string", "enum": ["cautious", "balanced", "aggressive"]},
+        "max_seconds": {"type": "integer", "minimum": 10, "maximum": 180}},
+        "required": ["target"]}}}
 
 SYSTEM = """You are playing Ultima Online yourself, as a player would, on a private test shard (ModernUO,
 Mondain's Legacy rules). Nobody else is online. Your character {name} is a young swordsman: about
@@ -300,6 +321,19 @@ def snapshot():
     return {"me": me, "mobiles": w.get("mobiles", [])[:15], "containers": w.get("containers", [])[:6]}
 
 
+def fight(target, tactics, max_seconds, laya, record):
+    """Laya fights one creature through Navrey (bot/src/navrey/fight.ts); the answer is how it ended."""
+    if not re.fullmatch(r"0x[0-9A-Fa-f]{1,8}", target):
+        return f"'{target}' is not a serial (0x0000ABCD, from look or mobiles)"
+    if tactics not in ("cautious", "balanced", "aggressive"):
+        tactics = "balanced"
+    seconds = max(10, min(180, max_seconds))
+    done = subprocess.run(["npm", "run", "-s", "nvm", "--", "fight", target, "--tactics", tactics, "--max", str(seconds), "--record", record],
+                          cwd=BOT, env=dict(os.environ, LAYA_URL=laya), capture_output=True, text=True, timeout=seconds + 60)
+    lines = [l for l in (done.stdout + done.stderr).splitlines() if l.strip()]
+    return lines[-1] if lines else f"the fight ended without a word (exit {done.returncode})"
+
+
 def snapshots(path_in, path_out, every, stop):
     """Copies a Navrey state file into a .jsonl every `every` seconds until `stop` is set."""
     with open(path_out, "a") as out:
@@ -312,12 +346,13 @@ def snapshots(path_in, path_out, every, stop):
 
 
 class Player:
-    def __init__(self, folder):
+    def __init__(self, folder, laya=None):
         self.folder = folder
+        self.laya = laya
         self.log_offset = log_size()
         self.events = open(os.path.join(folder, "agent.jsonl"), "a")
         self.decisions = open(os.path.join(folder, "decisions.jsonl"), "a")
-        self.counts = {"command": 0, "look": 0, "wait": 0, "decide": 0}
+        self.counts = {"command": 0, "look": 0, "wait": 0, "decide": 0, **({"fight": 0} if laya else {})}
 
     def record(self, **event):
         self.events.write(json.dumps({"t": time.time(), **event}) + "\n")
@@ -354,6 +389,9 @@ class Player:
                     said.append(l)
             lines = said
             return "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
+        if name == "fight" and self.laya:
+            return fight(str(args.get("target", "")), str(args.get("tactics") or "balanced"), int(args.get("max_seconds") or 120),
+                         self.laya, os.path.join(self.folder, "fights.jsonl"))
         if name == "decide":
             entry = {"t": time.time(), "decision": str(args.get("decision", "")), "reason": str(args.get("reason", "")), **snapshot()}
             self.decisions.write(json.dumps(entry) + "\n")
@@ -365,8 +403,8 @@ class Player:
         return f"unknown tool {name}; your tools are look, command, wait and decide"
 
 
-def ask(base, model, messages, timeout=600):
-    body = json.dumps({"model": model, "messages": messages, "tools": TOOLS, "temperature": 0.7}).encode()
+def ask(base, model, messages, tools, timeout=600):
+    body = json.dumps({"model": model, "messages": messages, "tools": tools, "temperature": 0.7}).encode()
     req = urllib.request.Request(f"{base}/chat/completions", data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
@@ -398,9 +436,10 @@ def fresh_start(name):
         sys.exit(f"could not set {name} up in New Haven: {(done.stdout + done.stderr).strip()[-400:]}")
 
 
-def play_openai(base, model, system, folder, deadline):
-    """The loop for a model behind an OpenAI-compatible endpoint; returns the number of replies."""
-    player = Player(folder)
+def play_openai(base, model, system, folder, deadline, laya=None):
+    """The loop for a model behind an OpenAI-compatible endpoint."""
+    player = Player(folder, laya)
+    tools = TOOLS + ([FIGHT_TOOL] if laya else [])
     system = {"role": "system", "content": system}
     turns = [[{"role": "user", "content": FIRST}]]
     failures, replies, start = 0, 0, 0
@@ -408,7 +447,7 @@ def play_openai(base, model, system, folder, deadline):
         started = time.time()
         messages, start = trimmed(system, turns, start)
         try:
-            answer = ask(base, model, messages)
+            answer = ask(base, model, messages, tools)
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             failures += 1
             player.record(kind="error", error=str(e))
@@ -441,11 +480,11 @@ def play_openai(base, model, system, folder, deadline):
     print(f"{time.strftime('%H:%M')} {replies} replies; " + ", ".join(f"{k} {v}" for k, v in player.counts.items()), flush=True)
 
 
-def serve(folder):
-    """The four tools as an MCP server on stdin/stdout (JSON-RPC, one message per line), for Claude Code."""
-    player = Player(folder)
+def serve(folder, laya=None):
+    """The tools as an MCP server on stdin/stdout (JSON-RPC, one message per line), for Claude Code."""
+    player = Player(folder, laya)
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"], "inputSchema": t["function"]["parameters"]}
-             for t in TOOLS]
+             for t in TOOLS + ([FIGHT_TOOL] if laya else [])]
     for raw in sys.stdin:
         try:
             msg = json.loads(raw)
@@ -470,12 +509,13 @@ def serve(folder):
         print(json.dumps(reply), flush=True)
 
 
-def play_claude(model, system, folder, deadline):
+def play_claude(model, system, folder, deadline, laya=None):
     """Claude Code with no tools of its own and ours over MCP; resumed with a nudge whenever it stops early."""
     config = os.path.join(folder, "mcp.json")
+    serve_args = [os.path.abspath(__file__), "--serve", folder] + (["--laya", laya] if laya else [])
     with open(config, "w") as f:
-        json.dump({"mcpServers": {"uo": {"command": sys.executable, "args": [os.path.abspath(__file__), "--serve", folder]}}}, f)
-    allowed = ",".join(f"mcp__uo__{t['function']['name']}" for t in TOOLS)
+        json.dump({"mcpServers": {"uo": {"command": sys.executable, "args": serve_args}}}, f)
+    allowed = ",".join(f"mcp__uo__{t['function']['name']}" for t in TOOLS + ([FIGHT_TOOL] if laya else []))
     prompt, session, rounds = FIRST, None, 0
     with open(os.path.join(folder, "claude.jsonl"), "a") as out:
         while time.time() < deadline - 30:
@@ -515,10 +555,11 @@ def main():
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--name", default=None, help="the character's name (default: the player's, capitalised)")
     ap.add_argument("--as-is", action="store_true", help="play on from where the character is, as it is")
+    ap.add_argument("--laya", metavar="URL", help="a Laya server: the model gets `fight`, and Laya makes every move of a fight")
     ap.add_argument("--serve", metavar="FOLDER", help=argparse.SUPPRESS)  # the MCP server Claude Code starts
     args = ap.parse_args()
     if args.serve:
-        return serve(args.serve)
+        return serve(args.serve, args.laya)
     if not args.player or bool(args.model) == bool(args.claude):
         ap.error("a player name and either --model or --claude")
 
@@ -527,10 +568,10 @@ def main():
         fresh_start(name)
     folder = os.path.join(SESSIONS, f"{time.strftime('%Y-%m-%dT%H-%M')}-{args.player}")
     os.makedirs(folder, exist_ok=True)
-    system = SYSTEM.format(name=name, minutes=int(args.minutes))
+    system = SYSTEM.format(name=name, minutes=int(args.minutes)) + (FIGHT if args.laya else "")
     with open(os.path.join(folder, "run.json"), "w") as f:
         json.dump({"player": args.player, "model": args.claude or args.model, "base": None if args.claude else args.base,
-                   "character": name, "fresh": not args.as_is, "minutes": args.minutes, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
+                   "character": name, "fresh": not args.as_is, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
                   f, indent=1)
 
     stop = threading.Event()
@@ -545,9 +586,9 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try:
         if args.claude:
-            play_claude(args.claude, system, folder, deadline)
+            play_claude(args.claude, system, folder, deadline, args.laya)
         else:
-            play_openai(args.base, args.model, system, folder, deadline)
+            play_openai(args.base, args.model, system, folder, deadline, args.laya)
     except KeyboardInterrupt:
         print(f"{time.strftime('%H:%M')} stopped early", flush=True)
     stop.set()

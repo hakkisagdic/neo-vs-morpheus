@@ -50,6 +50,11 @@ def report(folder):
         if m:
             gains[m.group(1)] = round(gains.get(m.group(1), 0) + float(m.group(2)), 1)
     deaths = sum("You have died" in l for l in log)
+    fights = {}
+    for e in tools:
+        if e.get("name") == "fight":
+            outcome = e.get("result", "").split(":", 1)[0]
+            fights[outcome] = fights.get(outcome, 0) + 1
     alive = [s for s in states if "charGhost" in s]
     raised = sum(1 for a, b in zip(alive, alive[1:]) if a["charGhost"] and not b["charGhost"])
     walked, facets = 0, []
@@ -70,6 +75,7 @@ def report(folder):
         "replies": f"{len(replies)} ({pace:.1f} s each)" if replies else "in claude.jsonl",
         "tool calls": len(tools),
         "decisions": len(decisions),
+        "fights (Laya)": ", ".join(f"{k} {v}" for k, v in sorted(fights.items(), key=lambda kv: -kv[1])) or "none",
         "deaths": deaths,
         "resurrected": raised,
         "damage dealt / taken": f"{dealt} / {taken}",

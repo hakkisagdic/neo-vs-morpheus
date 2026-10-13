@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { ModelBrain } from "./brain/brains.ts";
 import { systemOne } from "./brain/systemone.ts";
 import { SUITES, scenarioRequest } from "./eval/scenarios.ts";
-import { existsSync } from "node:fs";
+import { appendFileSync, existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from "./distill/convert.ts";
@@ -33,6 +33,9 @@ import { leaderboard, leaderboardMarkdown, ratingPairings, ratingsMarkdown } fro
 import { type SkillTrack, readSkillRuns, skillLeaderboard, skillMarkdown } from "./bench/skill.ts";
 import { ARENA_LAYOUTS, type ArenaLayout } from "./game/arena.ts";
 import { WEAPONS } from "./game/items.ts";
+import { NavreyFight, describeResult } from "./navrey/fight.ts";
+import { modelBackend } from "./brain/backends.ts";
+import { NEUTRAL, loadTactics } from "./brain/tactics.ts";
 import { loadTemplate } from "./game/templates.ts";
 import { Session } from "./game/session.ts";
 import { describeSkillResult, runSkillSession } from "./game/skill-session.ts";
@@ -89,6 +92,10 @@ const USAGE = `usage: npm run nvm -- <command>
                       curse each other for Resisting Spells. --skill: Necromancy or Chivalry
                       instead, for a bot that has the skill, its book (and tithing points)
   login <Name>        log a bot in (creates account and character) and report
+  fight <serial> [--tactics balanced] [--max S] [--record file] [--json]
+                      in the real game through Navrey (lab/navrey.sh): Laya (LAYA_URL, melee) makes
+                      every move of a fight with that creature until it ends, within tactics/<id>.json;
+                      prints how it ended (lab/uo_agent.py's fight tool)
   gm [--wait S] <command>...
                       say each GM command as the owner and print what the server answers, S
                       seconds each (default 20): "[Decorate" "[GenerateSpawners Data/Spawns/uoml/**/*.json"
@@ -586,6 +593,24 @@ async function gmCommands(args: string[]): Promise<void> {
   }
 }
 
+/** A fight inside the game through Navrey, Laya making every move (src/navrey/fight.ts). */
+async function navreyFight(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { tactics: { type: "string", default: "balanced" }, max: { type: "string", default: "120" }, record: { type: "string" }, json: { type: "boolean" } },
+  });
+  const target = Number.parseInt(positionals[0] ?? "", 16);
+  if (!Number.isFinite(target) || target <= 0) {
+    throw new Error("fight <serial> [--tactics id] [--max S] [--record file] [--json]");
+  }
+  const tactics = values.tactics === "neutral" ? NEUTRAL : await loadTactics(values.tactics);
+  const record = values.record ? (row: object) => appendFileSync(values.record as string, `${JSON.stringify(row)}\n`) : undefined;
+  const fight = new NavreyFight(new ModelBrain(modelBackend("laya"), "composite", "melee"), tactics, target, { record });
+  const result = await fight.run(Number(values.max));
+  console.log(values.json ? JSON.stringify(result) : describeResult(result));
+}
+
 /** A mid-duel state, to time the backend without a game running. */
 function sampleSnapshot(): DuelSnapshot {
   const s: DuelSnapshot = {
@@ -938,6 +963,9 @@ try {
       break;
     case "gm":
       await gmCommands(args);
+      break;
+    case "fight":
+      await navreyFight(args);
       break;
     case "bench":
       await bench(args[0] ?? "laya", Number(args[1] ?? 20));

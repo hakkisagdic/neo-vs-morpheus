@@ -51,6 +51,8 @@ export const WEAPONS: Record<number, Weapon> = {
   0x13ff: { name: "katana", ranged: false, twoHanded: false, range: 1, primary: "doubleStrike", secondary: "armorIgnore", mlSpeed: 2.5 },
   0x0f5e: { name: "broadsword", ranged: false, twoHanded: false, range: 1, primary: "crushingBlow", secondary: "armorIgnore", mlSpeed: 3.25 },
   0x0f61: { name: "longsword", ranged: false, twoHanded: false, range: 1, primary: "armorIgnore", secondary: "concussionBlow", mlSpeed: 3.5 },
+  0x13b9: { name: "viking sword", ranged: false, twoHanded: false, range: 1, primary: "crushingBlow", secondary: "paralyzingBlow", mlSpeed: 3.75 },
+  0x13ba: { name: "viking sword", ranged: false, twoHanded: false, range: 1, primary: "crushingBlow", secondary: "paralyzingBlow", mlSpeed: 3.75 },
   0x1401: { name: "kryss", ranged: false, twoHanded: false, range: 1, primary: "armorIgnore", secondary: "infectiousStrike", mlSpeed: 2 },
   0x1405: { name: "war fork", ranged: false, twoHanded: false, range: 1, primary: "bleedAttack", secondary: "disarm", mlSpeed: 2.5 },
   0x143e: { name: "halberd", ranged: false, twoHanded: true, range: 2, primary: "whirlwindAttack", secondary: "concussionBlow", mlSpeed: 4.25 },
