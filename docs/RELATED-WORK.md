@@ -7,7 +7,8 @@ Projects and recordings close to this one, with what each shows and how it bears
 The YouTube channel "autorokk" (repository owner johnpwrs on GitHub) drives Ultima Online with
 large models through a ClassicUO fork of its own.
 
-- **Navrey** — https://github.com/johnpwrs/navrey (BSD-2-Clause). A ClassicUO fork that can be
+- **Navrey** — https://github.com/johnpwrs/navrey (BSD-2-Clause; our fork with the Apple Silicon fix:
+  https://github.com/hakkisagdic/navrey, branch laya, set up by lab/navrey.sh). A ClassicUO fork that can be
   driven from a shell or an agent: the client writes its state to `/tmp/cuostate.json` and takes
   commands through `/tmp/cuocmd`, with or without a game window. It ships agent guides
   (`.claude/skills/`: log in, navigate, fight, loot, bank, shop, moongates, runebooks, death

@@ -1,40 +1,34 @@
 #!/bin/bash
 # navrey.sh [setup|start|stop|restart|status]: Navrey (github.com/johnpwrs/navrey, BSD-2), the
-# ClassicUO fork an agent drives through /tmp/cuocmd and /tmp/cuostate.json, set up on Apple Silicon
-# as this project's window onto the world server (lab/world.sh, 127.0.0.1:2650):
+# ClassicUO fork an agent drives through /tmp/cuocmd and /tmp/cuostate.json, from our fork's laya
+# branch (github.com/hakkisagdic/navrey: cuoapi loads on Apple Silicon), set up as this project's
+# window onto the world server (lab/world.sh, 127.0.0.1:2650):
 #
 #   lab/navrey.sh setup     # clone at the pinned commit, patch, configure, build (again and again)
 #   lab/navrey.sh start     # the client with its window, logged in as $NAVREY_USER (default gemma)
 #   lab/navrey.sh restart   # after lab/poi.py: Navrey reads its places only when it starts
 #
-# The changes to Navrey live here, because the repository is someone else's:
-# - external/cuoapi/cuoapi.dll is an IL-only assembly marked x64, which .NET on arm64 will not
-#   load: its PE machine field becomes ARM64 (0xAA64), the original kept as cuoapi.x64.dll;
+# What setup changes in the checkout, as this machine's own configuration, not committed:
 # - settings.json points at our server, EA's client files (~/UO/client) and lab/poi.py's places
 #   (~/UO/poi), without the Razor plugin;
 # - .env holds the account, with the bots' password from this repository's .env.
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 NAVREY=${NAVREY_DIR:-$HOME/Projects/navrey}
-COMMIT=63c4402
+FORK=https://github.com/hakkisagdic/navrey.git
+COMMIT=6ab81bc  # the laya branch
 export DOTNET_ROOT=${DOTNET_ROOT:-$HOME/.dotnet}
 DOTNET=$DOTNET_ROOT/dotnet
 running() { pgrep -f "^./bin/Debug/net10.0/cuo -agent" || true; }
 case "${1:-status}" in
   setup)
-    [ -d "$NAVREY/.git" ] || git clone -q https://github.com/johnpwrs/navrey.git "$NAVREY"
+    [ -d "$NAVREY/.git" ] || git clone -q -b laya "$FORK" "$NAVREY"
     cd "$NAVREY"
-    if [ "$(git rev-parse --short=7 HEAD)" != "$COMMIT" ]; then git fetch -q origin && git checkout -q "$COMMIT"; fi
+    git remote get-url fork >/dev/null 2>&1 || git remote add fork "$FORK"
+    if [ "$(git rev-parse --short=7 HEAD)" != "$COMMIT" ]; then git fetch -q fork && git checkout -q -B laya "$COMMIT"; fi
     BOT_PASSWORD=$(grep '^BOT_PASSWORD=' "$ROOT/.env" | cut -d= -f2- | tr -d '"') \
     NAVREY_USER=${NAVREY_USER:-gemma} python3 - <<'PY'
-import json, os, shutil, struct
-dll, x64 = "external/cuoapi/cuoapi.dll", "external/cuoapi/cuoapi.x64.dll"
-data = bytearray(open(dll, "rb").read())
-field = struct.unpack_from("<I", data, 0x3C)[0] + 4
-if struct.unpack_from("<H", data, field)[0] == 0x8664:
-    shutil.copyfile(dll, x64)
-    struct.pack_into("<H", data, field, 0xAA64)
-    open(dll, "wb").write(data)
+import json, os
 s = json.load(open("settings.json"))
 s.update({"ip": "127.0.0.1", "port": 2650, "uo_directory": os.path.expanduser("~/UO/client"), "client_version": "7.0.117.1",
           "poi_directory": os.path.expanduser("~/UO/poi"), "last_server_name": "laya world", "plugins": []})
