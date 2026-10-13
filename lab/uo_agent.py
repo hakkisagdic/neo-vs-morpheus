@@ -11,7 +11,9 @@ from Navrey's state files, `wait` lets time pass and returns what happened, and 
 decision before the model acts on it. Agent frameworks with a shell (opencode) could not keep a
 local model inside the game: it read and wrote files outside Navrey's folder despite their rules.
 
-Any OpenAI-compatible endpoint with tool calls serves (Ollama by default). A Claude model plays
+Every session starts the same way unless --as-is: the character alive, refitted as a young
+swordsman (templates/warrior-novice.json) and standing in New Haven, through the world server's GM
+(lab/world.sh gm). Any OpenAI-compatible endpoint with tool calls serves (Ollama by default). A Claude model plays
 through Claude Code with its own tools switched off and these four served to it over MCP by this
 same script (`--serve`), so both kinds of player get the same instructions and the same tools. The
 client must already be running and in the world (~/Projects/navrey, `cuo -agent`).
@@ -102,15 +104,20 @@ Game commands (serials look like 0x0000ABCD; take them from `look` or `mobiles`)
   drop <item> <container> [amount]
   props <serial>              an item's properties
   canwalk <x> <y> / path <x> <y>
-  opendoor / dead / gumps / gumpresponse <button>
+  gumps                       the open gumps (windows the server sent: menus, offers, questions)
+  gumpresponse <button> [N ...] answer a gump: the button, plus the [radio N]/[checkbox N] numbers
+                              to tick, only if that gump lists any. A wrong answer leaves the gump
+                              waiting on the server (a ghost then cannot move: "You are frozen")
+  opendoor / dead
 
 Good to know: New Haven is on an island (Haven Island), and walking cannot cross water: other
 towns and the dungeons are reached through a moongate (`goto New Haven Moongate`; from 1 tile away
 `use` the gate and read `gumps`: each destination's name follows its [radio N] line, and
 `gumpresponse 1 N` travels there; Felucca's destinations are the 100s). Healing with a bandage takes several seconds and is interrupted if you are hit hard;
 the potion heals at once but has a delay between drinks. A dead character becomes a ghost: walk to
-a healer's shop (`goto closest healer`), find the healer there (`mobiles`, `click <serial>` tells who
-is who) and stand next to them; the healer offers to resurrect you (answer the gump). Your body keeps
+a healer's shop (`goto closest healer`) and up to the healer (`mobiles`, `click <serial>` tells who is
+who). A healer offers to resurrect you when you come within a few steps: a Resurrection gump, where
+`gumpresponse 1` is CONTINUE. No offer? Step a few tiles away and walk back. Your body keeps
 your belongings until it decays."""
 
 TOOLS = [
@@ -262,6 +269,9 @@ def look():
                        f"{m.get('notoriety', '?').lower()}, health {hp}{extra}")
     else:
         out.append("No creatures in view.")
+    gumps = open_gumps()
+    if gumps:
+        out.append("Open gumps (answer with gumpresponse): " + "; ".join(gumps))
     near = [c for c in w.get("containers", []) if c.get("distance", 99) <= 12][:6]
     if near:
         out.append("Corpses and containers: " + "; ".join(f"{c['serial']} {c['name']} {c['distance']} tiles" for c in near))
@@ -269,6 +279,17 @@ def look():
     if items:
         out.append("Items on the ground: " + "; ".join(f"{i['serial']} {i['name']} {i['distance']} tiles" for i in items))
     return "\n".join(out)
+
+
+def open_gumps():
+    """The open server gumps, by title and serial; a gump waiting for an answer can block the character."""
+    found, lines = [], command("gumps", timeout=5).splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r"\[GUMP\] local (0x[0-9A-F]+) server (0x[0-9A-F]+)", line)
+        if m:
+            title = lines[i + 1].strip() if i + 1 < len(lines) else ""
+            found.append(f"{title or 'untitled'} (gump:{m.group(2)})")
+    return found
 
 
 def snapshot():
@@ -323,8 +344,9 @@ class Player:
             seconds = max(1, min(30, int(args.get("seconds") or 5)))
             time.sleep(seconds)
             lines, self.log_offset = log_since(self.log_offset)
-            # Navrey narrates itself too ([CMD] blocks, labels): what the game said is what matters.
-            lines = [l for l in lines if not l.startswith(("[CMD", "[LABEL]", "[PERF]", "[DEBUG", "  "))]
+            # Navrey narrates itself too ([CMD] blocks, labels, gump dumps `gumps` repeats): what the game said
+            # is what matters.
+            lines = [l for l in lines if not l.startswith(("[CMD", "[LABEL]", "[PERF]", "[DEBUG", "[GUMP]", "  "))]
             return "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
         if name == "decide":
             entry = {"t": time.time(), "decision": str(args.get("decision", "")), "reason": str(args.get("reason", "")), **snapshot()}
@@ -354,6 +376,19 @@ def trimmed(system, turns):
         kept.append(turn)
         size += n
     return [system] + [m for turn in reversed(kept) for m in turn]
+
+
+def fresh_start(name):
+    """The character alive, refitted and at New Haven's centre, so that sessions can be compared."""
+    who = f"where PlayerMobile Name = {name}"
+    commands = [f'[Global Set Location "(3503, 2574, 14)" {who}', f"[Global Set Map Trammel {who}", f"[NeoPrep {name}",
+                f"[NeoTemplate {name} warrior-novice"]
+    done = subprocess.run(["bash", os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh"), "gm", "--wait", "5", *commands],
+                          capture_output=True, text=True, timeout=300)
+    time.sleep(3)
+    s = read_json(STATE)
+    if done.returncode or s.get("charGhost") or (s.get("charPosX"), s.get("charPosY")) != (3503, 2574):
+        sys.exit(f"could not set {name} up in New Haven: {(done.stdout + done.stderr).strip()[-400:]}")
 
 
 def play_openai(base, model, system, folder, deadline):
@@ -471,6 +506,7 @@ def main():
     ap.add_argument("--claude", metavar="MODEL", help="a Claude model, played through Claude Code (claude-fable-5-1)")
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--name", default=None, help="the character's name (default: the player's, capitalised)")
+    ap.add_argument("--as-is", action="store_true", help="play on from where the character is, as it is")
     ap.add_argument("--serve", metavar="FOLDER", help=argparse.SUPPRESS)  # the MCP server Claude Code starts
     args = ap.parse_args()
     if args.serve:
@@ -478,12 +514,15 @@ def main():
     if not args.player or bool(args.model) == bool(args.claude):
         ap.error("a player name and either --model or --claude")
 
+    name = args.name or args.player.capitalize()
+    if not args.as_is:
+        fresh_start(name)
     folder = os.path.join(SESSIONS, f"{time.strftime('%Y-%m-%dT%H-%M')}-{args.player}")
     os.makedirs(folder, exist_ok=True)
-    system = SYSTEM.format(name=args.name or args.player.capitalize(), minutes=int(args.minutes))
+    system = SYSTEM.format(name=name, minutes=int(args.minutes))
     with open(os.path.join(folder, "run.json"), "w") as f:
         json.dump({"player": args.player, "model": args.claude or args.model, "base": None if args.claude else args.base,
-                   "minutes": args.minutes, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
+                   "character": name, "fresh": not args.as_is, "minutes": args.minutes, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
                   f, indent=1)
 
     stop = threading.Event()
