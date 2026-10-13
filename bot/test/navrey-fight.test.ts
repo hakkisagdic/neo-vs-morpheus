@@ -99,6 +99,17 @@ describe("a fight through Navrey's files", () => {
     expect(describeResult(result)).toMatch(/^won: a timber wolf is dead after \d+ s\. Your hits: 70\/85\./);
   });
 
+  it("gives the chase up when the target stays out of reach longer than the tactics allow", async () => {
+    write("state.json", state());
+    write("world.json", { mobiles: [mobile("an alligator", "Alligator", 104)], containers: [] });
+    const { b } = brain();
+    const tactics = { ...NEUTRAL, chase: { maxTiles: 40, giveUpSeconds: 1, teleport: false } };
+    const result = await new NavreyFight(b, tactics, WOLF, { send: async () => [] }).run(10);
+
+    expect(result.outcome).toBe("gave up");
+    expect(describeResult(result)).toMatch(/^gave up: an alligator stayed out of reach/);
+  });
+
   it("tells a caster by its kind, and ends when we die", async () => {
     write("state.json", state());
     write("world.json", { mobiles: [mobile("a lich", "Lich", 104)], containers: [] });

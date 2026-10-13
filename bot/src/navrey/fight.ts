@@ -58,7 +58,7 @@ type NavreyState = {
   nav: { active: boolean; status: string };
 };
 
-export type FightOutcome = "won" | "died" | "fled" | "lost" | "timeout";
+export type FightOutcome = "won" | "died" | "fled" | "lost" | "gave up" | "timeout";
 export type FightResult = {
   outcome: FightOutcome;
   target: string;
@@ -405,6 +405,13 @@ export class NavreyFight {
       }
       const snap = this.#snapshot(s, them, now);
       const archetype = snap.them.weapon ? "melee" : "caster";
+      // Out of reach for longer than the tactics chase (a creature in water, behind a wall): as the
+      // arena's fighters do, give up the chase.
+      const chase = tacticsFor(this.#tactics, archetype).chase;
+      if ((snap.us.outOfReachForMs ?? 0) > chase.giveUpSeconds * 1000 || snap.them.distance > chase.maxTiles) {
+        outcome = "gave up";
+        break;
+      }
       let decision: Decision;
       try {
         decision = await this.#brain.decide(snap, tacticsFor(this.#tactics, archetype));
@@ -465,6 +472,7 @@ export function describeResult(r: FightResult): string {
     died: `you died fighting ${r.target}`,
     fled: `you got away from ${r.target} (it had ${r.targetHealthPct}% health)`,
     lost: `${r.target} went out of view with ${r.targetHealthPct}% health`,
+    "gave up": `${r.target} stayed out of reach, so the chase was given up (it has ${r.targetHealthPct}% health)`,
     timeout: `the fight went on too long; ${r.target} has ${r.targetHealthPct}% health`,
   }[r.outcome];
   return `${r.outcome}: ${how} after ${r.seconds} s. Your hits: ${r.hits}/${r.maxHits}. Laya made ${r.decisions} decisions (${plans || "none"}), ${r.latencyMs} ms each.`;
