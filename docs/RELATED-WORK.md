@@ -14,7 +14,7 @@ large models through a ClassicUO fork of its own.
   recovery) and two background scripts: a melee combat loop with pursuit, healing, looting and
   retreat, and a guarded walker. Built here natively for Apple Silicon (~/Projects/navrey); we
   plan it as the window onto our own server and, later, as the recorder of a person's own play.
-- **The Jev duel videos** (17-19 September 2026), the ones that started this project:
+- **The Jev duel videos** (16-19 September 2026, US Pacific dates), the ones that started this project:
   https://www.youtube.com/watch?v=cP-GWKteHKo, https://www.youtube.com/watch?v=t3eCkQY3Jk0
   (the "Jev Monitor"), https://www.youtube.com/watch?v=tjX3UoD7HPQ (Jev against Jev). TypeSafe
   gave the channel access to Jev; the server there is ServUO.
@@ -31,6 +31,8 @@ what to fight, when to run, restock or bank), which is the leveling and professi
 roadmap. Duels need decisions in tens of milliseconds, which is why a small trained model (Laya)
 plays those. A large model playing whole sessions is a teacher candidate for the slow decisions:
 record what it chooses where, and train small models on it.
+
+All of autorokk's 20 uploads, with notes: [autorokk-videos.md](autorokk-videos.md).
 
 ## Decision models
 

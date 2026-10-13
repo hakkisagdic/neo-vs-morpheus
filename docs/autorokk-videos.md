@@ -22,8 +22,6 @@ Links that appear in descriptions and comments:
   only a `main` branch is public).
 - TypeSafe: https://docs.typesafe.ai/introduction (first Jev video) and
   https://typesafe.ai/blog/introducing-system-one-models-and-jev (an author reply).
-- The author's Discord invites, as posted in comments: https://discord.gg/zhQVaQBKV (early 2026,
-  Unity game) and https://discord.gg/m5ArGy9SC (October 2026, Navrey).
 
 ---
 
