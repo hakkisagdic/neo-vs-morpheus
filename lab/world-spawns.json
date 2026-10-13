@@ -1,0 +1,4 @@
+{
+  "why": "The spawn sets the world is generated from, in order ([GenerateSpawners Data/Spawns/<set>/**/*.json). ModernUO's data holds Haven island twice: uoml is the island before the New Haven publish (old Haven's shops in the east, orcs and trolls where New Haven now stands), post-uoml is Mondain's Legacy's New Haven (its shops and trainers, Old Haven's undead). Ter Mur is left out: it is not in this expansion. Tokuno has only uoml. lab/poi.py reads this list too.",
+  "sets": ["shared", "post-uoml/trammel", "post-uoml/felucca", "post-uoml/malas", "post-uoml/ilshenar", "uoml/tokuno"]
+}
