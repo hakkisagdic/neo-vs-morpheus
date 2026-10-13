@@ -99,15 +99,26 @@ describe("a fight through Navrey's files", () => {
     expect(describeResult(result)).toMatch(/^won: a timber wolf is dead after \d+ s\. Your hits: 70\/85\./);
   });
 
-  it("gives the chase up when the target stays out of reach longer than the tactics allow", async () => {
+  it("gives the chase up once a target it reached stays out of reach longer than the tactics allow", async () => {
     write("state.json", state());
-    write("world.json", { mobiles: [mobile("an alligator", "Alligator", 104)], containers: [] });
-    const { b } = brain();
+    // In reach at first, then out of it for longer than the chase allows.
+    write("world.json", { mobiles: [mobile("an alligator", "Alligator", 101)], containers: [] });
+    const { b } = brain((n) => n === 1 && write("world.json", { mobiles: [mobile("an alligator", "Alligator", 104)], containers: [] }));
     const tactics = { ...NEUTRAL, chase: { maxTiles: 40, giveUpSeconds: 1, teleport: false } };
     const result = await new NavreyFight(b, tactics, WOLF, { send: async () => [] }).run(10);
 
     expect(result.outcome).toBe("gave up");
     expect(describeResult(result)).toMatch(/^gave up: an alligator stayed out of reach/);
+  });
+
+  it("walks up to a far target before the chase limits count", async () => {
+    write("state.json", state());
+    write("world.json", { mobiles: [mobile("a timber wolf", "Timber Wolf", 120)], containers: [] });
+    const { b } = brain((n) => n === 2 && write("world.json", { mobiles: [], containers: [{ name: "A Timber Wolf Corpse", x: 120, y: 100 }] }));
+    const tactics = { ...NEUTRAL, chase: { maxTiles: 12, giveUpSeconds: 5, teleport: false } };
+    const result = await new NavreyFight(b, tactics, WOLF, { send: async () => [] }).run(10);
+
+    expect(result.outcome).toBe("won"); // 20 tiles away, more than the chase's 12, and not given up
   });
 
   it("tells a caster by its kind, and ends when we die", async () => {

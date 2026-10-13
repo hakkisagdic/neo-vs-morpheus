@@ -17,6 +17,8 @@ const FILES = {
 };
 const STAMP = /^\[\d{2}:\d{2}:\d{2}\.\d{3}\] /;
 const TICK_MS = 300;
+/** Time to reach a target for the first time; the tactics' chase limits count only after that. */
+const APPROACH_MS = 20_000;
 /** Monsters fight with what they are; these cast (Navrey does not say which do). */
 const CASTERS = /mage|lich|wisp|gazer|imp\b|daemon|elemental|shaman|necromancer|sorcer|wraith/i;
 
@@ -158,6 +160,8 @@ export class NavreyFight {
   #retreating = false;
   /** When we last saw our target take damage: a target that vanishes just after a hit has died. */
   #hitAt = 0;
+  /** Whether the target has been within our reach yet: the walk up to it is not a chase. */
+  #met = false;
 
   /** record: each decision, for training; send: a command to Navrey (tests stand in for it). */
   constructor(brain: DuelBrain, tactics: Tactics, target: number, opts: { record?: (row: object) => void; send?: (line: string) => Promise<string[]> } = {}) {
@@ -406,9 +410,11 @@ export class NavreyFight {
       const snap = this.#snapshot(s, them, now);
       const archetype = snap.them.weapon ? "melee" : "caster";
       // Out of reach for longer than the tactics chase (a creature in water, behind a wall): as the
-      // arena's fighters do, give up the chase.
+      // arena's fighters do, give up the chase. Before the first contact the walk up to it gets its own time.
       const chase = tacticsFor(this.#tactics, archetype).chase;
-      if ((snap.us.outOfReachForMs ?? 0) > chase.giveUpSeconds * 1000 || snap.them.distance > chase.maxTiles) {
+      this.#met ||= snap.them.inRange;
+      const away = snap.us.outOfReachForMs ?? 0;
+      if (this.#met ? away > chase.giveUpSeconds * 1000 || snap.them.distance > chase.maxTiles : away > APPROACH_MS) {
         outcome = "gave up";
         break;
       }
