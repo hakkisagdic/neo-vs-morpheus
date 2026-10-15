@@ -17,6 +17,8 @@ export type LoginOptions = {
   /** Used when the account has no character with this name yet. */
   newCharacter?: Omit<out.NewCharacter, "name" | "slot" | "cityIndex">;
   timeoutMs?: number;
+  /** The facets the client claims (out.FACETS_ML); none unless asked, as the bots always sent. */
+  clientFlags?: number;
 };
 
 export type LoginResult = {
@@ -124,7 +126,7 @@ export class UoClient extends EventEmitter<ClientEvents> {
     const slot = names.findIndex((n) => n.toLowerCase() === o.character.toLowerCase());
     let created = false;
     if (slot >= 0) {
-      this.send(out.playCharacter(names[slot], slot));
+      this.send(out.playCharacter(names[slot], slot, o.clientFlags ?? 0));
     } else {
       if (!o.newCharacter) {
         throw new Error(`no character named ${o.character} on account ${o.account}`);
@@ -133,7 +135,7 @@ export class UoClient extends EventEmitter<ClientEvents> {
       if (free < 0 || cityCount === 0) {
         throw new Error(`account ${o.account} has no free character slot`);
       }
-      this.send(out.createCharacter({ ...o.newCharacter, name: o.character, slot: free, cityIndex: 0 }));
+      this.send(out.createCharacter({ ...o.newCharacter, name: o.character, slot: free, cityIndex: 0, clientFlags: o.clientFlags }));
       created = true;
     }
 

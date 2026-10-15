@@ -1,0 +1,88 @@
+{
+  "id": "proje",
+  "title": "Proje: oyunu bir yapay zekâ oynuyor",
+  "about": "Kurs ve video izleyicileri için: proje ne, iki beyin (Gemma planlar, Laya dövüşür), yaratıkların tehlike dereceleri, antrenman alanı ve bir modelin öğretmenden ve sonuçtan öğrenmesi. Sayılar data/bestiary.json'dan (lab/bestiary.py, acemi kılıç ustası için).",
+  "scenes": [
+    {
+      "id": "tanisma",
+      "title": "İki beyin: Gemma planlar, Laya dövüşür",
+      "start": "meydan",
+      "steps": [
+        {"say": "Merhaba! Ben Rehber, bu dünyanın oyun yöneticisiyim."},
+        {"say": "Bu projede Ultima Online'ı yapay zekâ oynuyor."},
+        {"say": "Karakterin iki beyni var: biri yavaş düşünür, biri hızlı."},
+        {"say": "Gemma büyük bir model: nereye gidilir, kiminle dövüşülür, o seçer."},
+        {"say": "Laya küçük ve hızlı: dövüşün her hamlesine 40 milisaniyede karar verir."},
+        {"say": "Göstereyim. Önce bir kılıç kuşanayım."},
+        {"gm": "[NeoTemplate Rehber warrior-novice"},
+        {"add": "TimberWolf", "at": [2, 0], "as": "kurt"},
+        {"say": "Gemma der ki: 'Bir kurt. Tehlikesi düşük, dövüşebilirim.'"},
+        {"say": "Sonra dövüşü Laya'ya verir: vur, yaklaş, gerekirse sargı sar."},
+        {"attack": "kurt", "max": 40},
+        {"war": false},
+        {"say": "Dövüş bitti. Gemma sıradaki hedefi düşünür."},
+        {"say": "Büyük model plan yapar, küçük model refleksle oynar."}
+      ]
+    },
+    {
+      "id": "tehlike",
+      "title": "Tehlike: iyi dövüş, kötü dövüş",
+      "start": "meydan",
+      "steps": [
+        {"say": "Her yaratığın gücünü oyunun kendi kaynak kodundan okuduk."},
+        {"say": "Buna bestiary diyoruz: 288 yaratık, canı, hasarı, büyüsü."},
+        {"add": "TimberWolf", "at": [-2, 2], "set": {"Blessed": true}, "as": "kurt"},
+        {"add": "Lich", "at": [2, 2], "set": {"Blessed": true, "FightMode": "None"}, "as": "lich"},
+        {"say": "Solda bir kurt, sağda bir lich. Yan yana duruyorlar."},
+        {"say": "Kurt: tehlike düşük. Canının yüzde 28'ine mal olur, 15 saniye sürer."},
+        {"say": "Yani iyi bir dövüş: becerin artar, sağ kalırsın."},
+        {"say": "Lich: tehlike ölümcül. Canının iki katından fazlasını alır."},
+        {"say": "Büyüyle uzaktan vurur; kılıçla yanına varamadan ölürsün."},
+        {"say": "Gemma her yaratığın yanında bu dereceyi görür: düşük, orta, yüksek, ölümcül."},
+        {"say": "Akıllı oyuncu ölümcülden uzak durur. Kötü dövüşü seçmek hatadır."},
+        {"cleanup": true},
+        {"say": "Gösteri bitti, yaratıklar gitti."}
+      ]
+    },
+    {
+      "id": "antrenman",
+      "title": "Antrenman alanı: zararsızdan ölümcüle",
+      "start": "meydan",
+      "steps": [
+        {"say": "Gemma'nın antrenman alanı Jhelom adalarında, duvarlı bir avlu."},
+        {"say": "Şu an orada Gemma oynuyor, rahatsız etmeyelim. Küçüğünü burada kurayım."},
+        {"add": "Rat", "at": [-3, 2], "set": {"Blessed": true}, "as": "fare"},
+        {"add": "TimberWolf", "at": [-1, 2], "set": {"Blessed": true}, "as": "kurt"},
+        {"add": "BlackBear", "at": [1, 2], "set": {"Blessed": true}, "as": "ayi"},
+        {"add": "GrizzlyBear", "at": [3, 2], "set": {"Blessed": true, "FightMode": "None"}, "as": "boz-ayi"},
+        {"say": "Batıda zararsızlar: fare, sonra kurt. Doğuya gittikçe tehlike artar."},
+        {"say": "Kara ayı orta, boz ayı ölümcül. Hepsi yalnız saldırana karşılık verir."},
+        {"say": "Avlunun doğu köşelerinde gören herkese saldıran üç zayıf ölü de var."},
+        {"say": "Ölen yaratık iki dakikada yerine döner; alan hep aynı kalır."},
+        {"say": "Gemma ölürse 30 saniye sonra GM onu avlunun batısında diriltir."},
+        {"say": "Böylece oturumları birbiriyle karşılaştırabiliriz."},
+        {"say": "Soru şu: doğru yaratığı seçiyor mu, canı azalınca geri çekiliyor mu?"},
+        {"cleanup": true}
+      ]
+    },
+    {
+      "id": "ogrenme",
+      "title": "Öğrenme: öğretmenden ve sonuçtan",
+      "start": "meydan",
+      "steps": [
+        {"say": "Laya nasıl öğrendi? Önce bir öğretmeni taklit ederek."},
+        {"say": "Öğretmen büyük bir model: binlerce an için 'burada ne yapılır' der."},
+        {"gm": "[NeoTemplate Rehber warrior-novice"},
+        {"say": "Bir an kuralım: canım azaldı diyelim."},
+        {"gm": "[Self Set Hits 30"},
+        {"say": "Öğretmen bu anda 'sargı sar' der."},
+        {"say": "Laya cevabı ezberlemez; benzer anlarda ne yapılacağını öğrenir."},
+        {"bandage": "self", "max": 15},
+        {"say": "İkinci yol sonuçtan öğrenmek: ortalamadan iyi giden hamleler ders olur."},
+        {"say": "Bu sargının sonucu da kaydedildi: iyi gittiyse yeni bir örnek olur."},
+        {"say": "Her karar kaydedilir: durum, seçenekler, seçim ve sonucu."},
+        {"say": "Yeni model bir sınavdan geçer; eskisinden iyiyse onun yerine geçer."}
+      ]
+    }
+  ]
+}

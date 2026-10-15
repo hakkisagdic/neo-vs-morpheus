@@ -1,6 +1,7 @@
 // What one bot knows about the world, kept current from server packets.
 // Layouts follow ModernUO's outgoing packet writers for a 7.0.x client.
 import { EventEmitter } from "node:events";
+import { inflateRawSync, inflateSync } from "node:zlib";
 import { PacketReader } from "../uo/io.ts";
 import { type Spell, spellFromWords } from "../uo/spells.ts";
 
@@ -57,6 +58,12 @@ export type JournalEntry = {
 
 export type TargetCursor = { id: number; type: number; flags: number; at: number };
 
+/** A gump the server opened: its serial and type answer it (0xB1); the layout names what it shows. */
+export type Gump = { serial: number; typeId: number; layout: string; at: number };
+
+/** A vendor's buy window (0x74): its ShopBuy container and the prices and names, in the server's order. */
+export type BuyList = { container: number; entries: { price: number; name: string }[]; at: number };
+
 export type Skill = { value: number; base: number; cap: number; lock: number };
 
 type WorldEvents = {
@@ -75,6 +82,10 @@ type WorldEvents = {
   sound: [id: number, x: number, y: number, z: number];
   /** The player's mana changed (0xA2 or a full status): a successful cast spends it as its delay ends. */
   mana: [before: number, after: number];
+  /** A container's window opened (0x24): a bank box (gump 0x4A), a vendor's buy window (0x30). */
+  container: [serial: number, gump: number];
+  buyList: [list: BuyList];
+  gump: [gump: Gump];
 };
 
 export const LAYER_BACKPACK = 0x15;
@@ -99,6 +110,18 @@ export const NECRO_REAGENTS: Record<number, string> = {
   0x0f8e: "noxCrystal",
   0x0f8f: "graveDust",
 };
+
+/** A compressed gump layout as text; "" when it does not inflate. */
+function inflated(data: Uint8Array): string {
+  for (const inflate of [inflateSync, inflateRawSync]) {
+    try {
+      return new TextDecoder("latin1").decode(inflate(data));
+    } catch {
+      // the other format, or not compressed at all
+    }
+  }
+  return "";
+}
 
 const newMobile = (serial: number): Mobile => ({
   serial,
@@ -129,6 +152,11 @@ export class World extends EventEmitter<WorldEvents> {
   playerSerial = 0;
   mapWidth = 0;
   mapHeight = 0;
+  /** The facet we are on (0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur), -1 until told. */
+  map = -1;
+  /** Gumps open on our screen, by serial, until answered. */
+  readonly gumps = new Map<number, Gump>();
+  buyList: BuyList | null = null;
   warMode = false;
   backpack = 0;
   /** tithing: Chivalry's points (status version 4 and later). */
@@ -259,6 +287,16 @@ export class World extends EventEmitter<WorldEvents> {
         return this.#extended(r);
       case 0xdf:
         return this.#buff(r);
+      case 0x24: {
+        const serial = r.u32();
+        this.emit("container", serial, r.u16());
+        return;
+      }
+      case 0x74:
+        return this.#buyList(r);
+      case 0xb0:
+      case 0xdd:
+        return this.#gump(id, r);
       case 0x54: {
         r.skip(1); // flags
         const sound = r.u16();
@@ -619,11 +657,65 @@ export class World extends EventEmitter<WorldEvents> {
     const sub = r.u16();
     if (sub === 0x08) {
       // Map change: positions from the old facet are meaningless now.
+      this.map = r.remaining >= 1 ? r.u8() : this.map;
       for (const serial of this.mobiles.keys()) {
         if (serial !== this.playerSerial) {
           this.mobiles.delete(serial);
         }
       }
+    } else if (sub === 0x04 && r.remaining >= 4) {
+      // The server closed a gump of this type.
+      const typeId = r.u32();
+      for (const [serial, gump] of this.gumps) {
+        if (gump.typeId === typeId) {
+          this.gumps.delete(serial);
+        }
+      }
     }
+  }
+
+  /** 0x74: the buy window's container, then each entry's price and name (a cliloc number or a name). */
+  #buyList(r: PacketReader): void {
+    r.skip(2);
+    const container = r.u32();
+    const count = r.u8();
+    const entries: BuyList["entries"] = [];
+    for (let i = 0; i < count && r.remaining >= 5; i++) {
+      const price = r.u32();
+      const length = r.u8();
+      const name = r.fixedString(length);
+      entries.push({ price, name });
+    }
+    this.buyList = { container, entries, at: this.now() };
+    this.emit("buyList", this.buyList);
+  }
+
+  /**
+   * 0xB0 (plain) and 0xDD (its layout deflated): serial, type, position, then the layout. Only what
+   * answering needs is kept, and the layout for telling one gump from another.
+   */
+  #gump(id: number, r: PacketReader): void {
+    r.skip(2);
+    const serial = r.u32();
+    const typeId = r.u32();
+    r.skip(8); // x, y
+    let layout = "";
+    if (id === 0xb0) {
+      layout = r.fixedString(r.u16());
+    } else if (r.remaining >= 8) {
+      const packed = r.u32() - 4;
+      r.skip(4); // unpacked length
+      layout = inflated(r.data.subarray(r.pos, r.pos + Math.max(0, packed)));
+    }
+    const gump = { serial, typeId, layout, at: this.now() };
+    this.gumps.set(serial, gump);
+    // Most bots never answer gumps: keep the newest few, not every one a long run brings.
+    for (const old of this.gumps.keys()) {
+      if (this.gumps.size <= 16) {
+        break;
+      }
+      this.gumps.delete(old);
+    }
+    this.emit("gump", gump);
   }
 }

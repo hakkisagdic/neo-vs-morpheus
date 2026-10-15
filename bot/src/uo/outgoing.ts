@@ -41,14 +41,20 @@ export const gameLogin = (authKey: number, account: string, password: string) =>
 export const clientVersionReply = (version: string) =>
   new PacketWriter(16).u8(0xbd).u16(0).nullString(version).finish(true);
 
+/**
+ * Client flags: the facets the client says it can show (ModernUO's ClientFlags). The bots have always
+ * sent none; then the server offers them Felucca alone, at a public moongate for one.
+ */
+export const FACETS_ML = 0x1f; // Felucca, Trammel, Ilshenar, Malas, Tokuno
+
 /** 0x5D: play an existing character. */
-export const playCharacter = (name: string, slot: number) =>
+export const playCharacter = (name: string, slot: number, clientFlags = 0) =>
   new PacketWriter(73)
     .u8(0x5d)
     .u32(0xedededed)
     .fixedString(name, 30)
     .zeros(2)
-    .u32(0) // client flags
+    .u32(clientFlags)
     .zeros(24)
     .u32(slot)
     .u32(0x7f000001)
@@ -67,6 +73,8 @@ export type NewCharacter = {
   hairHue: number;
   cityIndex: number;
   slot: number;
+  /** As in playCharacter. */
+  clientFlags?: number;
 };
 
 /** 0xF8: create a character (7.0.16+ clients: four starting skills, 106 bytes). */
@@ -78,7 +86,7 @@ export function createCharacter(c: NewCharacter): Uint8Array {
     .u8(0)
     .fixedString(c.name, 30)
     .zeros(2)
-    .u32(0) // client flags
+    .u32(c.clientFlags ?? 0)
     .zeros(8)
     .u8(0) // profession: custom
     .zeros(15)
@@ -185,3 +193,63 @@ export const speech = (text: string, hue = 0x34, font = 3) =>
     .fixedString("ENU", 4)
     .unicodeNull(text)
     .finish(true);
+
+/**
+ * Speech keywords: ids from the client's speech.mul that NPCs answer to. A real client finds them in
+ * what the player types; ModernUO's bankers and vendors read only these ids, never the words, so a
+ * "bank" said without its id opens nothing.
+ */
+export const KEYWORDS = { withdraw: 0x00, balance: 0x01, bank: 0x02, check: 0x03, "vendor buy": 0x3c, "vendor sell": 0x14d } as const;
+
+export type Keyword = keyof typeof KEYWORDS;
+
+/**
+ * 0xAD with keywords (type 0xC0): a 12-bit count, then each keyword in 12 bits, packed into bytes
+ * (a last half byte is padding), then the text in UTF-8, as ModernUO's UnicodeSpeech reads them.
+ */
+export function keywordSpeech(text: string, keywords: readonly number[], hue = 0x34, font = 3): Uint8Array {
+  const nibbles: number[] = [];
+  for (const v of [keywords.length, ...keywords]) {
+    nibbles.push((v >> 8) & 0xf, (v >> 4) & 0xf, v & 0xf);
+  }
+  if (nibbles.length % 2) {
+    nibbles.push(0);
+  }
+  const packed = new Uint8Array(nibbles.length / 2).map((_, i) => (nibbles[2 * i] << 4) | nibbles[2 * i + 1]);
+  const utf8 = new TextEncoder().encode(text);
+  return new PacketWriter(13 + packed.length + utf8.length)
+    .u8(0xad)
+    .u16(0)
+    .u8(0xc0) // regular speech, encoded
+    .u16(hue)
+    .u16(font)
+    .fixedString("ENU", 4)
+    .bytes(packed)
+    .bytes(utf8)
+    .u8(0)
+    .finish(true);
+}
+
+/** 0x09: a single click; the server answers with the object's name (a mobile's with its title) overhead. */
+export const singleClick = (serial: number) => new PacketWriter(5).u8(0x09).u32(serial).finish();
+
+/**
+ * 0x3B: buy from a vendor's buy window: the vendor, then each item as the window listed it (its
+ * serial there) and how many.
+ */
+export function vendorBuy(vendor: number, items: readonly { serial: number; amount: number }[]): Uint8Array {
+  const w = new PacketWriter(8 + items.length * 7).u8(0x3b).u16(0).u32(vendor).u8(items.length ? 0x02 : 0x00);
+  for (const item of items) {
+    w.u8(0x1a).u32(item.serial).u16(item.amount); // 0x1A: the vendor's ShopBuy layer
+  }
+  return w.finish(true);
+}
+
+/** 0xB1: answer a gump with the button pressed and the switches (radios, checkboxes) on; no text entries. */
+export function gumpResponse(serial: number, typeId: number, button: number, switches: readonly number[] = []): Uint8Array {
+  const w = new PacketWriter(23 + switches.length * 4).u8(0xb1).u16(0).u32(serial).u32(typeId).u32(button).u32(switches.length);
+  for (const s of switches) {
+    w.u32(s);
+  }
+  return w.u32(0).finish(true);
+}

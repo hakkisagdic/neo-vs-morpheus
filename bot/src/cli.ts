@@ -43,6 +43,8 @@ import { SkillTrainer } from "./game/train.ts";
 import { OracleTrainBrain, SKILL_NAME, TRAIN_QUESTION, type TrainSkill, describeTraining, levelOf, makeTrainBrain, trainOptions } from "./game/train-brain.ts";
 import { MonitorHub } from "./monitor/hub.ts";
 import { PanelServer, startFleetPulls } from "./panel/server.ts";
+import { Director, agentSessionRunning, guideSession, setupGuide } from "./rehber/director.ts";
+import { type Step, loadAll, sceneSeconds } from "./rehber/scenes.ts";
 
 const USAGE = `usage: npm run nvm -- <command>
 
@@ -100,6 +102,12 @@ const USAGE = `usage: npm run nvm -- <command>
                       say each GM command as the owner and print what the server answers, S
                       seconds each (default 20): "[Decorate" "[GenerateSpawners Data/Spawns/uoml/**/*.json";
                       --settle: the next command once the server answered and then was quiet for MS
+  rehber list | setup | <category> [scene] [--dry]
+                      the in-game guide: a GameMaster of its own (account rehber) that explains and
+                      shows, scene by scene (data/rehber/<category>.json, in Turkish); setup makes it
+                      once (its character, GameMaster rights from the owner); --dry prints the steps.
+                      Always on the world server (UO_WORLD_HOST/PORT, default 127.0.0.1:2650, lab/world.sh).
+                      Scenes that act at the arena wait for no agent session (lab/uo_agent.py) to run
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
   eval [laya] [jev] [--suite duel|movement|sight|melee]
                       decision quality on canonical moments, no clock involved
@@ -610,6 +618,76 @@ async function gmCommands(args: string[]): Promise<void> {
   }
 }
 
+/** One step as a line, for `rehber ... --dry`. */
+function describeStep(s: Step): string {
+  const { kind, ...rest } = s;
+  return kind === "say" ? `say  "${s.text}" (${s.seconds.toFixed(1)} s)` : `${kind.padEnd(4)} ${JSON.stringify(rest)}`;
+}
+
+/** The in-game guide (src/rehber): list its scenes, make it, or play a category's scenes. */
+async function rehber(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { dry: { type: "boolean" } } });
+  const [what = "list", sceneId] = positionals;
+  const { categories, places, problems } = loadAll();
+  if (what === "list") {
+    for (const c of categories) {
+      console.log(`${c.id}: ${c.title}\n  ${c.about}`);
+      for (const s of c.scenes) {
+        const seconds = sceneSeconds(s);
+        const length = seconds < 90 ? `${seconds} sn` : `${(seconds / 60).toFixed(1)} dk`;
+        console.log(`  ${s.id.padEnd(12)} ${s.title} (~${length}${s.needs ? ", yalnız oturum yokken" : ""})`);
+      }
+    }
+    console.log(`\nnpm run nvm -- rehber <category> [scene]   (setup once: npm run nvm -- rehber setup)`);
+    if (problems.length) {
+      console.log(`\nproblems in data/rehber:\n  ${problems.join("\n  ")}`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+  if (problems.length) {
+    throw new Error(`data/rehber has problems:\n  ${problems.join("\n  ")}`);
+  }
+  if (what === "setup") {
+    await setupGuide();
+    return;
+  }
+  const category = categories.find((c) => c.id === what);
+  if (!category) {
+    throw new Error(`no category ${what}; one of ${categories.map((c) => c.id).join(", ")} (or list, setup)`);
+  }
+  const scenes = sceneId ? category.scenes.filter((s) => s.id === sceneId) : category.scenes;
+  if (!scenes.length) {
+    throw new Error(`${category.id} has no scene ${sceneId}; one of ${category.scenes.map((s) => s.id).join(", ")}`);
+  }
+  if (values.dry) {
+    for (const s of scenes) {
+      console.log(`== ${category.id}/${s.id}: ${s.title} (start: ${s.start}${s.needs ? `, needs ${s.needs}` : ""})`);
+      for (const step of s.steps) {
+        console.log(`  ${describeStep(step)}`);
+      }
+    }
+    return;
+  }
+  if (sceneId && scenes[0].needs === "no-session" && agentSessionRunning()) {
+    throw new Error(`${category.id}/${sceneId} acts at the arena; an agent session (lab/uo_agent.py) is running, so it waits`);
+  }
+  const session = await guideSession((m) => console.log(m));
+  try {
+    const director = new Director(session, places);
+    for (const s of scenes) {
+      // Asked again before each scene: a session may have started meanwhile (Director.play checks too).
+      if (s.needs === "no-session" && agentSessionRunning()) {
+        console.log(`== ${s.id}: skipped while an agent session runs (it acts at the arena)`);
+        continue;
+      }
+      await director.play(s);
+    }
+  } finally {
+    session.close();
+  }
+}
+
 /** A fight inside the game through Navrey, Laya making every move (src/navrey/fight.ts). */
 async function navreyFight(args: string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -980,6 +1058,9 @@ try {
       break;
     case "gm":
       await gmCommands(args);
+      break;
+    case "rehber":
+      await rehber(args);
       break;
     case "fight":
       await navreyFight(args);

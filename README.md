@@ -69,6 +69,8 @@ npm run nvm -- duel Neo:laya Morpheus:rules --arena wall   # obstacles: open, pi
 npm run nvm -- bench laya               # decision latency
 npm run nvm -- train Trinity --partner Tank --minutes 30   # level a bot's skills
 npm run nvm -- login Neo                # create/log in a bot and report
+npm run nvm -- rehber list              # the in-game guide on the world server (Turkish scenes,
+                                        # data/rehber): rehber setup once, then e.g. rehber oyuncu kapi
 ```
 
 ### Templates

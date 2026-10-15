@@ -1,0 +1,107 @@
+{
+  "id": "gm",
+  "title": "GM güçleri rehberi",
+  "about": "GM komutları: projenin Neo komutları (oturum sürerken yalnız güvenli olanlar, arena komutları oturum yokken) ve ModernUO'nun genel komutları (Where, Go, Tele, Hide, Add, Props, Set, Range/Facet ... where), gösteri yaratıkları üzerinde. Rehber bir GameMaster'dır: [Global yöneticilerin.",
+  "scenes": [
+    {
+      "id": "neo",
+      "title": "Neo komutları: karakter hazırlamak",
+      "start": "meydan",
+      "steps": [
+        {"say": "Neo komutları bu projenin kendi GM komutları."},
+        {"say": "NeoTemplate bir karaktere şablon giydirir: beceri, statü, eşya."},
+        {"gm": "[NeoTemplate Rehber warrior-novice"},
+        {"say": "Şimdi acemi bir kılıç ustasıyım: kılıç, kalkan, deri zırh, sargı."},
+        {"say": "NeoPrep karakteri hazırlar: diriltir, iyileştirir, eşyasını tamamlar."},
+        {"gm": "[Self Set Hits 25"},
+        {"say": "Canım 25'e düştü. Şimdi NeoPrep:"},
+        {"gm": "[NeoPrep Rehber"},
+        {"say": "Can yine tam. Ajan ölünce GM onu böyle geri getirir."},
+        {"say": "Arena komutları da var: NeoPlace, NeoSpawn, NeoMage, NeoClear, NeoArena."},
+        {"say": "Bunlar arenada iş görür. Orada Gemma oynarken onlara dokunmam."},
+        {"say": "Oturum yokken 'rehber gm arena' sahnesi onları gösterir."}
+      ]
+    },
+    {
+      "id": "arena",
+      "title": "Arena komutları (yalnız oturum yokken)",
+      "start": "arena-bati",
+      "needs": "no-session",
+      "steps": [
+        {"say": "Burası arena: ajanların antrenman avlusu. Şu an kimse oynamıyor."},
+        {"say": "NeoPlace bir oyuncuyu hazırlayıp arenanın bir yanına koyar."},
+        {"gm": "[NeoPlace Rehber west 8"},
+        {"say": "NeoSpawn bir yaratığı merkeze göre istediğin yere koyar."},
+        {"gm": "[NeoSpawn Rat -2 3 2"},
+        {"say": "NeoMage doğu yanına bir büyücü rakip çıkarır."},
+        {"gm": "[NeoMage EvilMage 8"},
+        {"say": "NeoClear arenadaki yaratıkları ve cesetleri siler: raunt arası temizlik."},
+        {"gm": "[NeoClear 20"},
+        {"say": "NeoArena engelleri kurar: açık, sütunlar, duvar, halka."},
+        {"say": "Onu çalıştırmıyorum: avlunun düzeni sonraki oturumu bekliyor."},
+        {"go": "meydan"}
+      ]
+    },
+    {
+      "id": "yer",
+      "title": "Yer değiştirmek: Where, Tele, Go, Hide",
+      "start": "meydan",
+      "steps": [
+        {"say": "Neredeyim? [Where konumumu ve bölgemi söyler."},
+        {"gm": "[Where"},
+        {"say": "Tele komutuyla hedeflediğim yere ışınlanırım. Beş adım doğuya:"},
+        {"gm": "[Tele", "target": [5, 0]},
+        {"say": "Go ise bir koordinata, bölgeye ya da nesneye götürür."},
+        {"go": "banka"},
+        {"say": "Bankadayım. Şimdi meydana dönüyorum."},
+        {"go": "meydan"},
+        {"say": "Hide ile görünmez olurum, Unhide ile geri gelirim."},
+        {"gm": "[Self Hide", "wait": 1},
+        {"wait": 3},
+        {"gm": "[Self Unhide", "wait": 1},
+        {"say": "Görünmez bir GM'i oyuncular görmez; GM onları görür."}
+      ]
+    },
+    {
+      "id": "yaratik",
+      "title": "Yaratık: Add, Props, Set, Delete",
+      "start": "meydan",
+      "steps": [
+        {"say": "Add komutu eşya ya da yaratık yaratır; yerini hedef imleciyle seçerim."},
+        {"add": "Mongbat", "at": [2, 0], "set": {"FightMode": "None"}, "as": "yarasa"},
+        {"say": "İşte bir mongbat. [Props ile bütün özelliklerini açarım."},
+        {"gm": "[Props", "target": "yarasa"},
+        {"say": "Canı, gücü, hızı, rengi... Hepsini oradan değiştirebilirim."},
+        {"say": "Set tek bir özelliği komutla değiştirir. Rengini beyaz yapalım."},
+        {"gm": "[Serial {yarasa} Set Hue 1153"},
+        {"say": "Bir de adını:"},
+        {"gm": "[Serial {yarasa} Set Name Pamuk"},
+        {"say": "Artık adı Pamuk. İşim bitince siliyorum."},
+        {"gm": "[Serial {yarasa} Delete"},
+        {"say": "Gösteri yaratıklarını hep silerim; dünya temiz kalır."}
+      ]
+    },
+    {
+      "id": "sorgu",
+      "title": "Toplu komutlar: Range, Facet ve where",
+      "start": "meydan",
+      "steps": [
+        {"say": "Toplu komutlar birçok nesneyi birden seçer. Üç fare yaratalım."},
+        {"add": "Rat", "at": [2, -1], "set": {"Blessed": true}, "as": "fare-1"},
+        {"add": "Rat", "at": [2, 0], "set": {"Blessed": true}, "as": "fare-2"},
+        {"add": "Rat", "at": [2, 1], "set": {"Blessed": true}, "as": "fare-3"},
+        {"say": "Range 5 Count where Rat: beş adım içindeki fareleri sayar."},
+        {"gm": "[Range 5 Count where Rat CantWalk = true"},
+        {"say": "Aynı seçime Set: hepsinin rengi tek komutla değişir."},
+        {"gm": "[Range 5 Set Hue 1157 where Rat CantWalk = true"},
+        {"say": "Facet bütün haritada arar. Trammel'de kaç oyuncu var?"},
+        {"gm": "[Facet Count where PlayerMobile"},
+        {"say": "Global bütün dünyada arar; onu yalnız yöneticiler kullanır."},
+        {"say": "Silmeden önce hep Count ile bak: neyi seçtiğini gör."},
+        {"say": "Birden çok nesne silerken sunucu onay sorar. Onaylıyorum:"},
+        {"gm": "[Range 5 Delete where Rat CantWalk = true", "confirm": true},
+        {"say": "Fareler gitti. Koşulu dar tut: CantWalk yalnız benim fareleri seçer."}
+      ]
+    }
+  ]
+}
