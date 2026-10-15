@@ -31,7 +31,11 @@ case "${1:-status}" in
 import json, os
 s = json.load(open("settings.json"))
 s.update({"ip": "127.0.0.1", "port": 2650, "uo_directory": os.path.expanduser("~/UO/client"), "client_version": "7.0.117.1",
-          "poi_directory": os.path.expanduser("~/UO/poi"), "last_server_name": "laya world", "plugins": []})
+          "poi_directory": os.path.expanduser("~/UO/poi"), "last_server_name": "laya world", "plugins": [],
+          # A window taller than the screen leaves room for (1117 points on this MacBook, less the menu bar)
+          # is shrunk by macOS while the client keeps drawing at the size asked for: the picture is squeezed
+          # and the mouse lands lower than it looks (27 px at the status button with 1061).
+          "window_size": {"X": 1150, "Y": 960}, "window_position": {"X": 0, "Y": 40}, "is_win_maximized": False})
 json.dump(s, open("settings.json", "w"), indent=2)
 with open(".env", "w") as f:
     f.write(f"UO_USER={os.environ['NAVREY_USER']}\nUO_PASS={os.environ['BOT_PASSWORD']}\n")
