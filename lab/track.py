@@ -12,7 +12,10 @@ is on disk, so a sync can run any number of times:
   training log was kept (.fleet/kaggle-logs/NAME.log), training seconds, and the live result against
   the scripted bot at matched speed next to the champion over the same hours (lab/trainer.py's gate);
 - tags: the status (champion, candidate, promoted, dropped, replaced, dethroned, failed) and the
-  gate's verdict.
+  gate's verdict;
+- the input: the exact training set, as the trainers archived it when the run started
+  (training/hfdata.py: trained/<name>.jsonl in the private Hugging Face archive), named by its sha256
+  and pinned to the archive's commit, so which data made which model can be looked up and checked.
 
 MLflow lives in its own environment: uv venv .mlflow --python 3.12 && uv pip install --python
 .mlflow/bin/python mlflow
@@ -33,6 +36,7 @@ LOGS = os.path.join(ROOT, ".fleet", "kaggle-logs")
 LOCAL_LOGS = os.path.join(ROOT, ".fleet", "train")
 STATE = os.path.join(ROOT, ".fleet", "trainer.json")
 EXPERIMENT = "laya-neo-duel"
+ARCHIVE = "hakkisagdic/neo-vs-morpheus-raw"  # training/hfdata.py's DATA_REPO
 #: Sets whose file name does not follow train-<short>.jsonl (short: the name without "neo-duel-").
 SETS = {
     "neo-duel-v8": "composite-4/train-v8.jsonl",
@@ -105,6 +109,32 @@ def epochs_from_log(name):
     return [(int(e), float(a), float(c)) for e, a, c in re.findall(r"epoch (\d+)/\d+:.*held-out agreement ([\d.]+), soft CE ([\d.]+)", text)]
 
 
+def archived(names):
+    """{name: (sha256, commit, bytes)} of the training sets archived as trained/<name>.jsonl, in one call to the Hub;
+    {} when it cannot be reached (offline, no `hf auth login`): the sync goes on without them."""
+    try:
+        from huggingface_hub import HfApi
+
+        infos = HfApi().get_paths_info(ARCHIVE, [f"trained/{n}.jsonl" for n in names], repo_type="dataset", expand=True)
+    except Exception as e:
+        print(f"(the archive was not read: {type(e).__name__}: {e})")
+        return {}
+    return {os.path.basename(i.path)[:-len(".jsonl")]: (i.lfs.sha256, i.last_commit.oid, i.size)
+            for i in infos if getattr(i, "lfs", None) and getattr(i, "last_commit", None)}
+
+
+def log_set(mlflow, run, name, sha, commit, size):
+    """The run's training set as its MLflow input, once."""
+    if any(d.dataset.digest == sha[:16] for d in run.inputs.dataset_inputs):
+        return
+    from mlflow.data.huggingface_dataset_source import HuggingFaceDatasetSource
+    from mlflow.data.meta_dataset import MetaDataset
+
+    source = HuggingFaceDatasetSource(path=ARCHIVE, data_files=f"trained/{name}.jsonl", revision=commit)
+    mlflow.log_input(MetaDataset(source, name=f"{name} training set", digest=sha[:16]), context="training",
+                     tags={"sha256": sha, "bytes": str(size)})
+
+
 def outcome(state, name):
     """The gate's verdict on a version: status and the numbers in it."""
     if name == state.get("champion"):
@@ -136,6 +166,7 @@ def outcome(state, name):
 def sync(names):
     mlflow = mlflow_client()
     state = json.load(open(STATE)) if os.path.exists(STATE) else {}
+    sets = archived(names)
     for name in names:
         config_path = os.path.join(CHECKPOINTS, name, "rl_agent_config.json")
         training = json.load(open(config_path)).get("training", {}) if os.path.exists(config_path) else {}
@@ -150,6 +181,12 @@ def sync(names):
                 params.update({"set": os.path.relpath(data, ROOT), "rows": sum(teachers.values())})
                 params.update({f"rows.{k}": v for k, v in teachers.items()})
                 params.update({f"module.{k}": v for k, v in modules.items()})
+            if name in sets:
+                log_set(mlflow, run, name, *sets[name])
+            # What finetune.py records since 2026-10-15: the set's sha256 and the settings, for runs to be compared.
+            if training.get("data", {}).get("sha256"):
+                params["data.sha256"] = training["data"]["sha256"]
+            params.update({f"settings.{k}": v for k, v in training.get("settings", {}).items()})
             if training:
                 seconds, items = training.get("seconds", 0), training.get("items", 0)
                 hardware = "M5 Max (MPS, this Mac)" if local_log(name) else "A100 (Colab)" if items and seconds / items < 0.1 else "T4 (Kaggle)"
@@ -185,7 +222,9 @@ def show():
 def main():
     command, *names = sys.argv[1:] or ["show"]
     if command == "sync":
-        names = names or sorted(d for d in os.listdir(CHECKPOINTS) if d.startswith(("neo-duel-", "neo-skill-")))
+        # Every version on disk and every one recorded before (most checkpoints live only on Hugging Face now).
+        names = names or sorted({d for d in os.listdir(CHECKPOINTS) if d.startswith(("neo-duel-", "neo-skill-", "neo-v"))}
+                                | {r.info.run_name for r in mlflow_client().search_runs(output_format="list", max_results=1000)})
         state = json.load(open(STATE)) if os.path.exists(STATE) else {}
         names = sorted(set(names) | set(state.get("failed", [])) if not sys.argv[2:] else set(names))
         sync(names)

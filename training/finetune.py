@@ -17,6 +17,7 @@ Run it with the native Laya env (scripts/laya-native.sh start creates it):
         --data training/data/labeled.jsonl --out training/checkpoints/neo-duel
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -33,6 +34,14 @@ from transformers import AutoTokenizer
 
 BASE_REPO = "convaiinnovations/laya"
 BASE_SUBFOLDER = "typed-decisions"
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def pick_device() -> torch.device:
@@ -369,7 +378,12 @@ def main():
         "training": {"mode": args.mode, "epochs": args.epochs, "items": len(train), "teacher": "jev",
                      "base": f"{BASE_REPO}/{BASE_SUBFOLDER}", **({"init": os.path.basename(os.path.normpath(args.init))} if args.init else {}),
                      "seconds": round(time.time() - t0),
-                     "held_out_agreement": [round(agree0, 3), round(agree, 3)]},
+                     "held_out_agreement": [round(agree0, 3), round(agree, 3)],
+                     # Lineage: the exact set (lab/track.py finds it in the archive by this sha256) and the settings.
+                     "data": {"file": os.path.basename(args.data), "sha256": sha256(args.data), "items": len(items), "skipped": skipped},
+                     "settings": {"batch": args.batch, "accum": args.accum, "lr_encoder": args.lr_encoder, "lr_head": args.lr_head,
+                                  "train_top_layers": args.train_top_layers, "holdout": args.holdout, "seed": args.seed,
+                                  "precision": args.precision}},
     })
     cfg.pop("temperature_by_options", None)
     with open(os.path.join(args.out, "rl_agent_config.json"), "w") as f:
