@@ -3,8 +3,11 @@
 then hands them to the trainer as candidates through its inbox (.fleet/trainer-inbox.json):
 
     python3 lab/await_models.py neo-v10s1 neo-v10s2 --skills [--eval-lanes 0,3,2,4]
+    python3 lab/await_models.py neo-v12m3-s1 --skills magery,necromancy,chivalry
 
---skills marks them as able to train skills (the gate still asks `skillcheck` for evidence).
+--skills marks them as able to train skills (the gate still asks `skillcheck` for evidence): Magery alone,
+or the schools named. A model trained on the champion's set must name all of the champion's, or the gate
+drops it as unable to train them (neo-v12m3, 2026-10-15).
 Standard library and the hf CLI only.
 """
 import argparse
@@ -28,7 +31,7 @@ def published(tag):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("names", nargs="+")
-    ap.add_argument("--skills", action="store_true")
+    ap.add_argument("--skills", nargs="?", const="magery", help="the skills they train (default magery), comma separated")
     ap.add_argument("--eval-lanes")
     ap.add_argument("--every", type=float, default=5, help="minutes between looks")
     args = ap.parse_args()
@@ -42,7 +45,7 @@ def main():
             time.sleep(args.every * 60)
     orders = {"candidates": [{"name": n} for n in args.names]}
     if args.skills:
-        orders["skills"] = list(args.names)
+        orders["skills"] = {n: [s.strip() for s in args.skills.split(",") if s.strip()] for n in args.names}
     if args.eval_lanes:
         orders["eval_lanes"] = [int(x) for x in args.eval_lanes.split(",")]
     inbox = os.path.join(ROOT, ".fleet", "trainer-inbox.json")
