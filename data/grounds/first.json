@@ -1,0 +1,27 @@
+{
+  "about": "The first training ground: the arena's walled yard on the Jhelom Islands (Felucca, 31 by 31 tiles inside, one opening in the south-west corner; lab/terrain.py draws it). Creatures that only fight back, from harmless near the start to deadly at the far east side, and three weak undead in the east corners that attack on sight. A creature sees 16 tiles, most of the yard, so these see 8 (perception); nothing aggressive and dangerous is here: the mistake this ground shows is choosing a fight with a deadly creature, or fighting on with little health. Offsets are tiles from the arena's center (NEO_ARENA_X/Y, Felucca 1180,3610 unless set); each creature type appears once.",
+  "map": "Felucca",
+  "center": [1180, 3610],
+  "bounds": [-12, -18, 18, 12],
+  "start": [-9, 0],
+  "clear": 25,
+  "respawn": 120,
+  "prompt": {
+    "start": "You start on a training ground: a walled yard about 30 tiles across on the Jhelom Islands (Felucca), with creatures of many kinds, from harmless to deadly.",
+    "goal": "Play for about {minutes} minutes: get stronger (your skills rise as you fight) and stay alive. Killed creatures come back after a while. Nobody tells you what to fight; you choose.",
+    "world": "there is no town, shop, bank or healer here; the yard's only opening is in its south-west corner, and the ground is the yard.",
+    "death": "If you die, you are brought back to life about 30 seconds later at the yard's west side, refitted and with full health. Your body stays where you died, with what you carried."
+  },
+  "spawns": [
+    {"type": "Rat", "at": [-4, 6], "range": 3, "count": 3},
+    {"type": "Hind", "at": [-3, -6], "range": 3, "count": 2},
+    {"type": "TimberWolf", "at": [3, -8], "range": 3, "count": 2},
+    {"type": "BlackBear", "at": [5, 6], "range": 3, "count": 1},
+    {"type": "Cougar", "at": [9, -4], "range": 3, "count": 1},
+    {"type": "Bull", "at": [11, 8], "range": 3, "count": 1},
+    {"type": "Skeleton", "at": [15, -14], "range": 2, "count": 2, "perception": 8},
+    {"type": "Zombie", "at": [15, 10], "range": 2, "count": 1, "perception": 8},
+    {"type": "PolarBear", "at": [15, -6], "range": 2, "count": 1},
+    {"type": "GrizzlyBear", "at": [15, 2], "range": 2, "count": 1}
+  ]
+}

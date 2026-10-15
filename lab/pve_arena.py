@@ -31,7 +31,7 @@ CREATURES = ["Rat", "Zombie", "Skeleton", "TimberWolf", "BlackBear", "Cougar", "
 
 
 def gm(*commands, wait=2):
-    done = subprocess.run(["bash", os.path.join(ROOT, "lab", "world.sh"), "gm", "--wait", str(wait), *commands],
+    done = subprocess.run(["bash", os.path.join(ROOT, "lab", "world.sh"), "gm", "--wait", str(wait), "--settle", "400", *commands],
                           capture_output=True, text=True, timeout=300)
     return done.stdout + done.stderr
 
@@ -116,7 +116,10 @@ def main():
     finally:
         if args.video:
             print(uo_agent.command("record stop", harness=True, timeout=120), flush=True)
-        gm("[NeoClear 30")
+        # Nobody left behind: the arena cleared, the fighter alive, refitted and back in New Haven.
+        gm("[NeoClear 30", f"[NeoPrep {args.name}", f"[NeoTemplate {args.name} warrior-novice",
+           f'[Global Set Location "(3503, 2574, 14)" where PlayerMobile Name = {args.name}',
+           f"[Global Set Map Trammel where PlayerMobile Name = {args.name}")
         text = summary(rows)
         with open(os.path.join(folder, "summary.txt"), "w") as f:
             f.write(text + "\n")

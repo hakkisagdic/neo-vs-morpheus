@@ -1,5 +1,7 @@
 """Tests for the scripts around the agent sessions: the bestiary, the places, the harness's helpers, the
-session report and the tidy rules. No game, no network: python3 -m unittest discover -s lab"""
+training grounds, the terrain, the session report and the tidy rules. No game, no network:
+python3 -m unittest discover -s lab"""
+import glob
 import json
 import os
 import shutil
@@ -13,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bestiary  # noqa: E402
 import poi  # noqa: E402
 import session_report  # noqa: E402
+import terrain  # noqa: E402
 import tidy  # noqa: E402
 import uo_agent  # noqa: E402
 
@@ -110,6 +113,87 @@ class Harness(unittest.TestCase):
         text = uo_agent.threat(wolf, {"hits": 85, "maxHits": 85})
         self.assertRegex(text, r"^, danger (low|medium): a fight would cost about \d+% of your health now, fights back only$")
         self.assertEqual(uo_agent.threat({"name": "Dunstan", "graphic": 400, "isHuman": True}, {"hits": 85, "maxHits": 85}), "")
+
+
+class Grounds(unittest.TestCase):
+    def setUp(self):
+        with open(os.path.join(tidy.ROOT, "data", "bestiary.json")) as f:
+            self.beasts = {c["type"]: c for c in json.load(f).values()}
+
+    def test_every_ground_fits_its_bounds_and_starts_out_of_reach(self):
+        for path in glob.glob(os.path.join(uo_agent.GROUNDS, "*.json")):
+            g = uo_agent.load_ground(os.path.basename(path)[:-5])
+            x1, y1, x2, y2 = g["bounds"]
+            types = [s["type"] for s in g["spawns"]]
+            self.assertEqual(len(types), len(set(types)), "a type appears once: the census counts by type")
+            for s in g["spawns"]:
+                c = self.beasts[s["type"]]
+                self.assertTrue(x1 <= s["at"][0] <= x2 and y1 <= s["at"][1] <= y2, s)
+                if c["fightMode"] in ("Closest", "Evil"):
+                    # Whatever attacks on sight must not see the start, where the character comes back.
+                    far = max(abs(s["at"][0] - g["start"][0]), abs(s["at"][1] - g["start"][1])) - s["range"]
+                    self.assertGreater(far, s.get("perception", 16), s["type"])
+            text = uo_agent.SYSTEM.format(name="X", start=g["prompt"]["start"], goal=g["prompt"]["goal"].format(minutes=30),
+                                          world=g["prompt"]["world"], death=g["prompt"]["death"])
+            for part in ("start", "world"):
+                self.assertNotIn(uo_agent.TOWN[part], text)
+                self.assertIn(g["prompt"][part], text)
+
+    def test_census_reads_the_gm_answers(self):
+        g = {"center": [100, 100], "bounds": [-5, -5, 5, 5], "map": "Felucca",
+             "spawns": [{"type": "Rat", "count": 3}, {"type": "Troll", "count": 1}, {"type": "Hind", "count": 2}]}
+        answer = ("> [Global Count where Rat Map = Felucca X >= 95 X <= 105 Y >= 95 Y <= 105\n  There are 2 matching objects.\n"
+                  "> [Global Count where Troll Map = Felucca X >= 95 X <= 105 Y >= 95 Y <= 105\n  No matching objects found.\n"
+                  "> [Global Count where Hind Map = Felucca X >= 95 X <= 105 Y >= 95 Y <= 105\n  There is one matching object.\n")
+        old = uo_agent.gm
+        uo_agent.gm = lambda *commands, **_: (0, answer)
+        try:
+            self.assertEqual(uo_agent.census(g), {"Rat": 2, "Troll": 0, "Hind": 1})
+            uo_agent.gm = lambda *commands, **_: (0, answer.split("> [Global Count where Hind")[0])
+            self.assertIsNone(uo_agent.census(g))  # a type without an answer: no guess
+        finally:
+            uo_agent.gm = old
+
+
+@unittest.skipUnless(os.path.exists(os.path.join(terrain.CLIENT, "map0LegacyMUL.uop")), "EA's client files")
+class Terrain(unittest.TestCase):
+    def test_reads_the_arena_yard_as_the_client_does(self):
+        f = terrain.Facet("Felucca")
+        self.assertEqual(f.land(1175, 3610), (0x0003, 0))  # the client's canwalk: land 0x0003 z=0
+        self.assertEqual(f.statics(1176, 3600), [(0x05A4, 20)])  # a roof above the yard's north-west room
+        self.assertEqual([f.kind(x, 3610) for x in (1166, 1167, 1180, 1199)], [".", "#", ".", "#"])  # the yard's walls
+
+
+class Guard(unittest.TestCase):
+    def test_attackers_are_the_fighting_creatures_in_reach_quickest_kill_first(self):
+        mobiles = [{"name": "a skeleton", "graphic": 50, "distance": 1, "inWarMode": True, "hits": 100, "maxHits": 100},
+                   {"name": "a rat", "graphic": 238, "distance": 1, "inWarMode": True, "hits": 100, "maxHits": 100},
+                   {"name": "a hind", "graphic": 237, "distance": 1, "inWarMode": False},
+                   {"name": "an evil mage", "graphic": 400, "distance": 6, "inWarMode": True}]
+        d = tempfile.mkdtemp()
+        old = uo_agent.WORLD
+        try:
+            uo_agent.WORLD = os.path.join(d, "world.json")
+            put(uo_agent.WORLD, json.dumps({"mobiles": mobiles}))
+            self.assertEqual([m["name"] for m in uo_agent.attackers({"hits": 85})], ["a rat", "a skeleton"])
+            put(uo_agent.WORLD, json.dumps({"mobiles": mobiles[2:]}))
+            self.assertEqual([m["name"] for m in uo_agent.attackers({"hits": 85})], ["an evil mage"])  # a caster hits from afar
+        finally:
+            uo_agent.WORLD = old
+            shutil.rmtree(d)
+
+    def test_an_action_chosen_before_a_reflex_fight_is_not_done(self):
+        d = tempfile.mkdtemp()
+        try:
+            player = uo_agent.Player(d, "http://laya")
+            player.note("a rat attacked you; Laya fought back, balanced: won")
+            self.assertTrue(player.act(lambda: "done").startswith("Not done"))
+            self.assertEqual(len(player.take_notes()), 1)
+            self.assertEqual(player.act(lambda: "done"), "done")
+            player.events.close()
+            player.decisions.close()
+        finally:
+            shutil.rmtree(d)
 
 
 class SessionReport(unittest.TestCase):

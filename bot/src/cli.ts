@@ -96,9 +96,10 @@ const USAGE = `usage: npm run nvm -- <command>
                       in the real game through Navrey (lab/navrey.sh): Laya (LAYA_URL, melee) makes
                       every move of a fight with that creature until it ends, within tactics/<id>.json;
                       prints how it ended (lab/uo_agent.py's fight tool)
-  gm [--wait S] <command>...
+  gm [--wait S] [--settle MS] <command>...
                       say each GM command as the owner and print what the server answers, S
-                      seconds each (default 20): "[Decorate" "[GenerateSpawners Data/Spawns/uoml/**/*.json"
+                      seconds each (default 20): "[Decorate" "[GenerateSpawners Data/Spawns/uoml/**/*.json";
+                      --settle: the next command once the server answered and then was quiet for MS
   bench <laya|jev>    decision latency on a typical duel state (default 20 calls)
   eval [laya] [jev] [--suite duel|movement|sight|melee]
                       decision quality on canonical moments, no clock involved
@@ -576,17 +577,33 @@ async function login(name: string): Promise<void> {
  * NeoArena's "NEO ..." replies.
  */
 async function gmCommands(args: string[]): Promise<void> {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { wait: { type: "string", default: "20" } } });
+  const { values, positionals } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { wait: { type: "string", default: "20" }, settle: { type: "string" } },
+  });
   if (!positionals.length) {
-    throw new Error("gm [--wait S] <command>...");
+    throw new Error("gm [--wait S] [--settle MS] <command>...");
   }
+  const settle = Number(values.settle ?? 0);
   const gm = await Session.gm((m) => console.log(m));
-  gm.world.on("journal", (e: { text: string }) => console.log(`  ${e.text}`));
+  let heard = 0;
+  gm.world.on("journal", (e: { text: string }) => {
+    heard = Date.now();
+    console.log(`  ${e.text}`);
+  });
   try {
     for (const text of positionals) {
       console.log(`> ${text}`);
+      const said = Date.now();
       gm.say(text);
-      await new Promise((r) => setTimeout(r, Number(values.wait) * 1000));
+      // A command answers at once or not at all (a target cursor, a long save): --wait bounds both.
+      while (Date.now() - said < Number(values.wait) * 1000) {
+        await new Promise((r) => setTimeout(r, 50));
+        if (settle && heard > said && Date.now() - heard >= settle) {
+          break;
+        }
+      }
     }
   } finally {
     gm.close();

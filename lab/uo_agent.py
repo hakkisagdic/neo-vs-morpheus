@@ -5,6 +5,7 @@
     python3 lab/uo_agent.py qwen --model qwen3.8:27b --minutes 30
     python3 lab/uo_agent.py fable --claude claude-fable-5-1 --minutes 30
     python3 lab/uo_agent.py gemma-laya --name Gemma --model gemma4-32k --laya http://127.0.0.1:8100
+    python3 lab/uo_agent.py gemma-ground --name Gemma --model gemma4-32k --laya http://127.0.0.1:8100 --ground first
 
 With --laya the model also gets `fight`, which hands a fight to Laya (a Laya server at that URL):
 the model chooses what to fight and with which tactics, Laya makes every move of the fight
@@ -18,7 +19,11 @@ local model inside the game: it read and wrote files outside Navrey's folder des
 
 Every session starts the same way unless --as-is: the character alive, refitted as a young
 swordsman (templates/warrior-novice.json) and standing in New Haven, through the world server's GM
-(lab/world.sh gm). Any OpenAI-compatible endpoint with tool calls serves (Ollama by default). A Claude model plays
+(lab/world.sh gm). With --ground NAME the session is played on a training ground instead
+(data/grounds/NAME.json): the GM clears it, places its creatures, puts back the ones killed every two
+minutes, and brings the character back at the ground's start after a death.
+
+Any OpenAI-compatible endpoint with tool calls serves (Ollama by default). A Claude model plays
 through Claude Code with its own tools switched off and these four served to it over MCP by this
 same script (`--serve`), so both kinds of player get the same instructions and the same tools. The
 client must already be running and in the world (~/Projects/navrey, `cuo -agent`).
@@ -63,6 +68,10 @@ SESSIONS = os.path.expanduser("~/UO/sessions")
 POI = os.path.expanduser("~/UO/poi")  # lab/poi.py's output, the folder Navrey's settings.json names
 PLACES = None
 BEASTS = None
+# Commands that move the character or act with it: while Laya answers an attack (Guard) they wait for that
+# fight to end, and then they are not sent, since the model chose them before it knew of the fight.
+ACTS = {"attack", "attacknearest", "war", "goto", "gotoexact", "travel", "walk", "stop", "use", "target", "get", "equip", "unequip",
+        "say", "buy", "sell", "drop", "opendoor", "gumpresponse"}
 # The fighter the danger estimates are for: templates/warrior-novice.json's skills, a viking sword.
 FIGHTER = {"swords": 50, "tactics": 50, "anatomy": 50, "parry": 30, "damage": 16, "swing": 3.75}
 WORLD_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh")
@@ -75,7 +84,9 @@ a few hundredths of a second. `fight` hands it one creature: you choose what to 
 carefully (tactics: cautious heals early and may run when hurt; balanced; aggressive fights on), and
 Laya fights until the creature dies, you die, you get away or it goes out of view, then tells you
 how it went. Use `fight` rather than `attack` for anything that fights back, and start cautious
-against a creature you do not know yet."""
+against a creature you do not know yet. When something attacks you and Laya is not fighting already,
+Laya fights back at once (cautiously against a dangerous attacker), and your next tool result tells
+you how it went; a command you sent meanwhile is not carried out."""
 FIGHT_TOOL = {"type": "function", "function": {
     "name": "fight", "description": "Hand a fight with one creature to Laya, which makes every move (swing, bandage, potion, retreat) "
     "until it ends, within the tactics you choose. Returns how it ended and your health.",
@@ -88,10 +99,9 @@ FIGHT_TOOL = {"type": "function", "function": {
 SYSTEM = """You are playing Ultima Online yourself, as a player would, on a private test shard (ModernUO,
 Mondain's Legacy rules). Nobody else is online. Your character {name} is a young swordsman: about
 50 Swordsmanship, Tactics, Healing and Anatomy, a viking sword, a shield, leather armour, 60
-bandages, three greater heal potions and 1,000 gold. You start in New Haven, a guarded town.
+bandages, three greater heal potions and 1,000 gold. {start}
 
-Play however you like for about {minutes} minutes: look around, hunt what you can beat, heal, loot,
-restock, bank, explore, get stronger. Nobody tells you what to do; you choose.
+{goal}
 
 Before every decision that matters (where to go, what to fight, when to run, heal, loot, restock or
 bank), call `decide` with what you chose and why, then act on it.
@@ -140,11 +150,18 @@ Game commands (serials look like 0x0000ABCD; take them from `look` or `mobiles`)
                               waiting on the server (a ghost then cannot move: "You are frozen")
   opendoor / dead
 
-Good to know: New Haven is on an island (Haven Island), and walking cannot cross water: other
+Good to know: {world} Healing with a bandage takes several seconds and is interrupted if you are hit hard;
+the potion heals at once but has a delay between drinks. {death}"""
+# Where a session is played: the open world from New Haven (the default) or a training ground, whose
+# data/grounds/<name>.json brings its own texts for these parts.
+TOWN = {"start": "You start in New Haven, a guarded town.",
+        "goal": """Play however you like for about {minutes} minutes: look around, hunt what you can beat, heal, loot,
+restock, bank, explore, get stronger. Nobody tells you what to do; you choose.""",
+        "world": """New Haven is on an island (Haven Island), and walking cannot cross water: other
 towns and the dungeons are reached through a moongate (`goto New Haven Moongate`; from 1 tile away
 `use` the gate and read `gumps`: each destination's name follows its [radio N] line, and
-`gumpresponse 1 N` travels there; Felucca's destinations are the 100s). Healing with a bandage takes several seconds and is interrupted if you are hit hard;
-the potion heals at once but has a delay between drinks. {death}"""
+`gumpresponse 1 N` travels there; Felucca's destinations are the 100s)."""}
+GROUNDS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "grounds")
 DEATH_HEALER = """A dead character becomes a ghost: walk to
 a healer's shop (`goto closest healer`) and up to the healer (`mobiles`, `click <serial>` tells who is
 who). A healer offers to resurrect you when you come within a few steps: a Resurrection gump, where
@@ -385,6 +402,60 @@ def fight(target, tactics, max_seconds, laya, record):
     return lines[-1] if lines else f"the fight ended without a word (exit {done.returncode})"
 
 
+def attackers(s):
+    """The creatures in reach that are fighting, the quickest to kill first: who is most likely hitting the
+    character (the server tells only the attacker of its own swings). Casters and archers hit from afar."""
+    fighting = [m for m in read_json(WORLD).get("mobiles", []) if m.get("inWarMode") and not m.get("isHuman") and not m.get("isPet")
+                and not m.get("isDead")]
+    near = [m for m in fighting if m.get("distance", 99) <= 1]
+    if not near:
+        near = [m for m in fighting if m.get("distance", 99) <= 10 and (creature(m) or {}).get("ai") in ("mage", "archer")]
+    me = dict(FIGHTER, hits=max(1, s.get("hits") or 1))
+
+    def seconds(m):
+        c = creature(m)
+        return (bestiary.danger(c, me)["seconds"] if c else 30) * (m.get("hits") or 100) / max(1, m.get("maxHits") or 100)
+    return sorted(near, key=seconds)
+
+
+class Guard(threading.Thread):
+    """--laya: an attack outside a fight is answered at once. The model takes seconds a decision and may not
+    answer at all: two skeletons killed the character in 35 s while it tried to bandage (2026-10-15). Laya fights
+    the attacker, cautious (which retreats when hurt) when the attackers together are dangerous; the model's acting
+    commands wait meanwhile, and its next tool result says how the fight went."""
+
+    def __init__(self, player, stop):
+        super().__init__(daemon=True)
+        self.player, self.stop = player, stop
+
+    def run(self):
+        last = read_json(STATE).get("hits")
+        while not self.stop.wait(0.5):
+            s = read_json(STATE)
+            hits, before = s.get("hits"), last
+            last = hits
+            if s.get("charGhost") or hits is None or before is None or hits >= before:
+                continue
+            foes = attackers(s)
+            if not foes or not self.player.busy.acquire(blocking=False):
+                continue  # nobody in reach (poison, a trap) or a fight is on already
+            me = dict(FIGHTER, hits=max(1, hits))
+            loss = sum(bestiary.danger(c, me)["loss"] for c in map(creature, foes) if c)
+            tactics = "cautious" if bestiary.level(loss) in ("high", "deadly") else "balanced"
+            foe = foes[0]
+            try:
+                self.player.reflex = foe["name"]
+                result = fight(foe["serial"], tactics, 120, self.player.laya, os.path.join(self.player.folder, "fights.jsonl"))
+            finally:
+                self.player.reflex = None
+                self.player.busy.release()
+            others = f" (and {len(foes) - 1} more in reach)" if len(foes) > 1 else ""
+            self.player.record(kind="reflex", target=foe["name"], serial=foe["serial"], attackers=len(foes), tactics=tactics,
+                               result=result)
+            self.player.note(f"{foe['name']} attacked you{others}; Laya fought back, {tactics}: {result}")
+            last = read_json(STATE).get("hits")
+
+
 def snapshots(path_in, path_out, every, stop):
     """Copies a Navrey state file into a .jsonl every `every` seconds until `stop` is set."""
     with open(path_out, "a") as out:
@@ -408,6 +479,17 @@ class Player:
         # Where the character died and what stood around it: a model sent back to the same spot four times
         # running (2026-10-13) had it in its history but not in front of it.
         self.deaths, self.ghost = [], bool(read_json(STATE).get("charGhost"))
+        # One fight at a time, the model's or the Guard's; what the Guard did waits in notes for the next tool result.
+        self.busy, self.notes, self.reflex = threading.Lock(), [], None
+
+    def note(self, text):
+        with self.lock:
+            self.notes.append(text)
+
+    def take_notes(self):
+        with self.lock:
+            notes, self.notes = self.notes, []
+        return notes
 
     def record(self, **event):
         with self.lock:
@@ -422,6 +504,9 @@ class Player:
             result = self.run_tool(str(name), args)[:4000]
         except Exception as e:  # a harness bug must not end the session: the model sees it and goes on
             result = f"the tool failed: {type(e).__name__}: {e}"
+        notes = self.take_notes()
+        if notes:
+            result = "\n".join(f"(While you were deciding: {n})" for n in notes) + "\n" + result
         self.counts[name] = self.counts.get(name, 0) + 1
         self.record(kind="tool", name=name, args=args, result=result, ms=round(1000 * (time.time() - started)))
         return result
@@ -440,9 +525,13 @@ class Player:
     def run_tool(self, name, args):
         self.note_death()
         if name == "look":
-            return look(self.deaths)
+            fighting = f"\nLaya is fighting {self.reflex} for you: it attacked you." if self.reflex else ""
+            return look(self.deaths) + fighting
         if name == "command":
-            return command(str(args.get("command", "")))
+            text = str(args.get("command", ""))
+            if self.laya and text.split() and text.split()[0].lower() in ACTS:
+                return self.act(lambda: command(text))
+            return command(text)
         if name == "wait":
             seconds = max(1, min(30, int(args.get("seconds") or 5)))
             # The wait ends early when the character is hurt or dies: a model waiting out a walk into a
@@ -459,6 +548,10 @@ class Player:
                 if not ghost and (s.get("charGhost") or (start is not None and s.get("hits", start) < start)):
                     hurt = True
                     break
+            if hurt and self.laya:
+                time.sleep(1.5)  # the Guard looks every half second: let it take the fight, then wait it out
+                with self.busy:
+                    pass
             lines, self.log_offset = log_since(self.log_offset)
             # Navrey narrates itself too (command replies, which the model has had already, labels, gump dumps
             # `gumps` repeats): what the game said is what matters.
@@ -472,8 +565,8 @@ class Player:
             text = "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
             return text + ("\n(The wait ended early: you are being hurt.)" if hurt else "\n(You are alive again.)" if raised else "")
         if name == "fight" and self.laya:
-            return fight(str(args.get("target", "")), str(args.get("tactics") or "balanced"), int(args.get("max_seconds") or 120),
-                         self.laya, os.path.join(self.folder, "fights.jsonl"))
+            return self.act(lambda: fight(str(args.get("target", "")), str(args.get("tactics") or "balanced"),
+                                          int(args.get("max_seconds") or 120), self.laya, os.path.join(self.folder, "fights.jsonl")))
         if name == "decide":
             entry = {"t": time.time(), "decision": str(args.get("decision", "")), "reason": str(args.get("reason", "")), **snapshot()}
             self.decisions.write(json.dumps(entry) + "\n")
@@ -483,6 +576,14 @@ class Player:
             # A command called as a tool of its own (`mobiles` with {"range": 10}): run it as one.
             return command(" ".join([name.lower()] + [str(v) for v in args.values()]))
         return f"unknown tool {name}; your tools are look, command, wait and decide"
+
+    def act(self, do):
+        """An action of the model's, after any fight the Guard is in; not done when one came in between, since the
+        model chose it without knowing."""
+        with self.busy:
+            with self.lock:
+                changed = bool(self.notes)
+            return "Not done: Laya fought for you meanwhile (above). Send it again if you still want it." if changed else do()
 
 
 def ask(base, model, messages, tools, timeout=600):
@@ -505,14 +606,74 @@ def trimmed(system, turns, start):
     return [system] + [m for turn in turns[start:] for m in turn], start
 
 
-class Reviver(threading.Thread):
-    """--revive gm: 30 s after a death the GM brings the character back next to the nearest healer, with a
-    resurrection's low health, its body left where it fell. A ghost that had to find a healer itself spent
-    25 of a session's 30 minutes at it (2026-10-13), which is not what the sessions are there to measure."""
+def gm(*commands, wait=3, timeout=300):
+    """GM commands on the world server (lab/world.sh gm): its exit code and what the server answered. Each
+    command waits for the server's answer, at most `wait` seconds."""
+    done = subprocess.run(["bash", WORLD_SH, "gm", "--wait", str(wait), "--settle", "400", *commands], capture_output=True, text=True,
+                          timeout=timeout)
+    return done.returncode, done.stdout + done.stderr
 
-    def __init__(self, name, player, stop, delay=30):
+
+def load_ground(name):
+    """A training ground (data/grounds/<name>.json): where its creatures live, its start and its texts."""
+    with open(os.path.join(GROUNDS, f"{name}.json")) as f:
+        ground = json.load(f)
+    ground["name"] = name
+    # NeoPlace puts a player on the arena's centre row, at most 9 tiles west of the centre.
+    if ground["start"][1] != 0 or not -9 <= ground["start"][0] < 0:
+        raise ValueError(f"{name}: the start must be on the centre row, 1 to 9 tiles west of the centre")
+    return ground
+
+
+def to_start(name, ground):
+    """GM commands that bring the character to the ground's start, alive, at full health and refitted."""
+    return [f"[NeoPlace {name} west {-2 * ground['start'][0]}", f"[NeoTemplate {name} warrior-novice"]
+
+
+def spawn(entry):
+    return f"[NeoSpawn {entry['type']} {entry['at'][0]} {entry['at'][1]} {entry['range']}"
+
+
+COUNT = re.compile(r"There is one matching object|There are (\d+) matching objects|No matching objects found")
+
+
+def inside(ground):
+    """A GM condition for being inside the ground: `[Global Count where Rat <this>`."""
+    cx, cy = ground["center"]
+    x1, y1, x2, y2 = ground["bounds"]
+    return f"Map = {ground['map']} X >= {cx + x1} X <= {cx + x2} Y >= {cy + y1} Y <= {cy + y2}"
+
+
+def tune(ground):
+    """GM commands that give the ground's creatures what their spawn entries change: `perception`, how far a
+    creature sees (16 tiles otherwise), so that what attacks on sight keeps to its corner of a small ground."""
+    return [f"[Global Set RangePerception {s['perception']} where {s['type']} {inside(ground)}" for s in ground["spawns"]
+            if "perception" in s]
+
+
+def census(ground):
+    """How many of each of the ground's creatures are inside it now, {type: n}; None if the GM did not answer
+    for every type."""
+    code, out = gm(*[f"[Global Count where {s['type']} {inside(ground)}" for s in ground["spawns"]])
+    found, asked = {}, None
+    for line in out.splitlines():
+        if line.startswith("> [Global Count where "):
+            asked = line.split()[4]
+        elif asked and (m := COUNT.search(line)):
+            found[asked] = int(m.group(1)) if m.group(1) else int("one" in m.group(0))
+            asked = None
+    return found if not code and len(found) == len(ground["spawns"]) else None
+
+
+class Reviver(threading.Thread):
+    """--revive gm: 30 s after a death the GM brings the character back, its body left where it fell: next to the
+    nearest town's healer with a resurrection's low health, or on a training ground at its start, refitted. A ghost
+    that had to find a healer itself spent 25 of a session's 30 minutes at it (2026-10-13), which is not what the
+    sessions are there to measure."""
+
+    def __init__(self, name, player, stop, ground=None, delay=30):
         super().__init__(daemon=True)
-        self.name, self.player, self.stop, self.delay = name, player, stop, delay
+        self.name, self.player, self.stop, self.ground, self.delay = name, player, stop, ground, delay
 
     def run(self):
         died_at = None
@@ -525,34 +686,68 @@ class Reviver(threading.Thread):
             if time.time() - died_at < self.delay:
                 continue
             x, y, facet = s.get("charPosX"), s.get("charPosY"), s.get("map")
-            # A town's healer, in the guards' reach: Old Haven's healer stands among its undead (2026-10-15).
-            healer = nearest("healer", facet, x, y, in_town=True) or nearest("healer", facet, x, y)
-            who = f"where PlayerMobile Name = {self.name}"
-            commands = [f"[Global Res {who}"]
-            if healer:
-                commands.append(f'[Global Set Location "({healer["x"]}, {healer["y"]}, {healer.get("z", 0)})" {who}')
-            done = subprocess.run(["bash", WORLD_SH, "gm", "--wait", "3", *commands], capture_output=True, text=True, timeout=180)
-            self.player.record(kind="revive", died=[x, y, facet], healer=healer and healer["name"], ok=done.returncode == 0)
+            if self.ground:
+                code, _ = gm(*to_start(self.name, self.ground))
+                self.player.record(kind="revive", died=[x, y, facet], at=f"start of {self.ground['name']}", ok=code == 0)
+            else:
+                # A town's healer, in the guards' reach: Old Haven's healer stands among its undead (2026-10-15).
+                healer = nearest("healer", facet, x, y, in_town=True) or nearest("healer", facet, x, y)
+                who = f"where PlayerMobile Name = {self.name}"
+                commands = [f"[Global Res {who}"]
+                if healer:
+                    commands.append(f'[Global Set Location "({healer["x"]}, {healer["y"]}, {healer.get("z", 0)})" {who}')
+                code, _ = gm(*commands, timeout=180)
+                self.player.record(kind="revive", died=[x, y, facet], healer=healer and healer["name"], ok=code == 0)
             died_at = None  # still a ghost at the next look: another try after the delay
+
+
+class Respawner(threading.Thread):
+    """--ground: every `respawn` seconds the GM counts the ground's creatures and puts the missing ones back at
+    their places, as the world's spawners do, so that the ground stays the same through a session."""
+
+    def __init__(self, ground, player, stop):
+        super().__init__(daemon=True)
+        self.ground, self.player, self.stop = ground, player, stop
+
+    def run(self):
+        while not self.stop.wait(self.ground.get("respawn", 120)):
+            now = census(self.ground)
+            if now is None:
+                self.player.record(kind="respawn", ok=False)
+                continue
+            missing = {s["type"]: s["count"] - now[s["type"]] for s in self.ground["spawns"] if now[s["type"]] < s["count"]}
+            if missing:
+                code, _ = gm(*[spawn(s) for s in self.ground["spawns"] for _ in range(missing.get(s["type"], 0))], *tune(self.ground))
+                self.player.record(kind="respawn", spawned=missing, ok=code == 0)
 
 
 def fresh_start(name):
     """The character alive, refitted and at New Haven's centre, so that sessions can be compared."""
     who = f"where PlayerMobile Name = {name}"
-    commands = [f'[Global Set Location "(3503, 2574, 14)" {who}', f"[Global Set Map Trammel {who}", f"[NeoPrep {name}",
-                f"[NeoTemplate {name} warrior-novice"]
-    done = subprocess.run(["bash", os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh"), "gm", "--wait", "5", *commands],
-                          capture_output=True, text=True, timeout=300)
+    code, out = gm(f'[Global Set Location "(3503, 2574, 14)" {who}', f"[Global Set Map Trammel {who}", f"[NeoPrep {name}",
+                   f"[NeoTemplate {name} warrior-novice", wait=5)
     time.sleep(3)
     s = read_json(STATE)
-    if done.returncode or s.get("charGhost") or (s.get("charPosX"), s.get("charPosY")) != (3503, 2574):
-        sys.exit(f"could not set {name} up in New Haven: {(done.stdout + done.stderr).strip()[-400:]}")
+    if code or s.get("charGhost") or (s.get("charPosX"), s.get("charPosY")) != (3503, 2574):
+        sys.exit(f"could not set {name} up in New Haven: {out.strip()[-400:]}")
 
 
-def play_openai(base, model, system, folder, deadline, laya=None):
+def ground_start(name, ground):
+    """A fresh training ground: cleared of creatures and bodies, the character refitted at the start and every
+    creature at its place, so that sessions on it can be compared."""
+    commands = [f"[NeoClear {ground['clear']}", *to_start(name, ground)]
+    commands += [spawn(s) for s in ground["spawns"] for _ in range(s["count"])] + tune(ground)
+    code, out = gm(*commands, wait=5)
+    time.sleep(3)
+    s = read_json(STATE)
+    start = (ground["center"][0] + ground["start"][0], ground["center"][1] + ground["start"][1])
+    if code or s.get("charGhost") or (s.get("charPosX"), s.get("charPosY")) != start:
+        sys.exit(f"could not set {name} up on the ground {ground['name']}: {out.strip()[-400:]}")
+
+
+def play_openai(base, model, system, player, deadline):
     """The loop for a model behind an OpenAI-compatible endpoint."""
-    player = Player(folder, laya)
-    tools = TOOLS + ([FIGHT_TOOL] if laya else [])
+    tools = TOOLS + ([FIGHT_TOOL] if player.laya else [])
     system = {"role": "system", "content": system}
     turns = [[{"role": "user", "content": FIRST}]]
     failures, replies, start = 0, 0, 0
@@ -596,6 +791,8 @@ def play_openai(base, model, system, folder, deadline, laya=None):
 def serve(folder, laya=None):
     """The tools as an MCP server on stdin/stdout (JSON-RPC, one message per line), for Claude Code."""
     player = Player(folder, laya)
+    if laya:
+        Guard(player, threading.Event()).start()  # the server lives as long as Claude Code's session
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"], "inputSchema": t["function"]["parameters"]}
              for t in TOOLS + ([FIGHT_TOOL] if laya else [])]
     for raw in sys.stdin:
@@ -671,6 +868,7 @@ def main():
     ap.add_argument("--revive", choices=["gm", "healer"], default="gm",
                     help="after a death: the GM revives the character at the nearest healer 30 s later (gm), or it walks to one as a ghost")
     ap.add_argument("--laya", metavar="URL", help="a Laya server: the model gets `fight`, and Laya makes every move of a fight")
+    ap.add_argument("--ground", metavar="NAME", help="play on a training ground (data/grounds/NAME.json) instead of the open world")
     ap.add_argument("--video", type=float, default=2, metavar="FPS",
                     help="record the game's own frames at FPS into session.mp4 (Navrey's record command; 0: no video)")
     ap.add_argument("--serve", metavar="FOLDER", help=argparse.SUPPRESS)  # the MCP server Claude Code starts
@@ -680,22 +878,35 @@ def main():
     if not args.player or bool(args.model) == bool(args.claude):
         ap.error("a player name and either --model or --claude")
 
+    ground = load_ground(args.ground) if args.ground else None
+    if ground and args.revive != "gm":
+        ap.error("a training ground has no healer: --revive gm")
     name = args.name or args.player.capitalize()
     if not args.as_is:
-        fresh_start(name)
+        if ground:
+            ground_start(name, ground)
+        else:
+            fresh_start(name)
     folder = os.path.join(SESSIONS, f"{time.strftime('%Y-%m-%dT%H-%M')}-{args.player}")
     os.makedirs(folder, exist_ok=True)
-    system = SYSTEM.format(name=name, minutes=int(args.minutes), death=DEATH_GM if args.revive == "gm" else DEATH_HEALER) + (FIGHT if args.laya else "")
+    place = ground["prompt"] if ground else dict(TOWN, death=DEATH_GM if args.revive == "gm" else DEATH_HEALER)
+    system = SYSTEM.format(name=name, start=place["start"], goal=place["goal"].format(minutes=int(args.minutes)), world=place["world"],
+                           death=place["death"]) + (FIGHT if args.laya else "")
     with open(os.path.join(folder, "run.json"), "w") as f:
         json.dump({"player": args.player, "model": args.claude or args.model, "base": None if args.claude else args.base,
-                   "character": name, "fresh": not args.as_is, "revive": args.revive, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
+                   "character": name, "fresh": not args.as_is, "ground": args.ground, "revive": args.revive, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
                   f, indent=1)
 
     stop = threading.Event()
     threads = [threading.Thread(target=snapshots, args=(STATE, os.path.join(folder, "state.jsonl"), 2, stop), daemon=True),
                threading.Thread(target=snapshots, args=(WORLD, os.path.join(folder, "world.jsonl"), 5, stop), daemon=True)]
     if args.revive == "gm":
-        threads.append(Reviver(name, Player(folder), stop))
+        threads.append(Reviver(name, Player(folder), stop, ground))
+    player = None if args.claude else Player(folder, args.laya)  # Claude Code's tools run in their own server (--serve)
+    if player and args.laya:
+        threads.append(Guard(player, stop))
+    if ground:
+        threads.append(Respawner(ground, Player(folder), stop))
     for t in threads:
         t.start()
     log_start = log_size()
@@ -713,7 +924,7 @@ def main():
         if args.claude:
             play_claude(args.claude, system, folder, deadline, args.laya)
         else:
-            play_openai(args.base, args.model, system, folder, deadline, args.laya)
+            play_openai(args.base, args.model, system, player, deadline)
     except KeyboardInterrupt:
         print(f"{time.strftime('%H:%M')} stopped early", flush=True)
     stop.set()
