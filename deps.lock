@@ -7,6 +7,6 @@
 #   scripts/deps.sh backup   refresh the offline git bundles in backups/
 #
 # name      commit                                    url
-modernuo    225c634bf798e545972c16e3465d7896412eefcd  https://github.com/modernuo/ModernUO.git
+modernuo    eff9de028136b11e544fd81375d1e0e710e22dd6  https://github.com/modernuo/ModernUO.git
 laya        4066d5d5fbf08b66c6757ddeedbd797bd7655bc0  https://github.com/NandhaKishorM/laya.git
 sosariaai   ab66060e851639034ea215a0c871b00d26d91009  https://github.com/hakkisagdic/SosariaAI.git
