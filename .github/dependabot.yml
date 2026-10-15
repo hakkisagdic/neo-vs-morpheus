@@ -1,0 +1,22 @@
+# Weekly, one grouped pull request a kind, so the tools the project builds on do not age unseen.
+# What Dependabot cannot see (ModernUO's pin, Navrey, Ollama, MLflow, Node, .NET) is lab/upstream.py's.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /bot
+    schedule:
+      interval: weekly
+    groups:
+      bot:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /server
+    schedule:
+      interval: weekly
