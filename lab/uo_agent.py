@@ -51,6 +51,7 @@ import urllib.error
 import urllib.request
 
 import bestiary
+import loot
 import skillplan
 
 CMD, LOG = "/tmp/cuocmd", "/tmp/cuolog"
@@ -73,6 +74,13 @@ BEASTS = None
 # fight to end, and then they are not sent, since the model chose them before it knew of the fight.
 ACTS = {"attack", "attacknearest", "war", "goto", "gotoexact", "travel", "walk", "stop", "use", "target", "get", "equip", "unequip",
         "say", "buy", "sell", "drop", "opendoor", "gumpresponse"}
+LOOT_TOOL = {"type": "function", "function": {
+    "name": "loot", "description": "Take what is worth taking from a corpse or container next to you (within 2 tiles): "
+    "gold, gems, treasure maps and magic items first, then whatever sells best for its weight, as much as you can carry. "
+    "Returns what you took and what you left.",
+    "parameters": {"type": "object", "properties": {
+        "container": {"type": "string", "description": "the corpse's or container's serial, e.g. 0x4004C7AF"}},
+        "required": ["container"]}}}
 # The fighter the danger estimates are for: templates/warrior-novice.json's skills, a viking sword.
 FIGHTER = {"swords": 50, "tactics": 50, "anatomy": 50, "parry": 30, "damage": 16, "swing": 3.75}
 WORLD_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh")
@@ -115,6 +123,7 @@ Your tools:
 - wait: let a few seconds pass (walking, fighting, healing take time) and see what happened; it
   ends early when you are hurt.
 - decide: note a decision and its reason.
+- loot: take what is worth taking from a corpse next to you, most valuable first, as much as you can carry.
 
 Game commands (serials look like 0x0000ABCD; take them from `look` or `mobiles`):
   mobiles [range]             creatures near you, nearest first
@@ -192,6 +201,7 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {"decision": {"type": "string"}, "reason": {"type": "string"}},
                        "required": ["decision", "reason"]}}},
 ]
+TOOLS.append(LOOT_TOOL)
 
 
 def read_json(path):
@@ -565,6 +575,8 @@ class Player:
             lines = said
             text = "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
             return text + ("\n(The wait ended early: you are being hurt.)" if hurt else "\n(You are alive again.)" if raised else "")
+        if name == "loot":
+            return self.act(lambda: take_loot(str(args.get("container", ""))))
         if name == "fight" and self.laya:
             return self.act(lambda: fight(str(args.get("target", "")), str(args.get("tactics") or "balanced"),
                                           int(args.get("max_seconds") or 120), self.laya, os.path.join(self.folder, "fights.jsonl")))
@@ -743,6 +755,30 @@ class Respawner(threading.Thread):
             if missing:
                 code, _ = gm(*[spawn(s) for s in self.ground["spawns"] for _ in range(missing.get(s["type"], 0))], *tune(self.ground))
                 self.player.record(kind="respawn", spawned=missing, ok=code == 0)
+
+
+def take_loot(serial):
+    """A corpse looted by value (lab/loot.py): opened, listed, and its items taken in order, one lift a second
+    (the server's own delay between lifts), until the weight limit."""
+    if not re.fullmatch(r"0x[0-9A-Fa-f]{1,8}", serial):
+        return f"'{serial}' is not a serial (0x4004C7AF, from look)"
+    opened = command(f"use {serial}")
+    if re.search(r"too far|cannot reach|not in range|out of range", opened, re.I):
+        return f"{opened}\nWalk next to it first."
+    time.sleep(0.5)
+    listing = command(f"container {serial}")
+    weights = loot.status_weight(command("status"))
+    if not weights:
+        return "could not read your weight from `status`"
+    order = loot.plan(listing, *weights)
+    if not order:
+        return f"nothing worth taking in {serial}:\n{listing[-600:]}"
+    took = []
+    for item, amount, why in order:
+        reply = command(f"get {item} {amount}")
+        took.append(f"{amount} x {why.split(':')[0]}" + ("" if re.search(r"grabbed|ok\b", reply, re.I) or not reply.strip() else f" ({reply.strip()[:80]})"))
+        time.sleep(loot.LIFT_INTERVAL)
+    return "Took, most valuable first: " + "; ".join(took)
 
 
 def apply_plan(template="warrior-novice", every=False):
