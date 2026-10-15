@@ -48,7 +48,8 @@ def body_of(text, start):
 
 
 def read(path):
-    text = open(path, encoding="utf-8", errors="replace").read()
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
     out = []
     for m in CTOR.finditer(text):
         cls, ai, rest = m.group(1), m.group(2), m.group(3) or ""

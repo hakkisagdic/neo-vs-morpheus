@@ -26,7 +26,8 @@ def lines(path):
 
 
 def report(folder):
-    run = json.load(open(os.path.join(folder, "run.json")))
+    with open(os.path.join(folder, "run.json")) as f:
+        run = json.load(f)
     me = run.get("system", "").split("Your character ", 1)[-1].split(" ", 1)[0] or "?"
     events = [json.loads(l) for l in lines(os.path.join(folder, "agent.jsonl"))]
     replies = [e for e in events if e.get("kind") == "model"]
