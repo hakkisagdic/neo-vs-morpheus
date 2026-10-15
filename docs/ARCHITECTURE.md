@@ -46,8 +46,11 @@ checkpoint per family of decisions (duel mage, melee, skill training), served by
 `training/serve_checkpoint.py`.
 
 - Question formats: `bot/src/brain/duel-policy.ts` (mage), `bot/src/brain/melee-policy.ts`
-  (fighters), `bot/src/game/train-brain.ts` (skills). A format change means a new version
-  (`FORMAT`, `MELEE_FORMAT`) and converted labels: a model is served with the format it learned.
+  (fighters; melee-3 names the fighter's skills below 100 and what a creature opponent is),
+  `bot/src/game/train-brain.ts` (skills). A format change means a new version (`FORMAT`,
+  `MELEE_FORMAT`) and converted labels. A model is served with the format it learned: its checkpoint
+  records the formats of its training set, and the brain reads them from the checkpoint laya-serve
+  names in its answers.
 - The model chooses only among legal options; the guardrails remove the rest first.
 
 ## 3. Slow strategy: the strategist
@@ -64,13 +67,22 @@ tactics' health bands, chase limits and keep-up spells (`bot/src/brain/tactics.t
 Execution is code too: the bot path's `bot/src/game/duel.ts` (packets), the game path's
 `bot/src/navrey/fight.ts` (Navrey's commands). "The model judges, the code acts."
 
+Reflexes and upkeep the strategist is too slow for live here as well, in `lab/uo_agent.py`: the Guard
+hands an attack outside a fight to Laya at once (deaths on the training ground went from 7 to 1 in
+30 minutes), looting goes by value (`lab/loot.py`, `data/items.json`, `data/valuables.json`), and a
+character's skill and stat locks follow its plan within the shard's caps (`lab/skillplan.py`,
+`data/shards.json`). The server keeps training grounds itself (`[NeoGround`, `server/overlay/NeoGround.cs`).
+
 ## 5. The data loop
 
 - Recording: arena runs (`runs/`, one JSON per match, every decision with its snapshot), agent
   sessions (`~/UO/sessions/<stamp>-<player>/`: decisions with what the character saw, Laya's fights
-  with whole states, the state stream, `session.mp4`), PvE tracks (`~/UO/pve/`).
+  with whole states, the state stream, `session.mp4`), PvE tracks (`~/UO/pve/`). Fights in the real
+  game become arena-format runs in `runs/navrey/` (`lab/navrey_runs.py`).
 - Labels: a teacher (Jev, an oracle computed from the game's formulas, outcomes); `bot/src/distill/`.
-- Training: `lab/trainer.py` (Colab, Kaggle), checkpoints as tags in the private Hugging Face repo.
+- Training: `lab/trainer.py` (Colab, Kaggle), checkpoints as tags in the private Hugging Face repo;
+  each version's exact training set is in the private archive and logged as its MLflow input
+  (`lab/track.py`), and its card says what it was trained on.
 - Promotion: the gate (`lab/trainer.py`, stratified run-level test) and UO Bench (`bench/`,
   `docs/BENCH.md`); a candidate keeps every skill the champion trains.
 - Upkeep: `lab/tidy.py` (daily at 04:00: lossless compression of runs, unused checkpoints, Docker's
