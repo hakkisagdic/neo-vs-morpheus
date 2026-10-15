@@ -65,6 +65,8 @@ export type DuelSnapshot = {
     spells?: readonly string[];
     /** The spells the profile offers in a fight, when it narrows them (none: the default list). */
     offer?: readonly string[];
+    /** Combat skills by name (Swordsmanship, Tactics, …) when known; the melee text names them when any is below 100. */
+    skills?: Readonly<Record<string, number>>;
   };
   them: {
     name: string;
@@ -90,6 +92,8 @@ export type DuelSnapshot = {
      * our hits do not break their spells, and theirs take 0.5 s longer.
      */
     protection?: boolean;
+    /** A creature rather than a player: what the bestiary (brain/bestiary.ts) expects a fight with it to cost us now. */
+    creature?: { danger: "low" | "medium" | "high" | "deadly"; loss: number; attacksOnSight: boolean; caster: boolean };
   };
   /** Consumables in the pack, for templates that carry them. */
   supplies?: Supplies;

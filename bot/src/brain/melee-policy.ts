@@ -6,8 +6,70 @@ import type { ChoiceQuestion } from "./systemone.ts";
 import type { Distribution, DuelSnapshot, Plan } from "./types.ts";
 import { NEUTRAL, type Tactics, applyBands } from "./tactics.ts";
 
-/** Versions of the text and options (see FORMAT in duel-policy.ts). */
-export const MELEE_FORMAT = { describe: "melee-2", question: "melee-2" } as const;
+/**
+ * Versions of the text and options (see FORMAT in duel-policy.ts). melee-3 adds the fighter's skills
+ * when any is below 100 and what a creature opponent is; a duel between full-skill fighters reads as
+ * melee-2 wrote it, so the labels asked with melee-2 still hold. A model reads the text it learned:
+ * the champions up to 2026-10-15 learned melee-2, so melee-3 is written only where MELEE_DESCRIBE=melee-3
+ * says so (training data for a melee-3 model, and that model once it plays).
+ */
+export type MeleeDescribe = "melee-2" | "melee-3";
+const DESCRIBE: MeleeDescribe = process.env.MELEE_DESCRIBE === "melee-3" ? "melee-3" : "melee-2";
+export const MELEE_FORMAT = { describe: DESCRIBE, question: "melee-2" } as const;
+
+/** The skills a fighter's text names, by UO's 0-based skill id. */
+export const COMBAT_SKILLS: Readonly<Record<number, string>> = {
+  40: "Swordsmanship",
+  41: "Mace Fighting",
+  42: "Fencing",
+  31: "Archery",
+  43: "Wrestling",
+  27: "Tactics",
+  1: "Anatomy",
+  17: "Healing",
+  5: "Parrying",
+};
+
+/** The skill a weapon uses (none: Wrestling). */
+export function weaponSkill(w: { name: string; ranged: boolean } | null | undefined): string {
+  if (!w) {
+    return "Wrestling";
+  }
+  if (w.ranged) {
+    return "Archery";
+  }
+  if (/kryss|fork|spear|pike|dagger|lance/i.test(w.name)) {
+    return "Fencing";
+  }
+  if (/mace|hammer|club|staff|maul|scepter|axe of/i.test(w.name)) {
+    return "Mace Fighting";
+  }
+  return "Swordsmanship";
+}
+
+/** "Your skills: Swordsmanship 50, …" while any of the fighter's skills is below 100; nothing at full skill. */
+function skillsLine(s: DuelSnapshot): string {
+  const skills = s.us.skills;
+  if (!skills) {
+    return "";
+  }
+  // Skills a fighter has (an archer's Parrying at 0 is no part of it).
+  const named = [weaponSkill(s.us.weapon), "Tactics", "Anatomy", "Healing", "Parrying"].filter((k) => (skills[k] ?? 0) > 0);
+  if (!named.length || named.every((k) => Math.round(skills[k] ?? 0) >= 100)) {
+    return "";
+  }
+  return `Your skills: ${named.map((k) => `${k} ${Math.round(skills[k] ?? 0)}`).join(", ")}.`;
+}
+
+/** ", a creature that attacks on sight: a fight would cost you about 28% of your health (danger low)". */
+function creatureClause(s: DuelSnapshot): string {
+  const c = s.them.creature;
+  if (!c) {
+    return "";
+  }
+  const kind = `a creature${c.caster ? " that casts spells" : ""}${c.attacksOnSight ? ", attacks on sight" : ""}`;
+  return `, ${kind}: a fight would cost you about ${Math.round(100 * c.loss)}% of your health now (danger ${c.danger})`;
+}
 
 export const MELEE_MODES = ["attack", "heal", "cure", "refresh", "throw", "move"] as const;
 
@@ -29,7 +91,7 @@ function abilityCost(s: DuelSnapshot, which: "primary" | "secondary"): number {
   return (s.us.lastAbilityAgoMs ?? Number.POSITIVE_INFINITY) < 3_000 ? base * 2 : base;
 }
 
-export function describeMelee(s: DuelSnapshot): string {
+export function describeMelee(s: DuelSnapshot, describe: MeleeDescribe = MELEE_FORMAT.describe): string {
   const { us, them } = s;
   const w = us.weapon;
   const sup = s.supplies;
@@ -46,9 +108,13 @@ export function describeMelee(s: DuelSnapshot): string {
     self.push((us.healPotionReadyInMs ?? 0) > 0 ? `heal potion ready in ${seconds(us.healPotionReadyInMs ?? 0)}` : "heal potion ready");
   }
   const lines = [
-    `Ultima Online duel, one on one. You are ${us.name}, ${w ? `fighting with a ${w.name}${w.ranged ? " (ranged)" : ""}` : "unarmed"}; your opponent is ${them.name}.`,
+    `Ultima Online duel, one on one. You are ${us.name}, ${w ? `fighting with a ${w.name}${w.ranged ? " (ranged)" : ""}` : "unarmed"}; your opponent is ${them.name}${describe === "melee-3" ? creatureClause(s) : ""}.`,
     `${us.name}: ${self.join(", ")}.`,
   ];
+  const skills = describe === "melee-3" ? skillsLine(s) : "";
+  if (skills) {
+    lines.push(skills);
+  }
   if (sup) {
     const carried = [
       sup.bandages ? `${sup.bandages} bandages` : "",

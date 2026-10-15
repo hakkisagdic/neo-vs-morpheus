@@ -123,3 +123,32 @@ describe("state and answers", () => {
     expect(parts.attack.choice).toBe("swing");
   });
 });
+
+describe("melee-3: skills and creatures", () => {
+  const full = { Swordsmanship: 100, Tactics: 100, Anatomy: 100, Healing: 100, Parrying: 100, Archery: 0 };
+  const novice = { Swordsmanship: 50, Tactics: 50, Anatomy: 50.3, Healing: 50, Parrying: 30 };
+
+  it("reads a duel between full-skill fighters as melee-2 wrote it", () => {
+    const before = describeMelee(fighter());
+    const s = fighter();
+    s.us.skills = full;
+    expect(describeMelee(s, "melee-3")).toBe(before);
+  });
+
+  it("names a novice's skills, the weapon's first", () => {
+    const s = fighter();
+    s.us.skills = novice;
+    expect(describeMelee(s, "melee-3")).toContain("\nYour skills: Swordsmanship 50, Tactics 50, Anatomy 50, Healing 50, Parrying 30.");
+    expect(describeMelee(s)).not.toContain("Your skills"); // melee-2 until MELEE_DESCRIBE=melee-3
+  });
+
+  it("says what a creature opponent is and what a fight with it costs", () => {
+    const s = fighter();
+    s.them.name = "a grizzly bear";
+    s.them.creature = { danger: "deadly", loss: 1.52, attacksOnSight: false, caster: false };
+    expect(describeMelee(s, "melee-3").split("\n")[0]).toBe(
+      "Ultima Online duel, one on one. You are Neo, fighting with a katana; your opponent is a grizzly bear, a creature: " +
+        "a fight would cost you about 152% of your health now (danger deadly).",
+    );
+  });
+});

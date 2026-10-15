@@ -7,7 +7,8 @@ import { appendFileSync, closeSync, openSync, readFileSync, readSync, statSync }
 import type { Tactics } from "../brain/tactics.ts";
 import { tacticsFor } from "../brain/tactics.ts";
 import type { Decision, DuelBrain, DuelSnapshot, Plan, Supplies, WeaponView } from "../brain/types.ts";
-import { MELEE_FORMAT } from "../brain/melee-policy.ts";
+import { creatureFor, danger } from "../brain/bestiary.ts";
+import { MELEE_FORMAT, weaponSkill } from "../brain/melee-policy.ts";
 import { GRAPHIC, HEAL_POTION_DELAY_MS, WEAPONS, abilityMana, selfBandageSeconds } from "../game/items.ts";
 
 const FILES = {
@@ -36,6 +37,7 @@ type NavreyMobile = {
   maxHits: number;
   isDead: boolean;
   isHuman: boolean;
+  graphic?: number;
 };
 type NavreyState = {
   updatedAtMs: number;
@@ -59,7 +61,20 @@ type NavreyState = {
   backpack: NavreyItem[];
   lastAttack: { kind: string; serial?: string };
   nav: { active: boolean; status: string };
+  physicalResistance?: number;
 };
+
+/** Navrey's `skills` lines ("[SKILL] Swordsmanship      50.0 (base  50.0) up") as {name: value}; none when it said nothing. */
+export function parseSkills(lines: string[]): Record<string, number> | undefined {
+  const skills: Record<string, number> = {};
+  for (const l of lines) {
+    const m = /^\[SKILL\] (.+?)\s+(\d+(?:\.\d+)?) \(base/.exec(l);
+    if (m) {
+      skills[m[1]] = Number(m[2]);
+    }
+  }
+  return Object.keys(skills).length ? skills : undefined;
+}
 
 export type FightOutcome = "won" | "died" | "fled" | "lost" | "gave up" | "timeout";
 export type FightResult = {
@@ -167,6 +182,8 @@ export class NavreyFight {
   #hitAt = 0;
   /** Whether the target has been within our reach yet: the walk up to it is not a chase. */
   #met = false;
+  /** Our skills, asked once when the fight starts: the question names them when any is below 100. */
+  #skills: Record<string, number> | undefined;
 
   /** record: each decision, for training; send: a command to Navrey (tests stand in for it). */
   constructor(brain: DuelBrain, tactics: Tactics, target: number, opts: { record?: (row: object) => void; send?: (line: string) => Promise<string[]> } = {}) {
@@ -230,6 +247,21 @@ export class NavreyFight {
       this.#outOfReachSince = now;
     }
     const caster = CASTERS.test(`${them.species ?? ""} ${them.name}`);
+    const beast = them.isHuman ? null : creatureFor(them.name, them.graphic);
+    const k = this.#skills ?? {};
+    const held = s.equipped.find((i) => (i.layer === "OneHanded" || i.layer === "TwoHanded") && WEAPONS[i.graphic]);
+    const cost = beast
+      ? danger(beast, {
+          hits: Math.max(1, s.hits),
+          weapon: k[weaponSkill(weapon)] ?? 50,
+          tactics: k.Tactics ?? 50,
+          anatomy: k.Anatomy ?? 50,
+          parry: k.Parrying ?? 0,
+          damage: 16,
+          swing: held ? WEAPONS[held.graphic].mlSpeed : 3.75,
+          armor: s.physicalResistance,
+        })
+      : null;
     return {
       now,
       us: {
@@ -256,6 +288,7 @@ export class NavreyFight {
         // A shield is held in the second hand (UO's TwoHanded layer): no potions with one.
         freeHand: !s.equipped.some((i) => i.layer === "TwoHanded"),
         outOfReachForMs: this.#outOfReachSince ? now - this.#outOfReachSince : 0,
+        ...(this.#skills ? { skills: this.#skills } : {}),
       },
       them: {
         name: them.name,
@@ -273,6 +306,16 @@ export class NavreyFight {
         inLineOfSight: true,
         inRange: distance <= reach,
         weapon: caster ? null : "natural weapon",
+        ...(beast && cost
+          ? {
+              creature: {
+                danger: cost.level,
+                loss: cost.loss,
+                attacksOnSight: beast.fightMode === "Closest" || beast.fightMode === "Evil",
+                caster: beast.ai === "mage",
+              },
+            }
+          : {}),
       },
       supplies,
       reagents: {},
@@ -380,6 +423,7 @@ export class NavreyFight {
     this.#log = statSync(FILES.log, { throwIfNoEntry: false })?.size ?? 0;
     // Others' health reaches the client only for status bars it asked for.
     await this.#send(`hp ${hex(this.#target)}`);
+    this.#skills = parseSkills(await this.#send("skills"));
     const plans: Record<string, number> = {};
     let decisions = 0;
     let latency = 0;

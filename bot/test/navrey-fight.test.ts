@@ -11,7 +11,7 @@ process.env.NAVREY_STATE = join(dir, "state.json");
 process.env.NAVREY_WORLD = join(dir, "world.json");
 process.env.NAVREY_LOG = join(dir, "log");
 process.env.NAVREY_CMD = join(dir, "cmd");
-const { NavreyFight, describeResult } = await import("../src/navrey/fight.ts");
+const { NavreyFight, describeResult, parseSkills } = await import("../src/navrey/fight.ts");
 
 const WOLF = 0x925d;
 
@@ -100,6 +100,19 @@ describe("a fight through Navrey's files", () => {
     expect(rows[0].snapshot?.them.name).toBe("a timber wolf"); // the whole state kept for training
     expect(rows[0].format).toMatchObject({ describe: "melee-2" });
     expect(describeResult(result)).toMatch(/^won: a timber wolf is dead after \d+ s\. Your hits: 70\/85\./);
+  });
+
+  it("asks for the fighter's skills once and knows the creature from the bestiary", async () => {
+    write("state.json", state());
+    write("world.json", { mobiles: [mobile("a timber wolf", "Timber Wolf", 101)], containers: [] });
+    const { b, seen } = brain(() => write("world.json", { mobiles: [], containers: [{ name: "A Timber Wolf Corpse", x: 101, y: 100 }] }));
+    const skills = ["[SKILL] Swordsmanship      50.0 (base  50.0) up", "[SKILL] Tactics            50.3 (base  50.3) up"];
+    const send = async (l: string) => (l === "skills" ? skills : []);
+    await new NavreyFight(b, NEUTRAL, WOLF, { send }).run(10);
+    expect(seen[0].us.skills).toEqual({ Swordsmanship: 50, Tactics: 50.3 });
+    expect(seen[0].them.creature).toMatchObject({ attacksOnSight: false, caster: false });
+    expect(["low", "medium"]).toContain(seen[0].them.creature?.danger);
+    expect(parseSkills(["[CMD-END] skills ok"])).toBeUndefined();
   });
 
   it("gives the chase up once a target it reached stays out of reach longer than the tactics allow", async () => {

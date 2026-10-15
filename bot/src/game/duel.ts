@@ -1,4 +1,5 @@
 // One bot's side of a duel: observe, ask the brain, act, repeat until someone dies.
+import { COMBAT_SKILLS } from "../brain/melee-policy.ts";
 import { EventEmitter } from "node:events";
 import { PROTECTION_SLOWDOWN_MS, SPELL_RANGE, blocked, breaksCasts, teleportTiles } from "../brain/duel-policy.ts";
 import { type Archetype, NEUTRAL, type Tactics, tacticsFor } from "../brain/tactics.ts";
@@ -282,6 +283,12 @@ export class DuelController extends EventEmitter<DuelEvents> {
         freeHand: freeHand(this.session),
         outOfReachForMs: this.#outOfReachSince === null ? 0 : now - this.#outOfReachSince,
         coverSteps,
+        skills: Object.fromEntries(
+          Object.entries(COMBAT_SKILLS).flatMap(([id, name]) => {
+            const v = w.skills.get(Number(id))?.value;
+            return v === undefined ? [] : [[name, v]];
+          }),
+        ),
         // ModernUO's buff icons: Protection 1029, Magic Reflection 1031.
         protection: w.buffs.has(1029),
         magicReflection: w.buffs.has(1031),
