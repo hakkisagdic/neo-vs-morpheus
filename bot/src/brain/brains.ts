@@ -1,8 +1,8 @@
 // Duel brains: a System One model (Laya or Jev) and a scripted baseline.
 import { spell } from "../uo/spells.ts";
 import { compositeQuestion, describeDuel, duelQuestions, resolvePlan, splitComposite, tacticalOptions } from "./duel-policy.ts";
-import { describeMelee, meleeBaseline, meleeOptions, meleeQuestion, resolveMeleePlan, splitByMode } from "./melee-policy.ts";
-import { type Backend, type Decision as SystemOneDecision, systemOne } from "./systemone.ts";
+import { MELEE_FORMAT, type MeleeDescribe, describeMelee, meleeBaseline, meleeOptions, meleeQuestion, resolveMeleePlan, splitByMode } from "./melee-policy.ts";
+import { type Backend, type Decision as SystemOneDecision, systemOne, servedFormats } from "./systemone.ts";
 import { NEUTRAL, type Tactics, shapeAnswer } from "./tactics.ts";
 import {
   DAMAGE_SPELLS,
@@ -66,9 +66,24 @@ export class ModelBrain implements DuelBrain {
     return { ...decision, latencyMs: performance.now() - started };
   }
 
+  /** The melee text the served model learned: MELEE_DESCRIBE when set, else what its checkpoint says, else melee-2. */
+  #melee?: Promise<MeleeDescribe>;
+
+  meleeDescribe(): Promise<MeleeDescribe> {
+    this.#melee ??= (async () => {
+      if (process.env.MELEE_DESCRIBE || this.backend.name !== "laya") {
+        return MELEE_FORMAT.describe;
+      }
+      const learned = (await servedFormats(this.backend))?.melee?.describe;
+      return learned === "melee-3" ? "melee-3" : "melee-2";
+    })();
+    return this.#melee;
+  }
+
   async #decideNow(s: DuelSnapshot, tactics: Tactics): Promise<Decision> {
     if (this.module === "melee") {
-      const d = await systemOne(this.backend, this.#describe(describeMelee(s)), meleeQuestion(s, tactics));
+      const describe = await this.meleeDescribe();
+      const d = await systemOne(this.backend, this.#describe(describeMelee(s, describe)), meleeQuestion(s, tactics));
       const answer = shapeAnswer(d.answers.move, tactics.aggression);
       const { mode, parts } = splitByMode(answer);
       const overrides: string[] = [];

@@ -512,7 +512,7 @@ export class NavreyFight {
         // The whole state and answer, so that the question can be asked again in any later format
         // (fights against monsters are training material the arena does not have).
         snapshot: snap,
-        format: MELEE_FORMAT,
+        format: { ...MELEE_FORMAT, describe: (await (this.#brain as { meleeDescribe?: () => Promise<string> }).meleeDescribe?.()) ?? MELEE_FORMAT.describe },
         plan: decision.plan,
         why: decision.why,
         mode: decision.mode,

@@ -104,6 +104,43 @@ export async function systemOne(
   };
 }
 
+/** The text formats a served checkpoint learned, by its server (one question asked once): `format` in its rl_agent_config.json. */
+const served = new Map<string, Promise<Record<string, { describe?: string }> | null>>();
+
+/**
+ * What the checkpoint behind a Laya server learned to read: laya-serve names the checkpoint's folder in every
+ * answer, and finetune.py writes the formats of its training set into the checkpoint's config. Null for a
+ * server elsewhere (its folder not on this machine) or a checkpoint from before formats were written down.
+ */
+export function servedFormats(backend: Backend): Promise<Record<string, { describe?: string }> | null> {
+  const key = backend.url;
+  let known = served.get(key);
+  if (!known) {
+    known = (async () => {
+      try {
+        const response = await fetch(`${backend.url.replace(/\/$/, "")}${backend.path ?? "/v1/systemone"}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...(backend.model ? { model: backend.model } : {}), state: "format check",
+            questions: { q: { type: "noul", instructions: "Is this a format check?" } } }),
+          signal: AbortSignal.timeout(backend.timeoutMs ?? 5_000),
+        });
+        const repo = ((await response.json()) as { routing?: { repo?: string } }).routing?.repo;
+        if (!repo) {
+          return null;
+        }
+        const { readFile } = await import("node:fs/promises");
+        const config = JSON.parse(await readFile(`${repo}/rl_agent_config.json`, "utf8")) as { training?: { format?: Record<string, { describe?: string }> } };
+        return config.training?.format ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    served.set(key, known);
+  }
+  return known;
+}
+
 const oneHot = (options: string[], choice: string) =>
   Object.fromEntries(options.map((o) => [o, o === choice ? 1 : 0]));
 

@@ -44,6 +44,24 @@ def sha256(path):
     return h.hexdigest()
 
 
+def formats_of(path):
+    """{module: {"describe": ..., "question": ...}}: the newest text and question formats among a set's rows, which
+    the model learns to read. The bot asks a served checkpoint in these (bot/src/brain/brains.ts, meleeDescribe)."""
+    out = {}
+    with open(path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            fmt, cur = row.get("format") or {}, out.setdefault(row.get("module", "mage"), {})
+            for k in ("describe", "question"):
+                # Versions as "melee-3": compared by their number.
+                num = lambda v: int(v.rsplit("-", 1)[-1]) if v and v.rsplit("-", 1)[-1].isdigit() else -1
+                if fmt.get(k) and num(fmt[k]) > num(cur.get(k)):
+                    cur[k] = fmt[k]
+    return out
+
+
 def pick_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -381,6 +399,7 @@ def main():
                      "held_out_agreement": [round(agree0, 3), round(agree, 3)],
                      # Lineage: the exact set (lab/track.py finds it in the archive by this sha256) and the settings.
                      "data": {"file": os.path.basename(args.data), "sha256": sha256(args.data), "items": len(items), "skipped": skipped},
+                     "format": formats_of(args.data),
                      "settings": {"batch": args.batch, "accum": args.accum, "lr_encoder": args.lr_encoder, "lr_head": args.lr_head,
                                   "train_top_layers": args.train_top_layers, "holdout": args.holdout, "seed": args.seed,
                                   "precision": args.precision}},
