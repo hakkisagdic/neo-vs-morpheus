@@ -414,11 +414,16 @@ class Player:
             seconds = max(1, min(30, int(args.get("seconds") or 5)))
             # The wait ends early when the character is hurt or dies: a model waiting out a walk into a
             # graveyard was killed before it could answer (2026-10-13).
-            start, hurt = read_json(STATE).get("hits"), False
+            # A ghost waits on (until the reviver or a healer); anyone else wakes at the first damage or death.
+            first = read_json(STATE)
+            start, ghost, hurt, raised = first.get("hits"), bool(first.get("charGhost")), False, False
             for _ in range(seconds * 2):
                 time.sleep(0.5)
                 s = read_json(STATE)
-                if s.get("charGhost") or (start is not None and s.get("hits", start) < start):
+                if ghost and s.get("charGhost") is False:
+                    raised = True
+                    break
+                if not ghost and (s.get("charGhost") or (start is not None and s.get("hits", start) < start)):
                     hurt = True
                     break
             lines, self.log_offset = log_since(self.log_offset)
@@ -432,7 +437,7 @@ class Player:
                     said.append(l)
             lines = said
             text = "\n".join(lines[-40:]) or f"{seconds} s passed quietly."
-            return text + ("\n(The wait ended early: you are being hurt.)" if hurt else "")
+            return text + ("\n(The wait ended early: you are being hurt.)" if hurt else "\n(You are alive again.)" if raised else "")
         if name == "fight" and self.laya:
             return fight(str(args.get("target", "")), str(args.get("tactics") or "balanced"), int(args.get("max_seconds") or 120),
                          self.laya, os.path.join(self.folder, "fights.jsonl"))

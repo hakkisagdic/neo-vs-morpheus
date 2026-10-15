@@ -159,6 +159,10 @@ export class NavreyFight {
   #missingSince = 0;
   #outOfReachSince = 0;
   #retreating = false;
+  /** The way out being tried (0 straight away, 1 and 2 at right angles) and where we stood when it began. */
+  #flee = { at: 0, x: 0, y: 0, dir: 0 };
+  /** Until when a cornered fighter fights back instead of trying to run (no way out a moment ago). */
+  #corneredUntil = 0;
   /** When we last saw our target take damage: a target that vanishes just after a hit has died. */
   #hitAt = 0;
   /** Whether the target has been within our reach yet: the walk up to it is not a chase. */
@@ -332,13 +336,36 @@ export class NavreyFight {
         return;
       }
       case "retreat": {
-        // Ten tiles further along the line from them to us.
-        const dx = s.charPosX - them.x;
-        const dy = s.charPosY - them.y;
+        // Ten tiles further along the line from them to us; when that way is blocked (water, a cliff, a
+        // wall) for over a second, at right angles to it; with no way out, fight back for 5 s rather than
+        // stand still and take the hits (a cautious fighter died that way against a mongbat, 2026-10-15).
+        if (now < this.#corneredUntil) {
+          return this.#act({ kind: "attack" }, s, them, snap, now);
+        }
+        const here = { x: s.charPosX, y: s.charPosY };
+        if (!this.#retreating || chebyshev(here, this.#flee) >= 1) {
+          this.#flee = { at: now, x: here.x, y: here.y, dir: this.#retreating ? this.#flee.dir : 0 };
+        } else if (now - this.#flee.at > 1_200) {
+          this.#flee = { at: now, x: here.x, y: here.y, dir: this.#flee.dir + 1 };
+          if (this.#flee.dir > 2) {
+            this.#corneredUntil = now + 5_000;
+            this.#flee.dir = 0;
+            this.#note(`${s.charName} was cornered by ${them.name} and fought back`);
+            this.#retreating = false;
+            await this.#send("stop"); // the walk would keep trying the blocked way
+            return this.#act({ kind: "attack" }, s, them, snap, now);
+          }
+        }
+        const [ax, ay] = s.charPosX === them.x && s.charPosY === them.y ? [1, 0] : [s.charPosX - them.x, s.charPosY - them.y];
+        const turn = [0, Math.PI / 2, -Math.PI / 2][this.#flee.dir];
+        const dx = ax * Math.cos(turn) - ay * Math.sin(turn);
+        const dy = ax * Math.sin(turn) + ay * Math.cos(turn);
         const len = Math.max(1, Math.hypot(dx, dy));
+        if (!this.#retreating) {
+          this.#note(`${s.charName} ran from ${them.name}`);
+        }
         this.#retreating = true;
         await this.#walkTo(Math.round(s.charPosX + (10 * dx) / len), Math.round(s.charPosY + (10 * dy) / len), now);
-        this.#note(`${s.charName} ran from ${them.name}`);
         return;
       }
       case "cast":

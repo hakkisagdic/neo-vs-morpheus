@@ -124,6 +124,27 @@ describe("a fight through Navrey's files", () => {
     expect(result.outcome).toBe("won"); // 20 tiles away, more than the chase's 12, and not given up
   });
 
+  it("fights back when every way out is blocked, instead of standing still", async () => {
+    write("state.json", state({ lastAttack: { kind: "none" } })); // not yet fighting this one
+    write("world.json", { mobiles: [mobile("a mongbat", "Mongbat", 101)], containers: [] });
+    const retreat: DuelBrain = {
+      name: "test",
+      async decide(): Promise<Decision> {
+        return { ...(await brain().b.decide({} as DuelSnapshot)), plan: { kind: "retreat" } };
+      },
+    };
+    const sent: string[] = [];
+    // The position in the state file never changes: no walk gets anywhere.
+    const result = await new NavreyFight(retreat, NEUTRAL, WOLF, { send: async (l) => (sent.push(l), []) }).run(5);
+
+    const gotos = sent.filter((l) => l.startsWith("goto "));
+    expect(new Set(gotos).size).toBe(3); // straight away, then both ways at right angles
+    const after = sent.slice(sent.lastIndexOf(gotos.at(-1) ?? ""));
+    expect(after.indexOf("stop")).toBeLessThan(after.indexOf("attack 0x0000925D")); // then it stops running and fights back
+    expect(after).toContain("attack 0x0000925D");
+    expect(result.outcome).toBe("timeout");
+  }, 10_000);
+
   it("tells a caster by its kind, and ends when we die", async () => {
     write("state.json", state());
     write("world.json", { mobiles: [mobile("a lich", "Lich", 104)], containers: [] });
