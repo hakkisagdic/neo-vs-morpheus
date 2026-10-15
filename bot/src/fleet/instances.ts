@@ -137,12 +137,12 @@ export function importedName(file: string, instance: string): string {
 }
 
 /** Copies complete runs (they parse) from dir into runs/, skipping the ones already there. */
-export async function importRuns(dir: string, instance: string, runs = RUNS): Promise<number> {
+export async function importRuns(dir: string, instance: string, runs = RUNS, prefix = ""): Promise<number> {
   await mkdir(runs, { recursive: true });
   let added = 0;
   // Shipped runs sit in a folder a day (lab/vm/ship.py), the older ones at the top.
   for (const file of await readdir(dir, { recursive: true }).catch(() => [] as string[])) {
-    if (!/\.json(\.gz)?$/.test(file)) {
+    if (!/\.json(\.gz)?$/.test(file) || !basename(file).startsWith(prefix)) {
       continue;
     }
     const target = join(runs, importedName(basename(file), instance));
@@ -650,13 +650,15 @@ print("FLEET>>>" + out.stdout.split()[-1])`,
     );
     const cache = join(CACHE, "hf", this.#c.runsRepo.replace("/", "--"));
     // One broken file on the Hub (a run uploaded empty, 2026-10-15) failed every download after it: take the rest.
-    const failed = await run(hfCli(), ["download", this.#c.runsRepo, "--repo-type", "dataset", "--include", `${this.name}/*`, "--local-dir", cache, "--quiet"], 900_000)
+    const failed = await run(hfCli(), ["download", this.#c.runsRepo, "--repo-type", "dataset", "--include", `${this.name}/*`,
+      "--include", `by-day/*/${this.name}/*`, "--local-dir", cache, "--quiet"], 900_000)
       .then(() => "")
       .catch((e: Error) => ` (the download stopped early: ${e.message.split("\n").filter(Boolean).pop()?.slice(0, 200)})`);
     if (!/^\d+$/.test(shipped)) {
       throw new Error(shipped);
     }
-    return `${shipped} runs shipped, ${await importRuns(join(cache, this.name), this.name)} new here${failed}`;
+    const added = (await importRuns(join(cache, this.name), this.name)) + (await importRuns(join(cache, "by-day"), this.name, RUNS, `${this.name}--`));
+    return `${shipped} runs shipped, ${added} new here${failed}`;
   }
 
   /**
