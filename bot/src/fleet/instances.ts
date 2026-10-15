@@ -265,7 +265,14 @@ class Local implements Instance {
   }
 
   async setup(): Promise<string> {
-    await run("docker", ["compose", "-f", join(ROOT, "docker-compose.yml"), "build", "uo-server"], 1_800_000);
+    // The published image (scripts/server-image.sh, built on GitHub) saves the half-hour build; build only without it.
+    const pulled = await run("bash", [join(ROOT, "scripts", "server-image.sh"), "pull"], 900_000).then(
+      () => true,
+      () => false,
+    );
+    if (!pulled) {
+      await run("docker", ["compose", "-f", join(ROOT, "docker-compose.yml"), "build", "uo-server"], 1_800_000);
+    }
     return "arena image neo-vs-morpheus/modernuo built; lanes start with lab/mac/lane.sh (fleet start mac ...)";
   }
 
