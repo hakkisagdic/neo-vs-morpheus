@@ -123,7 +123,13 @@ export const runStamp = (file: string): string => (file.includes("--") ? file.sl
  * Scored decisions of every run since a time stamp, leaving out runs that fail the run checks;
  * `keep` drops decisions as each run is read (a day of runs holds millions of decisions).
  */
-export async function scoreRuns(runsDir: string, since = "", log: (m: string) => void = () => {}, keep: (d: Scored) => boolean = () => true): Promise<Scored[]> {
+export async function scoreRuns(
+  runsDir: string,
+  since = "",
+  log: (m: string) => void = () => {},
+  keep: (d: Scored) => boolean = () => true,
+  template?: RegExp,
+): Promise<Scored[]> {
   const files = (await readdir(runsDir)).filter((f) => f.endsWith(".json") && runStamp(f) >= since).sort();
   const out: Scored[] = [];
   for (const file of files) {
@@ -133,6 +139,9 @@ export async function scoreRuns(runsDir: string, since = "", log: (m: string) =>
     }
     if (run.versions?.bench) {
       continue; // UO Bench's: no model may learn from the states it is scored on
+    }
+    if (template && !(run.match.fighters ?? []).some((f) => template.test((f as { template?: string }).template ?? ""))) {
+      continue;
     }
     // Checked again rather than read from the file, so that runs from before the checks count too.
     const problems = checkRun(run.records, run.match.fighters).flatMap((c) => c.problems);

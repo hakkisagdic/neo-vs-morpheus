@@ -118,9 +118,11 @@ const USAGE = `usage: npm run nvm -- <command>
                       range that labeled.jsonl lacks, plus n sampled ones (states-movement.jsonl)
   distill dagger [since]    the states Laya met in recorded runs (time stamps >= since), answered by the
                             scripted bot: DAgger rows (training/data/labeled-dagger-runs.jsonl)
-  distill outcomes [since] [--model NAME]  decisions from recorded runs (time stamps >= since) that did
-                            clearly better than average, as training rows (training/data/labeled-outcome.jsonl;
-                            with --model, one checkpoint's own against its own average, labeled-outcome-NAME.jsonl)
+  distill outcomes [since] [--model NAME] [--runs DIR]... [--template RE] [--out FILE]
+                            decisions from recorded runs (time stamps >= since) that did clearly better than
+                            average, as training rows (training/data/labeled-outcome.jsonl; with --model, one
+                            checkpoint's own against its own average, labeled-outcome-NAME.jsonl); --runs: other
+                            folders (runs/navrey); --template: only matches with such a fighter's template
   distill convert           carry every mage label over to the current question
                             (training/data/labeled-mage.jsonl; split it with training/split.py)
   distill agree [file]      how often Laya picks the teacher's move on held-out labels
@@ -936,15 +938,27 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     // What happened after every recorded decision, as training rows (see distill/outcomes.ts).
     // --model NAME keeps one checkpoint's own decisions, scored against its own average: the moves
     // that went better than its usual play, for improving that checkpoint itself.
-    const modelAt = rest.indexOf("--model");
-    const only = modelAt >= 0 ? rest[modelAt + 1] : undefined;
-    if (modelAt >= 0) {
-      rest.splice(modelAt, 2);
-    }
+    // --runs DIR (several): other folders of runs, such as runs/navrey (lab/navrey_runs.py); --template RE: only
+    // matches with a fighter whose template matches (the skill tiers); --out FILE: where the rows go.
+    const take = (flag: string): string[] => {
+      const got: string[] = [];
+      for (let at = rest.indexOf(flag); at >= 0; at = rest.indexOf(flag)) {
+        got.push(rest[at + 1]);
+        rest.splice(at, 2);
+      }
+      return got;
+    };
+    const only = take("--model")[0];
+    const dirs = take("--runs");
+    const template = take("--template")[0];
+    const out = take("--out")[0];
     const since = rest[0] ?? "";
-    const scored = await scoreRuns(join(import.meta.dirname, "..", "..", "runs"), since, (m) => console.log(m), (d) => !only || d.model === only);
+    const scored: Awaited<ReturnType<typeof scoreRuns>> = [];
+    for (const dir of dirs.length ? dirs : [join(import.meta.dirname, "..", "..", "runs")]) {
+      scored.push(...(await scoreRuns(dir, since, (m) => console.log(m), (d) => !only || d.model === only, template ? new RegExp(template) : undefined)));
+    }
     const rows = outcomeLabels(scored);
-    const path = join(DATA, only ? `labeled-outcome-${only}.jsonl` : "labeled-outcome.jsonl");
+    const path = out ? join(process.cwd(), out) : join(DATA, only ? `labeled-outcome-${only}.jsonl` : "labeled-outcome.jsonl");
     await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
     const byModule = Object.entries(Object.groupBy(rows, (r) => r.module ?? "mage")).map(([m, rs]) => `${m} ${rs?.length}`);
     console.log(`${scored.length} decisions scored, ${rows.length} clearly better than average (${byModule.join(", ")}) -> ${path}`);
