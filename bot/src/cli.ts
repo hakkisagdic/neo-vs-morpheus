@@ -953,9 +953,10 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     const template = take("--template")[0];
     const out = take("--out")[0];
     const since = rest[0] ?? "";
-    const scored: Awaited<ReturnType<typeof scoreRuns>> = [];
+    let scored: Awaited<ReturnType<typeof scoreRuns>> = [];
     for (const dir of dirs.length ? dirs : [join(import.meta.dirname, "..", "..", "runs")]) {
-      scored.push(...(await scoreRuns(dir, since, (m) => console.log(m), (d) => !only || d.model === only, template ? new RegExp(template) : undefined)));
+      // concat, not push(...): a day of runs holds more decisions than a call takes arguments.
+      scored = scored.concat(await scoreRuns(dir, since, (m) => console.log(m), (d) => !only || d.model === only, template ? new RegExp(template) : undefined));
     }
     const rows = outcomeLabels(scored);
     const path = out ? join(process.cwd(), out) : join(DATA, only ? `labeled-outcome-${only}.jsonl` : "labeled-outcome.jsonl");
