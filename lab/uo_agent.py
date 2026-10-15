@@ -693,8 +693,14 @@ def take_loot(serial):
     opened = command(f"use {serial}")
     if re.search(r"too far|cannot reach|not in range|out of range", opened, re.I):
         return f"{opened}\nWalk next to it first."
-    time.sleep(0.5)
-    listing = command(f"container {serial}")
+    # The corpse's contents arrive a moment after the use: wait for them (Navrey says "not opened yet" until then).
+    for _ in range(8):
+        time.sleep(0.4)
+        listing = command(f"container {serial}")
+        if "not opened yet" not in listing:
+            break
+    else:
+        return f"could not open {serial} (is it within 2 tiles?):\n{opened.strip()[-200:]}"
     weights = loot.status_weight(command("status"))
     if not weights:
         return "could not read your weight from `status`"
