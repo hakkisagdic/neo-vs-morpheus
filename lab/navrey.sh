@@ -16,7 +16,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 NAVREY=${NAVREY_DIR:-$HOME/Projects/navrey}
 FORK=https://github.com/hakkisagdic/navrey.git
-COMMIT=6ab81bc  # the laya branch
+COMMIT=2538b41  # the laya branch: cuoapi on arm64, the record command
 export DOTNET_ROOT=${DOTNET_ROOT:-$HOME/.dotnet}
 DOTNET=$DOTNET_ROOT/dotnet
 running() { pgrep -f "^./bin/Debug/net10.0/cuo -agent" || true; }

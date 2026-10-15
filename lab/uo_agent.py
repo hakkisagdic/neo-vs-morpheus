@@ -45,12 +45,14 @@ import time
 import urllib.error
 import urllib.request
 
+import bestiary
+
 CMD, LOG = "/tmp/cuocmd", "/tmp/cuolog"
 STATE, WORLD = "/tmp/cuostate.json", "/tmp/cuoworld.json"
 STAMP = re.compile(r"^\[\d{2}:\d{2}:\d{2}\.\d{3}\] ")
 # Client-side commands that are not play: the window (the person watching keeps it) and the log level
 # (the replies are read from the log).
-REFUSED = {"hide", "show", "quiet", "q", "verbose"}
+REFUSED = {"hide", "show", "quiet", "q", "verbose", "record"}
 MAPS = ["Felucca", "Trammel", "Ilshenar", "Malas", "Tokuno", "Ter Mur"]
 COMMANDS = {"mobiles", "attack", "war", "goto", "gotoexact", "travel", "closest", "findpoi", "walk", "stop", "use", "target",
             "container", "get", "equip", "unequip", "inv", "status", "skills", "say", "shop", "buy", "sell", "selllist", "click",
@@ -60,6 +62,9 @@ HISTORY_CHARS = 60_000  # the most conversation kept beyond the instructions, ab
 SESSIONS = os.path.expanduser("~/UO/sessions")
 POI = os.path.expanduser("~/UO/poi")  # lab/poi.py's output, the folder Navrey's settings.json names
 PLACES = None
+BEASTS = None
+# The fighter the danger estimates are for: templates/warrior-novice.json's skills, a viking sword.
+FIGHTER = {"swords": 50, "tactics": 50, "anatomy": 50, "parry": 30, "damage": 16, "swing": 3.75}
 WORLD_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh")
 FIRST = "You are in the game now. Begin: look around and decide what to do."
 BOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bot")
@@ -93,7 +98,8 @@ bank), call `decide` with what you chose and why, then act on it.
 
 Your tools:
 - look: your hit points, stamina, mana, position, equipment, backpack, how your walk is going, and
-  the creatures, corpses and items around you with their serials. Use it often; it is free.
+  the creatures, corpses and items around you with their serials, each creature with how dangerous a
+  fight with it would be for you now (from the game's own numbers). Use it often; it is free.
 - command: one game command (the list is below). Answers come back as text.
 - wait: let a few seconds pass (walking, fighting, healing take time) and see what happened; it
   ends early when you are hurt.
@@ -145,7 +151,7 @@ who). A healer offers to resurrect you when you come within a few steps: a Resur
 `gumpresponse 1` is CONTINUE. No offer? Step a few tiles away and walk back. Your body keeps
 your belongings until it decays."""
 DEATH_GM = """If you die, you are brought back to life about 30
-seconds later next to the nearest healer, with little health. Your body stays where you died and
+seconds later next to the nearest town's healer, with little health. Your body stays where you died and
 keeps what you were carrying (blessed items stay with you) until it decays."""
 
 TOOLS = [
@@ -198,13 +204,14 @@ def log_since(offset):
     return [l for l in lines if l], offset + end
 
 
-def command(text, timeout=12.0):
-    """Appends one command and returns what the client printed for it, up to its [CMD-END]."""
+def command(text, timeout=12.0, harness=False):
+    """Appends one command and returns what the client printed for it, up to its [CMD-END]. The model's
+    commands (harness=False) may not use the client-side ones in REFUSED."""
     line = " ".join(text.splitlines()[0].split()) if text.strip() else ""
     line = "".join(c for c in line if c.isprintable())
     if not line:
         return "empty command"
-    if line.split()[0].lower() in REFUSED:
+    if not harness and line.split()[0].lower() in REFUSED:
         return f"'{line.split()[0]}' is not available to you"
     named = re.match(r"(?i)^(goto|travel) (.+)$", line)
     spot = named and place(named.group(2))
@@ -249,9 +256,11 @@ def place(name):
     return next(((p["x"], p["y"]) for p in points() if p.get("map") == facet and p["name"].lower() == wanted), None)
 
 
-def nearest(category, facet, x, y):
-    """The closest place of a kind on a facet, or None."""
-    near = [p for p in points() if p.get("category") == category and p.get("map") == facet]
+def nearest(category, facet, x, y, in_town=False):
+    """The closest place of a kind on a facet, or None; in_town: only those inside a town (lab/poi.py names
+    the others "near <town> ..." or nothing), where the guards are."""
+    near = [p for p in points() if p.get("category") == category and p.get("map") == facet
+            and (not in_town or not (p["name"].startswith("near ") or p["name"].lower() == category))]
     return min(near, key=lambda p: max(abs(p["x"] - x), abs(p["y"] - y))) if near else None
 
 
@@ -303,7 +312,7 @@ def look(deaths=()):
             hp = f"{round(100 * m['hits'] / m['maxHits'])}%" if m.get("maxHits") else "?"
             extra = ", dead" if m.get("isDead") else ", in war mode" if m.get("inWarMode") else ""
             out.append(f"  {m['serial']} {m['name']}{kind}: {m['distance']} tiles {direction(m['x'] - x, m['y'] - y)}, "
-                       f"{m.get('notoriety', '?').lower()}, health {hp}{extra}")
+                       f"{m.get('notoriety', '?').lower()}, health {hp}{extra}{threat(m, s)}")
     else:
         out.append("No creatures in view.")
     gumps = open_gumps()
@@ -329,6 +338,30 @@ def open_gumps():
             title = lines[i + 1].strip() if i + 1 < len(lines) else ""
             found.append(f"{title or 'untitled'} (gump:{m.group(2)})")
     return found
+
+
+def creature(m):
+    """The bestiary's entry for a mobile in view: by its name, else by its body (named orcs and the like)."""
+    global BEASTS
+    if BEASTS is None:
+        beasts = read_json(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "bestiary.json")).values()
+        BEASTS = ({c["name"].lower(): c for c in beasts}, {})
+        for c in sorted(beasts, key=lambda c: c.get("fame", 0)):
+            BEASTS[1].setdefault(int(c.get("body", -1)), c)  # a shared body: the least famous, the commonest
+    by_name, by_body = BEASTS
+    return by_name.get(m.get("name", "").lower()) or (by_body.get(m.get("graphic")) if not m.get("isHuman") else None)
+
+
+def threat(m, s):
+    """', danger high: a fight would cost about 97% of your health, attacks on sight' from the game's numbers,
+    for the warrior-novice template's skills; nothing for people and creatures the bestiary lacks."""
+    c = creature(m)
+    if not c or not s.get("maxHits"):
+        return ""
+    d = bestiary.danger(c, dict(FIGHTER, hits=max(1, s.get("hits") or s["maxHits"])))
+    temper = "fights back only" if c.get("fightMode") in ("Aggressor", "None") else "attacks on sight"
+    caster = ", casts spells" if c.get("ai") == "mage" else ""
+    return f", danger {bestiary.level(d['loss'])}: a fight would cost about {round(100 * d['loss'])}% of your health now{caster}, {temper}"
 
 
 def snapshot():
@@ -492,7 +525,8 @@ class Reviver(threading.Thread):
             if time.time() - died_at < self.delay:
                 continue
             x, y, facet = s.get("charPosX"), s.get("charPosY"), s.get("map")
-            healer = nearest("healer", facet, x, y)
+            # A town's healer, in the guards' reach: Old Haven's healer stands among its undead (2026-10-15).
+            healer = nearest("healer", facet, x, y, in_town=True) or nearest("healer", facet, x, y)
             who = f"where PlayerMobile Name = {self.name}"
             commands = [f"[Global Res {who}"]
             if healer:
@@ -637,6 +671,8 @@ def main():
     ap.add_argument("--revive", choices=["gm", "healer"], default="gm",
                     help="after a death: the GM revives the character at the nearest healer 30 s later (gm), or it walks to one as a ghost")
     ap.add_argument("--laya", metavar="URL", help="a Laya server: the model gets `fight`, and Laya makes every move of a fight")
+    ap.add_argument("--video", type=float, default=2, metavar="FPS",
+                    help="record the game's own frames at FPS into session.mp4 (Navrey's record command; 0: no video)")
     ap.add_argument("--serve", metavar="FOLDER", help=argparse.SUPPRESS)  # the MCP server Claude Code starts
     args = ap.parse_args()
     if args.serve:
@@ -663,6 +699,12 @@ def main():
     for t in threads:
         t.start()
     log_start = log_size()
+    if args.video:
+        # Video time = event time - this start: video.json lets the recording be read against the logs.
+        # Navrey reads its own frames and pipes them into ffmpeg: session.mp4, no frames on disk.
+        print(command(f"record {os.path.join(folder, 'session.mp4')} {args.video:g}", harness=True), flush=True)
+        with open(os.path.join(folder, "video.json"), "w") as f:
+            json.dump({"started": time.time(), "fps": args.video}, f)
     deadline = time.time() + args.minutes * 60
     print(f"{time.strftime('%H:%M')} {args.player} ({args.claude or args.model}) plays for {args.minutes:g} min; recording into {folder}",
           flush=True)
@@ -675,6 +717,8 @@ def main():
     except KeyboardInterrupt:
         print(f"{time.strftime('%H:%M')} stopped early", flush=True)
     stop.set()
+    if args.video:
+        print(command("record stop", harness=True, timeout=120), flush=True)
     for t in threads:
         t.join(timeout=10)
     if os.path.exists(LOG):
