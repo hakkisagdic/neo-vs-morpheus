@@ -13,9 +13,12 @@ COPY overlay/ Projects/UOContent/NeoArena/
 #   checkout that scripts/deps.sh makes, and the version number does not matter here.
 # - RuntimeIdentifiers=<this rid>: upstream lists six RIDs, which makes restore download a
 #   runtime pack for each (about 1 GB); only the image's own is needed.
+# - NuGetAudit=false: upstream treats warnings as errors, and a vulnerability advisory published
+#   after its commit (System.Security.Cryptography.Pkcs 10.0.0, NU1902/NU1903) would fail every
+#   fresh restore of this pinned commit. The server runs on our own hosts, not on the open internet.
 RUN --mount=type=cache,id=neo-vs-morpheus-nuget,target=/root/.nuget/packages \
     rid="linux-$(dpkg --print-architecture | sed 's/amd64/x64/')" \
- && props="-p:NBGV_GitEngine=Disabled -p:RuntimeIdentifiers=$rid" \
+ && props="-p:NBGV_GitEngine=Disabled -p:RuntimeIdentifiers=$rid -p:NuGetAudit=false" \
  && dotnet restore Projects/Application/Application.csproj -r "$rid" $props \
  && dotnet publish Projects/Application/Application.csproj -c Release -r "$rid" $props \
       --no-restore --self-contained=false -nologo \

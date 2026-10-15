@@ -72,7 +72,8 @@ if [ ! -f .done-modernuo ]; then
   git init -q && git remote add origin https://github.com/modernuo/ModernUO.git
   git fetch -q --depth 1 origin 225c634bf798e545972c16e3465d7896412eefcd && git checkout -q FETCH_HEAD
   cp -r "$A/nvm/server/overlay" Projects/UOContent/NeoArena
-  props="-p:NBGV_GitEngine=Disabled -p:RuntimeIdentifiers=linux-x64"
+  # NuGetAudit=false: an advisory newer than the pinned commit fails restore otherwise (see server/Dockerfile).
+  props="-p:NBGV_GitEngine=Disabled -p:RuntimeIdentifiers=linux-x64 -p:NuGetAudit=false"
   dotnet restore Projects/Application/Application.csproj -r linux-x64 $props -v q
   dotnet publish Projects/Application/Application.csproj -c Release -r linux-x64 $props --no-restore --self-contained=false -nologo -v q
   find Distribution -name '*.pdb' -delete
