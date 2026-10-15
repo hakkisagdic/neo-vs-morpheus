@@ -9,6 +9,9 @@ const envInt = (name: string, fallback: number): number => {
 export const config = {
   uoHost: env("UO_HOST", "127.0.0.1"),
   uoPort: envInt("UO_PORT", 2593),
+  /** The world server on the real map (lab/world.sh), where the in-game guide (src/rehber) always plays. */
+  worldHost: env("UO_WORLD_HOST", "127.0.0.1"),
+  worldPort: envInt("UO_WORLD_PORT", 2650),
   clientVersion: env("UO_CLIENT_VERSION", "7.0.102.3"),
   /** Password for the bot accounts (neo, morpheus, ...); they are created on first login. */
   botPassword: env("BOT_PASSWORD"),

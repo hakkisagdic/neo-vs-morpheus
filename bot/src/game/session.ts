@@ -22,6 +22,13 @@ export const NEW_MAGE = {
   hairHue: 0x044e,
 } as const;
 
+/**
+ * Where and how a session logs in, when not as the bots do (UO_HOST/UO_PORT, no client flags): the
+ * world server for the guide, and the facets a client claims (out.FACETS_ML: a public moongate then
+ * offers Trammel's gates, not Felucca's alone).
+ */
+export type LoginChoices = { host?: string; port?: number; clientFlags?: number };
+
 export class Session {
   readonly name: string;
   readonly client: UoClient;
@@ -35,21 +42,21 @@ export class Session {
   }
 
   /** Logs a bot in; accounts and characters are created on first use. */
-  static async bot(name: string, log?: (message: string) => void): Promise<Session> {
-    return Session.#open(name, name.toLowerCase(), requireSetting(config.botPassword, "BOT_PASSWORD"), log);
+  static async bot(name: string, log?: (message: string) => void, options: LoginChoices = {}): Promise<Session> {
+    return Session.#open(name, name.toLowerCase(), requireSetting(config.botPassword, "BOT_PASSWORD"), log, options);
   }
 
   /** Logs the owner (GM) account in with its character "Architect". */
-  static async gm(log?: (message: string) => void): Promise<Session> {
-    return Session.#open("Architect", config.ownerAccount, requireSetting(config.ownerPassword, "NEO_OWNER_PASS"), log);
+  static async gm(log?: (message: string) => void, options: LoginChoices = {}): Promise<Session> {
+    return Session.#open("Architect", config.ownerAccount, requireSetting(config.ownerPassword, "NEO_OWNER_PASS"), log, options);
   }
 
   /** One retry: a game login now and then dies on the relay when several bots log in at once. */
-  static async #open(name: string, account: string, password: string, log?: (message: string) => void): Promise<Session> {
+  static async #open(name: string, account: string, password: string, log: ((message: string) => void) | undefined, options: LoginChoices): Promise<Session> {
     for (let attempt = 1; ; attempt++) {
       const s = new Session(name, log);
       try {
-        await s.#connect(account, password);
+        await s.#connect(account, password, options);
         return s;
       } catch (err) {
         s.close();
@@ -62,15 +69,16 @@ export class Session {
     }
   }
 
-  async #connect(account: string, password: string): Promise<void> {
+  async #connect(account: string, password: string, options: LoginChoices): Promise<void> {
     this.login = await this.client.login({
-      host: config.uoHost,
-      port: config.uoPort,
+      host: options.host ?? config.uoHost,
+      port: options.port ?? config.uoPort,
       account,
       password,
       character: this.name,
       clientVersion: config.clientVersion,
       newCharacter: NEW_MAGE,
+      clientFlags: options.clientFlags ?? 0,
     });
     // Full status (mana, stats) and skills for ourselves, and the backpack's contents.
     this.client.send(out.statusRequest(this.world.playerSerial, 4));

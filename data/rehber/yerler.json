@@ -1,0 +1,10 @@
+{
+  "about": "Where Rehber's scenes happen (bot/src/rehber). Coordinates from the world server's own data (lab/poi.py; a shop's place is the tile its vendor spawns on) and lab/terrain.py's maps; without z, [Go puts the guide on the ground there. Everything but the arena is in New Haven (Trammel), far from the agents' arena (Felucca).",
+  "places": {
+    "meydan": {"x": 3512, "y": 2570, "map": "Trammel", "about": "open ground east of New Haven's central plaza, where new characters start"},
+    "banka": {"x": 3484, "y": 2570, "z": 20, "map": "Trammel", "about": "inside New Haven's bank, where its banker spawns"},
+    "firin": {"x": 3463, "y": 2576, "z": 35, "map": "Trammel", "about": "New Haven's bakery, two bakers (the healer shop's guildmaster sells nothing: BaseGuildmaster.IsActiveVendor is false)"},
+    "kapi-onu": {"x": 3450, "y": 2680, "map": "Trammel", "about": "three tiles south of New Haven's public moongate (3450,2677,25)"},
+    "arena-bati": {"x": 1171, "y": 3610, "z": 0, "map": "Felucca", "about": "the training ground's start, west of the arena's centre (1180,3610): for scenes that need no session"}
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "id": "oyuncu",
+  "title": "Yeni oyuncu rehberi",
+  "about": "Yeni başlayan biri için: yürümek ve koşmak, savaş modu ve saldırı, sargıyla iyileşmek, banka, satıcıdan alışveriş ve ay kapısı. Rehber oraya gider ve kendisi yapar.",
+  "scenes": [
+    {
+      "id": "hareket",
+      "title": "Yürümek ve koşmak",
+      "start": "meydan",
+      "steps": [
+        {"say": "Hoş geldin! Önce yürümeyi öğrenelim."},
+        {"say": "Farenin sağ tuşunu basılı tut: imlecin yönüne yürürsün."},
+        {"walk": [4, 0]},
+        {"say": "İmleci karakterden uzağa götürürsen koşarsın. İzle:"},
+        {"walk": [-4, 0], "run": true},
+        {"say": "Yere iki kez sağ tıklarsan karakter yolu kendi bulur."},
+        {"walk": [0, 3]},
+        {"walk": [0, -3], "run": true},
+        {"say": "Koşmak dayanıklılık harcar; çok ağır yükle koşamazsın."}
+      ]
+    },
+    {
+      "id": "savas",
+      "title": "Savaş modu ve saldırı",
+      "start": "meydan",
+      "steps": [
+        {"say": "Dövüşmek için silah gerek. Kılıcımı kuşanayım."},
+        {"gm": "[NeoTemplate Rehber warrior-novice"},
+        {"add": "Mongbat", "at": [2, 0], "set": {"FightMode": "Aggressor"}, "as": "yarasa"},
+        {"say": "Bu bir mongbat: zayıf bir yaratık, ilk dövüş için iyi."},
+        {"say": "Tab tuşu savaş moduna geçirir."},
+        {"war": true},
+        {"say": "Duruşum değişti, gördün mü? Artık saldırabilirim."},
+        {"say": "Savaş modunda yaratığa çift tıkla: saldırırsın."},
+        {"attack": "yarasa", "max": 20},
+        {"say": "Öldü! Cesedine çift tıklayıp içindekini alabilirsin."},
+        {"say": "Bitince Tab'a yine bas, barış moduna dön."},
+        {"war": false},
+        {"say": "Barış modunda kimseye yanlışlıkla saldırmazsın."}
+      ]
+    },
+    {
+      "id": "sargi",
+      "title": "Sargıyla iyileşmek",
+      "start": "meydan",
+      "steps": [
+        {"gm": "[NeoTemplate Rehber warrior-novice"},
+        {"say": "Dövüşte can azalır. Diyelim bir kurt beni fena ısırdı."},
+        {"gm": "[Self Set Hits 35"},
+        {"say": "Canım 35'e indi. Çantamdaki sargıya çift tıklarım."},
+        {"say": "İmleç çıkınca kendime tıklarım. Sargı birkaç saniye sürer."},
+        {"bandage": "self", "max": 15},
+        {"say": "Sargı bazen az iyileştirir. Healing ve Anatomy arttıkça daha çok tutar."},
+        {"say": "Sargı sararken vurulursan parmakların kayabilir: önce uzaklaş."}
+      ]
+    },
+    {
+      "id": "sehir",
+      "title": "Şehirde: banka ve alışveriş",
+      "start": "banka",
+      "steps": [
+        {"say": "Burası New Haven bankası. Bankacının yanında 'bank' de:"},
+        {"speak": "bank"},
+        {"say": "Banka kutum açıldı. Eşyanı ve altınını burada saklarsın."},
+        {"say": "'balance' dersen bankacı ne kadar altının olduğunu söyler:"},
+        {"speak": "balance"},
+        {"say": "Şimdi fırına gidip ekmek alalım."},
+        {"go": "firin"},
+        {"say": "Satıcının dibinde dur ve 'vendor buy' de: satış penceresi açılır."},
+        {"buy": "BreadLoaf", "graphic": "0x103B", "amount": 2, "from": "baker"},
+        {"say": "İki ekmek aldım. Sen altınla ödersin; GM'den para almıyorlar!"},
+        {"say": "Satmak için 'vendor sell': satıcı çantandakilere fiyat verir."}
+      ]
+    },
+    {
+      "id": "kapi",
+      "title": "Ay kapısıyla yolculuk",
+      "start": "kapi-onu",
+      "steps": [
+        {"say": "Bu mavi ışık bir ay kapısı: şehirler arasında bedava yolculuk."},
+        {"say": "Üstüne yürü; bir pencere açılır, gideceğin şehri seçersin."},
+        {"moongate": "Britain"},
+        {"say": "İşte Britain! Kıtanın en büyük şehri."},
+        {"say": "Dönmek için kapıdan çıkıp yeniden girerim, New Haven'ı seçerim."},
+        {"walk": [0, 2]},
+        {"moongate": "New Haven"},
+        {"say": "Geri geldik. Dövüşün ortasında ya da suçluyken kapı seni geçirmez."}
+      ]
+    }
+  ]
+}
