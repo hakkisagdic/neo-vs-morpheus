@@ -132,7 +132,8 @@ case "${1:-start}" in
     fi
     docker rm -f "$name" >/dev/null 2>&1 || true
     docker run -d --name "$name" -p "127.0.0.1:$port:$port" -v laya-world-save:/app/World -v "$DATA:/uodata:ro" \
-      -v "$ROOT/templates:/app/NeoTemplates:ro" -e NEO_PORT="$port" -e NEO_PUBLIC_ADDRESS=127.0.0.1 \
+      -v "$ROOT/templates:/app/NeoTemplates:ro" -v "$ROOT/data/grounds:/app/NeoGrounds:ro" \
+      -e NEO_PORT="$port" -e NEO_PUBLIC_ADDRESS=127.0.0.1 \
       -e NEO_SERVER_NAME="laya world" -e NEO_EXPANSION=7 -e NEO_REAGENTS=200 \
       -e NEO_OWNER_USER="${NEO_OWNER_USER:-architect}" -e NEO_OWNER_PASS "$IMAGE" >/dev/null
     # The port opens before the server listens (Docker's proxy): wait for the server's own word.
