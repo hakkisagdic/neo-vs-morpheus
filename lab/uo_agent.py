@@ -685,6 +685,30 @@ class Reviver(threading.Thread):
             died_at = None  # still a ghost at the next look: another try after the delay
 
 
+def take_loot(serial):
+    """A corpse looted by value (lab/loot.py): opened, listed, and its items taken in order, one lift a second
+    (the server's own delay between lifts), until the weight limit."""
+    if not re.fullmatch(r"0x[0-9A-Fa-f]{1,8}", serial):
+        return f"'{serial}' is not a serial (0x4004C7AF, from look)"
+    opened = command(f"use {serial}")
+    if re.search(r"too far|cannot reach|not in range|out of range", opened, re.I):
+        return f"{opened}\nWalk next to it first."
+    time.sleep(0.5)
+    listing = command(f"container {serial}")
+    weights = loot.status_weight(command("status"))
+    if not weights:
+        return "could not read your weight from `status`"
+    order = loot.plan(listing, *weights)
+    if not order:
+        return f"nothing worth taking in {serial}:\n{listing[-600:]}"
+    took = []
+    for item, amount, why in order:
+        reply = command(f"get {item} {amount}")
+        took.append(f"{amount} x {why.split(':')[0]}" + ("" if re.search(r"grabbed|ok\b", reply, re.I) or not reply.strip() else f" ({reply.strip()[:80]})"))
+        time.sleep(loot.LIFT_INTERVAL)
+    return "Took, most valuable first: " + "; ".join(took)
+
+
 def apply_plan(template="warrior-novice", every=False):
     """The character's skill and stat locks set as its template's plan says (lab/skillplan.py): planned skills up
     until reached, then locked; the rest down, so that what a fight trains by the way gives its points back at the

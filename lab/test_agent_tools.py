@@ -167,6 +167,21 @@ class Guard(unittest.TestCase):
             uo_agent.WORLD = old
             shutil.rmtree(d)
 
+    def test_every_tool_runs(self):
+        # Each tool's code is reached (a refactor once left `loot` calling a function it had removed).
+        d = tempfile.mkdtemp()
+        try:
+            player = uo_agent.Player(d, "http://laya")
+            self.assertIn("is not a serial", player.run_tool("loot", {"container": "bad"}))
+            self.assertIn("is not a serial", player.run_tool("fight", {"target": "bad"}))
+            self.assertEqual(player.run_tool("decide", {"decision": "x", "reason": "y"}), "noted")
+            for t in uo_agent.TOOLS + [uo_agent.FIGHT_TOOL]:
+                self.assertTrue(callable(getattr(uo_agent, {"loot": "take_loot", "fight": "fight"}.get(t["function"]["name"], "look"))))
+            player.events.close()
+            player.decisions.close()
+        finally:
+            shutil.rmtree(d)
+
     def test_an_action_chosen_before_a_reflex_fight_is_not_done(self):
         d = tempfile.mkdtemp()
         try:
