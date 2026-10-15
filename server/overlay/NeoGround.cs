@@ -264,12 +264,16 @@ public static class NeoGrounds
             return;
         }
 
-        ArenaCommands.Prep(pm);
+        // As [NeoTemplate does: the template first (it empties the pack and dresses), then Prep, which heals
+        // and restocks the pack from it. The other way round left a revived fighter without bandages.
+        pm.Resurrect();
         var template = NeoTemplates.Load(active.File.Template, out _);
         if (template != null)
         {
             NeoTemplates.Apply(pm, template);
         }
+
+        ArenaCommands.Prep(pm);
 
         var x = active.File.Center[0] + active.File.Start[0];
         var y = active.File.Center[1] + active.File.Start[1];

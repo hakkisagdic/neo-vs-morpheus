@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import skillplan  # noqa: E402
 
 NAVREY = ["[SKILL] Anatomy            50.3 (base  50.3) up", "[SKILL] Focus               3.2 (base   3.2) up",
+          "[SKILL] Hiding              0.1 (base   0.1) dn",
           "[SKILL] Swordsmanship     100.0 (base 100.0) up", "[CMD-END] skills ok"]
 
 
@@ -27,7 +28,8 @@ class Plans(unittest.TestCase):
         now = skillplan.parse_skills(NAVREY)
         self.assertEqual(now["Focus"], (3.2, 3.2, "up"))
         wanted = skillplan.skill_locks(plan, now)
-        self.assertEqual(wanted, {"Anatomy": "up", "Focus": "down", "Swordsmanship": "locked"})
+        self.assertEqual(wanted, {"Anatomy": "up", "Focus": "down", "Hiding": "down", "Swordsmanship": "locked"})
+        self.assertEqual(now["Hiding"][2], "down")  # Navrey prints a skill going down as "dn"
         self.assertEqual(skillplan.stat_locks(plan, {"str": 70, "dex": 100, "int": 30}), {"str": "up", "dex": "locked", "int": "down"})
         cmds = skillplan.commands(now, wanted, {"str": "Up", "dex": "Up", "int": "Up"}, {"str": "up", "dex": "locked", "int": "down"})
         self.assertEqual(cmds, ["skilllock Focus down", "skilllock Swordsmanship locked", "statlock dex locked", "statlock int down"])

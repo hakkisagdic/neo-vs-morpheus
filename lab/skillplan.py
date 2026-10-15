@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKILLS = os.path.join(ROOT, "data", "skills.json")
 SHARDS = os.path.join(ROOT, "data", "shards.json")
 TEMPLATES = os.path.join(ROOT, "templates")
-LINE = re.compile(r"^\[SKILL\] (.+?)\s+(\d+(?:\.\d+)?) \(base\s+(\d+(?:\.\d+)?)\)\s*(up|down|locked)?", re.I)
+LINE = re.compile(r"^\[SKILL\] (.+?)\s+(\d+(?:\.\d+)?) \(base\s+(\d+(?:\.\d+)?)\)\s*(up|down|dn|locked)?", re.I)
 
 
 def load(path):
@@ -65,7 +65,8 @@ def parse_skills(lines):
     for l in lines:
         m = LINE.match(l.strip())
         if m:
-            out[m.group(1)] = (float(m.group(2)), float(m.group(3)), (m.group(4) or "").lower() or None)
+            lock = (m.group(4) or "").lower() or None
+            out[m.group(1)] = (float(m.group(2)), float(m.group(3)), "down" if lock == "dn" else lock)
     return out
 
 
