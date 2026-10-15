@@ -140,11 +140,12 @@ export function importedName(file: string, instance: string): string {
 export async function importRuns(dir: string, instance: string, runs = RUNS): Promise<number> {
   await mkdir(runs, { recursive: true });
   let added = 0;
-  for (const file of await readdir(dir).catch(() => [] as string[])) {
+  // Shipped runs sit in a folder a day (lab/vm/ship.py), the older ones at the top.
+  for (const file of await readdir(dir, { recursive: true }).catch(() => [] as string[])) {
     if (!/\.json(\.gz)?$/.test(file)) {
       continue;
     }
-    const target = join(runs, importedName(file, instance));
+    const target = join(runs, importedName(basename(file), instance));
     if (existsSync(target)) {
       continue;
     }
@@ -648,11 +649,14 @@ print("FLEET>>>" + out.stdout.split()[-1])`,
       900_000,
     );
     const cache = join(CACHE, "hf", this.#c.runsRepo.replace("/", "--"));
-    await run(hfCli(), ["download", this.#c.runsRepo, "--repo-type", "dataset", "--include", `${this.name}/*`, "--local-dir", cache, "--quiet"], 900_000);
+    // One broken file on the Hub (a run uploaded empty, 2026-10-15) failed every download after it: take the rest.
+    const failed = await run(hfCli(), ["download", this.#c.runsRepo, "--repo-type", "dataset", "--include", `${this.name}/*`, "--local-dir", cache, "--quiet"], 900_000)
+      .then(() => "")
+      .catch((e: Error) => ` (the download stopped early: ${e.message.split("\n").filter(Boolean).pop()?.slice(0, 200)})`);
     if (!/^\d+$/.test(shipped)) {
       throw new Error(shipped);
     }
-    return `${shipped} runs shipped, ${await importRuns(join(cache, this.name), this.name)} new here`;
+    return `${shipped} runs shipped, ${await importRuns(join(cache, this.name), this.name)} new here${failed}`;
   }
 
   /**

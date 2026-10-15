@@ -7,14 +7,17 @@ evening of runs went that way. This keeps them on Hugging Face as they are made:
     HF_TOKEN=... python3 ship.py <instance> <runs-repo>            # every 10 minutes, for good
     HF_TOKEN=... python3 ship.py <instance> <runs-repo> --once     # what the fleet's pull does
 
-Each run goes to <instance>/<instance>--<stamp>.json.gz, once (shipped.txt remembers). Runs still
-being written (they do not parse yet) wait for the next round. The repo must be private.
+Each run goes to <instance>/<day>/<instance>--<stamp>.json.gz, once (shipped.txt remembers): a folder on
+the Hub holds at most 10,000 files, and colab-pro's filled one on 2026-10-15 (its older runs stay at
+<instance>/). Runs still being written (they do not parse yet) wait for the next round. The repo must be
+private.
 """
 import argparse
 import glob
 import gzip
 import json
 import os
+import re
 import shutil
 import time
 
@@ -39,7 +42,10 @@ def ship_once(api, name, repo):
         except ValueError:
             continue
         target = base if base.startswith(name + "--") else f"{name}--{base}"
-        with open(path, "rb") as src, gzip.open(os.path.join(staging, target + ".gz"), "wb") as dst:
+        day = re.search(r"\d{4}-\d{2}-\d{2}", base)
+        folder = os.path.join(staging, day.group(0) if day else time.strftime("%Y-%m-%d"))
+        os.makedirs(folder, exist_ok=True)
+        with open(path, "rb") as src, gzip.open(os.path.join(folder, target + ".gz"), "wb") as dst:
             shutil.copyfileobj(src, dst)
         new.append(base)
     if new:
@@ -47,7 +53,7 @@ def ship_once(api, name, repo):
                           allow_patterns=["*.gz"], commit_message=f"{name}: {len(new)} runs")
         with open(done_file, "a") as f:
             f.write("\n".join(new) + "\n")
-        for done in glob.glob(os.path.join(staging, "*.gz")):
+        for done in glob.glob(os.path.join(staging, "**", "*.gz"), recursive=True):
             os.remove(done)
     return len(new)
 
