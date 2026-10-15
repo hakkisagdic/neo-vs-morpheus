@@ -1,0 +1,54 @@
+{
+  "about": "What lab/loot.py takes from a corpse first, in this order, before anything ranked by what vendors pay. A rule matches an item by any of: its graphic (graphics), its type (types: class names in data/items.json), the class it comes from (families), a regular expression on its name (names: matched case-insensitively against the name without its amount, article or punctuation, so '31 Gold Coin' is read as 'gold coin'), its being an artifact (artifact), or, when the caller passes the item's tooltip, a regular expression on a tooltip line (props). The first rule that matches gives the reason. A valuable is still taken only while it fits under the weight limit; a stack that does not fit whole is taken in part.",
+  "rules": [
+    {
+      "why": "gold coins: money itself, 150 to a stone",
+      "graphics": ["0x0EED", "0x0EEE", "0x0EEF"],
+      "types": ["Gold"],
+      "names": ["^gold coins?$"]
+    },
+    {
+      "why": "gems: a tenth of a stone and 25 to 100 gold each at a jeweller",
+      "graphics": ["0x0F25", "0x0F16", "0x0F15", "0x0F26", "0x0F10", "0x0F13", "0x0F19", "0x0F21", "0x0F2D"],
+      "types": ["Amber", "Amethyst", "Citrine", "Diamond", "Emerald", "Ruby", "Sapphire", "StarSapphire", "Tourmaline"],
+      "names": ["^(star sapphire|sapphire|ruby|rubies|diamond|emerald|amethyst|tourmaline|citrine|amber)s?$"]
+    },
+    {
+      "why": "Mondain's Legacy gems: rare crafting gems no vendor buys, worth much to players",
+      "graphics": ["0x3192", "0x3193", "0x3194", "0x3195", "0x3196", "0x3197", "0x3198", "0x3199"],
+      "types": ["BlueDiamond", "BrilliantAmber", "DarkSapphire", "EcruCitrine", "FireRuby", "PerfectEmerald", "Turquoise", "WhitePearl"],
+      "names": ["^(blue diamond|brilliant amber|dark sapphire|ecru citrine|fire ruby|perfect emerald|turquoise|white pearl)s?$"]
+    },
+    {
+      "why": "treasure maps: each leads to a buried chest",
+      "graphics": ["0x14EB", "0x14EC"],
+      "types": ["TreasureMap"],
+      "names": ["treasure map"]
+    },
+    {
+      "why": "artifacts: rare named items, worth far more than any vendor pays",
+      "artifact": true
+    },
+    {
+      "why": "spell scrolls: a stone each, 3 to 45 gold at a mage, and they fill a spellbook",
+      "families": ["SpellScroll"]
+    },
+    {
+      "why": "magic weapons and armour: their old-style names say so",
+      "names": ["\\bof (ruin|might|force|power|vanquishing|defense|guarding|hardening|fortification|invulnerability)\\b",
+                "\\b(surpassingly|eminently|exceedingly|supremely) accurate\\b"]
+    },
+    {
+      "why": "magic items: their tooltips list magic properties",
+      "props": ["^(damage|hit chance|defense chance|spell damage|swing speed|hit point|stamina|mana) increase\\b",
+                "^(faster casting|faster cast recovery|lower mana cost|lower reagent cost|lower requirements|enhance potions|reflect physical damage|self repair|mage armor|spell channeling|mage weapon|use best weapon skill|night sight)\\b",
+                "^luck\\b",
+                "^(strength|dexterity|intelligence) bonus\\b",
+                "^(hit point|stamina|mana) regeneration\\b",
+                "^hit (lightning|fireball|harm|magic arrow|dispel|life leech|mana leech|stamina leech|lower attack|lower defense|cold area|fire area|poison area|energy area|physical area)\\b",
+                "\\bslayer\\b",
+                "^(ruin|might|force|power|vanquishing|defense|guarding|hardening|fortification|invulnerability)$",
+                "^(surpassingly|eminently|exceedingly|supremely) accurate$"]
+    }
+  ]
+}
