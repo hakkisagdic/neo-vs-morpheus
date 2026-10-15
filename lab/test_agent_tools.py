@@ -139,21 +139,6 @@ class Grounds(unittest.TestCase):
                 self.assertNotIn(uo_agent.TOWN[part], text)
                 self.assertIn(g["prompt"][part], text)
 
-    def test_census_reads_the_gm_answers(self):
-        g = {"center": [100, 100], "bounds": [-5, -5, 5, 5], "map": "Felucca",
-             "spawns": [{"type": "Rat", "count": 3}, {"type": "Troll", "count": 1}, {"type": "Hind", "count": 2}]}
-        answer = ("> [Global Count where Rat Map = Felucca X >= 95 X <= 105 Y >= 95 Y <= 105\n  There are 2 matching objects.\n"
-                  "> [Global Count where Troll Map = Felucca X >= 95 X <= 105 Y >= 95 Y <= 105\n  No matching objects found.\n"
-                  "> [Global Count where Hind Map = Felucca X >= 95 X <= 105 Y >= 95 Y <= 105\n  There is one matching object.\n")
-        old = uo_agent.gm
-        uo_agent.gm = lambda *commands, **_: (0, answer)
-        try:
-            self.assertEqual(uo_agent.census(g), {"Rat": 2, "Troll": 0, "Hind": 1})
-            uo_agent.gm = lambda *commands, **_: (0, answer.split("> [Global Count where Hind")[0])
-            self.assertIsNone(uo_agent.census(g))  # a type without an answer: no guess
-        finally:
-            uo_agent.gm = old
-
 
 @unittest.skipUnless(os.path.exists(os.path.join(terrain.CLIENT, "map0LegacyMUL.uop")), "EA's client files")
 class Terrain(unittest.TestCase):
@@ -162,22 +147,6 @@ class Terrain(unittest.TestCase):
         self.assertEqual(f.land(1175, 3610), (0x0003, 0))  # the client's canwalk: land 0x0003 z=0
         self.assertEqual(f.statics(1176, 3600), [(0x05A4, 20)])  # a roof above the yard's north-west room
         self.assertEqual([f.kind(x, 3610) for x in (1166, 1167, 1180, 1199)], [".", "#", ".", "#"])  # the yard's walls
-
-
-class Strangers(unittest.TestCase):
-    def test_only_creatures_inside_the_ground_that_are_not_its_own(self):
-        g = {"center": [100, 100], "bounds": [-5, -5, 5, 5]}
-        mobiles = [{"name": "a rat", "x": 101, "y": 101}, {"name": "a dog", "x": 102, "y": 99, "serial": "0x1"},
-                   {"name": "Ththhllith", "x": 120, "y": 100}, {"name": "Gemma", "x": 100, "y": 100, "isHuman": True}]
-        d = tempfile.mkdtemp()
-        old = uo_agent.WORLD
-        try:
-            uo_agent.WORLD = os.path.join(d, "world.json")
-            put(uo_agent.WORLD, json.dumps({"mobiles": mobiles}))
-            self.assertEqual([m["name"] for m in uo_agent.strangers(g, {"a rat"})], ["a dog"])
-        finally:
-            uo_agent.WORLD = old
-            shutil.rmtree(d)
 
 
 class Guard(unittest.TestCase):

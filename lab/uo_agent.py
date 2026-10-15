@@ -20,8 +20,8 @@ local model inside the game: it read and wrote files outside Navrey's folder des
 Every session starts the same way unless --as-is: the character alive, refitted as a young
 swordsman (templates/warrior-novice.json) and standing in New Haven, through the world server's GM
 (lab/world.sh gm). With --ground NAME the session is played on a training ground instead
-(data/grounds/NAME.json): the GM clears it, places its creatures, puts back the ones killed every two
-minutes, and brings the character back at the ground's start after a death.
+(data/grounds/NAME.json), which the server keeps ([NeoGround, server/overlay/NeoGround.cs): its creatures
+come back by ModernUO's own spawners, strangers are removed, and the character is back at the start after a death.
 
 Any OpenAI-compatible endpoint with tool calls serves (Ollama by default). A Claude model plays
 through Claude Code with its own tools switched off and these four served to it over MCP by this
@@ -643,41 +643,6 @@ def to_start(name, ground):
     return [f"[NeoPlace {name} west {-2 * ground['start'][0]}", f"[NeoTemplate {name} warrior-novice"]
 
 
-def spawn(entry):
-    return f"[NeoSpawn {entry['type']} {entry['at'][0]} {entry['at'][1]} {entry['range']}"
-
-
-COUNT = re.compile(r"There is one matching object|There are (\d+) matching objects|No matching objects found")
-
-
-def inside(ground):
-    """A GM condition for being inside the ground: `[Global Count where Rat <this>`."""
-    cx, cy = ground["center"]
-    x1, y1, x2, y2 = ground["bounds"]
-    return f"Map = {ground['map']} X >= {cx + x1} X <= {cx + x2} Y >= {cy + y1} Y <= {cy + y2}"
-
-
-def tune(ground):
-    """GM commands that give the ground's creatures what their spawn entries change: `perception`, how far a
-    creature sees (16 tiles otherwise), so that what attacks on sight keeps to its corner of a small ground."""
-    return [f"[Global Set RangePerception {s['perception']} where {s['type']} {inside(ground)}" for s in ground["spawns"]
-            if "perception" in s]
-
-
-def census(ground):
-    """How many of each of the ground's creatures are inside it now, {type: n}; None if the GM did not answer
-    for every type."""
-    code, out = gm(*[f"[Global Count where {s['type']} {inside(ground)}" for s in ground["spawns"]])
-    found, asked = {}, None
-    for line in out.splitlines():
-        if line.startswith("> [Global Count where "):
-            asked = line.split()[4]
-        elif asked and (m := COUNT.search(line)):
-            found[asked] = int(m.group(1)) if m.group(1) else int("one" in m.group(0))
-            asked = None
-    return found if not code and len(found) == len(ground["spawns"]) else None
-
-
 class Reviver(threading.Thread):
     """--revive gm: 30 s after a death the GM brings the character back, its body left where it fell: next to the
     nearest town's healer with a resurrection's low health, or on a training ground at its start, refitted. A ghost
@@ -700,7 +665,11 @@ class Reviver(threading.Thread):
                 continue
             x, y, facet = s.get("charPosX"), s.get("charPosY"), s.get("map")
             if self.ground:
-                code, _ = gm(*to_start(self.name, self.ground))
+                # The server brings the character back ([NeoGround]); only if it did not, the GM does.
+                for _ in range(30):
+                    if not read_json(STATE).get("charGhost") or self.stop.wait(2):
+                        break
+                code = 0 if not read_json(STATE).get("charGhost") else gm(*to_start(self.name, self.ground))[0]
                 self.player.record(kind="revive", died=[x, y, facet], at=f"start of {self.ground['name']}", ok=code == 0)
                 time.sleep(2)
                 self.player.record(kind="plan", sent=apply_plan(every=True))  # the refit gave back the template's skills
@@ -714,71 +683,6 @@ class Reviver(threading.Thread):
                 code, _ = gm(*commands, timeout=180)
                 self.player.record(kind="revive", died=[x, y, facet], healer=healer and healer["name"], ok=code == 0)
             died_at = None  # still a ghost at the next look: another try after the delay
-
-
-def strangers(ground, names):
-    """Creatures in view inside the ground that are none of its own: the world's spawners around the yard send
-    some in (a dog, and a named orc that killed the character in 4 s, 2026-10-15)."""
-    cx, cy = ground["center"]
-    x1, y1, x2, y2 = ground["bounds"]
-    return [m for m in read_json(WORLD).get("mobiles", []) if not m.get("isHuman") and not m.get("isPet") and not m.get("isDead")
-            and cx + x1 <= m.get("x", -1) <= cx + x2 and cy + y1 <= m.get("y", -1) <= cy + y2
-            and m.get("name", "").lower() not in names]
-
-
-class Respawner(threading.Thread):
-    """--ground: every `respawn` seconds the GM counts the ground's creatures and puts the missing ones back at
-    their places, as the world's spawners do, and every 10 s it removes strangers the character can see, so that
-    the ground stays the same through a session."""
-
-    def __init__(self, ground, player, stop):
-        super().__init__(daemon=True)
-        self.ground, self.player, self.stop = ground, player, stop
-
-    def run(self):
-        beasts = {c["type"]: c for c in read_json(os.path.join(os.path.dirname(GROUNDS), "bestiary.json")).values()}
-        names = {beasts[s["type"]]["name"].lower() for s in self.ground["spawns"] if s["type"] in beasts}
-        counted = time.time()
-        while not self.stop.wait(10):
-            found = strangers(self.ground, names)
-            if found:
-                code, _ = gm(*[f"[Global Delete where BaseCreature Serial = {m['serial']}" for m in found])
-                self.player.record(kind="stranger", removed=[m["name"] for m in found], ok=code == 0)
-            if time.time() - counted < self.ground.get("respawn", 120):
-                continue
-            counted = time.time()
-            now = census(self.ground)
-            if now is None:
-                self.player.record(kind="respawn", ok=False)
-                continue
-            missing = {s["type"]: s["count"] - now[s["type"]] for s in self.ground["spawns"] if now[s["type"]] < s["count"]}
-            if missing:
-                code, _ = gm(*[spawn(s) for s in self.ground["spawns"] for _ in range(missing.get(s["type"], 0))], *tune(self.ground))
-                self.player.record(kind="respawn", spawned=missing, ok=code == 0)
-
-
-def take_loot(serial):
-    """A corpse looted by value (lab/loot.py): opened, listed, and its items taken in order, one lift a second
-    (the server's own delay between lifts), until the weight limit."""
-    if not re.fullmatch(r"0x[0-9A-Fa-f]{1,8}", serial):
-        return f"'{serial}' is not a serial (0x4004C7AF, from look)"
-    opened = command(f"use {serial}")
-    if re.search(r"too far|cannot reach|not in range|out of range", opened, re.I):
-        return f"{opened}\nWalk next to it first."
-    time.sleep(0.5)
-    listing = command(f"container {serial}")
-    weights = loot.status_weight(command("status"))
-    if not weights:
-        return "could not read your weight from `status`"
-    order = loot.plan(listing, *weights)
-    if not order:
-        return f"nothing worth taking in {serial}:\n{listing[-600:]}"
-    took = []
-    for item, amount, why in order:
-        reply = command(f"get {item} {amount}")
-        took.append(f"{amount} x {why.split(':')[0]}" + ("" if re.search(r"grabbed|ok\b", reply, re.I) or not reply.strip() else f" ({reply.strip()[:80]})"))
-        time.sleep(loot.LIFT_INTERVAL)
-    return "Took, most valuable first: " + "; ".join(took)
 
 
 def apply_plan(template="warrior-novice", every=False):
@@ -826,11 +730,11 @@ def fresh_start(name):
 
 
 def ground_start(name, ground):
-    """A fresh training ground: cleared of creatures and bodies, the character refitted at the start and every
-    creature at its place, so that sessions on it can be compared."""
-    commands = [f"[NeoClear {ground['clear']}", *to_start(name, ground)]
-    commands += [spawn(s) for s in ground["spawns"] for _ in range(s["count"])] + tune(ground)
-    code, out = gm(*commands, wait=5)
+    """A fresh training ground, kept by the server ([NeoGround]: its spawners, strangers out, the character back at
+    the start after a death), and the character refitted at the start, so that sessions on it can be compared."""
+    code, out = gm(f"[NeoGround {ground['name']} {name}", *to_start(name, ground), wait=5)
+    if "NEO ground" not in out:
+        sys.exit(f"the world server cannot keep grounds (scripts/server-image.sh pull, lab/world.sh start): {out.strip()[-300:]}")
     time.sleep(3)
     s = read_json(STATE)
     start = (ground["center"][0] + ground["start"][0], ground["center"][1] + ground["start"][1])
@@ -1000,8 +904,6 @@ def main():
     player = None if args.claude else Player(folder, args.laya)  # Claude Code's tools run in their own server (--serve)
     if player and args.laya:
         threads.append(Guard(player, stop))
-    if ground:
-        threads.append(Respawner(ground, Player(folder), stop))
     for t in threads:
         t.start()
     log_start = log_size()
