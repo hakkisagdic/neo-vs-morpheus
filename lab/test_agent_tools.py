@@ -164,6 +164,22 @@ class Terrain(unittest.TestCase):
         self.assertEqual([f.kind(x, 3610) for x in (1166, 1167, 1180, 1199)], [".", "#", ".", "#"])  # the yard's walls
 
 
+class Strangers(unittest.TestCase):
+    def test_only_creatures_inside_the_ground_that_are_not_its_own(self):
+        g = {"center": [100, 100], "bounds": [-5, -5, 5, 5]}
+        mobiles = [{"name": "a rat", "x": 101, "y": 101}, {"name": "a dog", "x": 102, "y": 99, "serial": "0x1"},
+                   {"name": "Ththhllith", "x": 120, "y": 100}, {"name": "Gemma", "x": 100, "y": 100, "isHuman": True}]
+        d = tempfile.mkdtemp()
+        old = uo_agent.WORLD
+        try:
+            uo_agent.WORLD = os.path.join(d, "world.json")
+            put(uo_agent.WORLD, json.dumps({"mobiles": mobiles}))
+            self.assertEqual([m["name"] for m in uo_agent.strangers(g, {"a rat"})], ["a dog"])
+        finally:
+            uo_agent.WORLD = old
+            shutil.rmtree(d)
+
+
 class Guard(unittest.TestCase):
     def test_attackers_are_the_fighting_creatures_in_reach_quickest_kill_first(self):
         mobiles = [{"name": "a skeleton", "graphic": 50, "distance": 1, "inWarMode": True, "hits": 100, "maxHits": 100},

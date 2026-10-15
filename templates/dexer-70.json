@@ -1,0 +1,37 @@
+{
+  "id": "dexer-70",
+  "title": "Swordsman with healing (katana, a hand free for potions) at 70 skill (for training across skill levels): Swords, Tactics, Anatomy, Healing, MagicResist, Parry",
+  "stats": {
+    "str": 100,
+    "dex": 100,
+    "int": 25
+  },
+  "skills": {
+    "Swords": 70,
+    "Tactics": 70,
+    "Anatomy": 70,
+    "Healing": 70,
+    "MagicResist": 70,
+    "Parry": 70
+  },
+  "wear": [
+    "Katana",
+    "LeatherChest",
+    "LeatherLegs",
+    "LeatherArms",
+    "LeatherGloves",
+    "LeatherGorget",
+    "LeatherCap"
+  ],
+  "pack": {
+    "Bandage": 100,
+    "GreaterHealPotion": 10,
+    "GreaterCurePotion": 10,
+    "TotalRefreshPotion": 10,
+    "GreaterExplosionPotion": 10
+  },
+  "spellbook": false,
+  "modules": [
+    "melee"
+  ]
+}

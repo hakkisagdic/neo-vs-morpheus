@@ -1,0 +1,34 @@
+{
+  "id": "archer-70",
+  "title": "Archer with healing (a bow takes both hands at 70 skill (for training across skill levels): Archery, Tactics, Anatomy, Healing, MagicResist, Focus",
+  "stats": {
+    "str": 90,
+    "dex": 100,
+    "int": 35
+  },
+  "skills": {
+    "Archery": 70,
+    "Tactics": 70,
+    "Anatomy": 70,
+    "Healing": 70,
+    "MagicResist": 70,
+    "Focus": 70
+  },
+  "wear": [
+    "Bow",
+    "LeatherChest",
+    "LeatherLegs",
+    "LeatherArms",
+    "LeatherGloves",
+    "LeatherGorget",
+    "LeatherCap"
+  ],
+  "pack": {
+    "Arrow": 300,
+    "Bandage": 100
+  },
+  "spellbook": false,
+  "modules": [
+    "melee"
+  ]
+}

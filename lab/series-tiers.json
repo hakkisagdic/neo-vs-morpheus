@@ -1,0 +1,122 @@
+[
+ {
+  "label": "tiers dexer-50 4 tiles, laya first",
+  "a": "Neo:laya:dexer-50",
+  "b": "Morpheus:rules@40:dexer-50",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers dexer-50 8 tiles, laya second",
+  "a": "Neo:rules@40:dexer-50",
+  "b": "Morpheus:laya:dexer-50",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers dexer-70 4 tiles, laya first",
+  "a": "Neo:laya:dexer-70",
+  "b": "Morpheus:rules@40:dexer-70",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers dexer-70 8 tiles, laya second",
+  "a": "Neo:rules@40:dexer-70",
+  "b": "Morpheus:laya:dexer-70",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers archer-50 4 tiles, laya first",
+  "a": "Neo:laya:archer-50",
+  "b": "Morpheus:rules@40:archer-50",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers archer-50 8 tiles, laya second",
+  "a": "Neo:rules@40:archer-50",
+  "b": "Morpheus:laya:archer-50",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers archer-70 4 tiles, laya first",
+  "a": "Neo:laya:archer-70",
+  "b": "Morpheus:rules@40:archer-70",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers archer-70 8 tiles, laya second",
+  "a": "Neo:rules@40:archer-70",
+  "b": "Morpheus:laya:archer-70",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers warrior-novice 4 tiles, laya first",
+  "a": "Neo:laya:warrior-novice",
+  "b": "Morpheus:rules@40:warrior-novice",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers warrior-novice 8 tiles, laya second",
+  "a": "Neo:rules@40:warrior-novice",
+  "b": "Morpheus:laya:warrior-novice",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers dexer-shield 4 tiles, laya first",
+  "a": "Neo:laya:dexer-shield",
+  "b": "Morpheus:rules@40:dexer-shield",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers dexer-shield 8 tiles, laya second",
+  "a": "Neo:rules@40:dexer-shield",
+  "b": "Morpheus:laya:dexer-shield",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers dexer-fencer 4 tiles, laya first",
+  "a": "Neo:laya:dexer-fencer",
+  "b": "Morpheus:rules@40:dexer-fencer",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers dexer-fencer 8 tiles, laya second",
+  "a": "Neo:rules@40:dexer-fencer",
+  "b": "Morpheus:laya:dexer-fencer",
+  "rounds": 10,
+  "distance": 8
+ },
+ {
+  "label": "tiers outclassed: laya dexer-50 against dexer",
+  "a": "Neo:laya:dexer-50",
+  "b": "Morpheus:rules@40:dexer",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers outclassing: laya dexer against dexer-50",
+  "a": "Neo:laya:dexer",
+  "b": "Morpheus:rules@40:dexer-50",
+  "rounds": 10,
+  "distance": 4
+ },
+ {
+  "label": "tiers novice against dexer-70, laya second",
+  "a": "Neo:rules@40:dexer-70",
+  "b": "Morpheus:laya:warrior-novice",
+  "rounds": 10,
+  "distance": 8,
+  "arena": "pillars"
+ }
+]

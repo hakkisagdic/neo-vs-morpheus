@@ -1,0 +1,38 @@
+{
+  "id": "dexer-shield",
+  "title": "Swordsman with a viking sword and a shield (no hand free for potions), full skill: the novice's kit at 100",
+  "stats": {
+    "str": 100,
+    "dex": 100,
+    "int": 25
+  },
+  "skills": {
+    "Swords": 100,
+    "Tactics": 100,
+    "Anatomy": 100,
+    "Healing": 100,
+    "MagicResist": 100,
+    "Parry": 100
+  },
+  "wear": [
+    "VikingSword",
+    "WoodenKiteShield",
+    "LeatherChest",
+    "LeatherLegs",
+    "LeatherArms",
+    "LeatherGloves",
+    "LeatherGorget",
+    "LeatherCap"
+  ],
+  "pack": {
+    "Bandage": 100,
+    "GreaterHealPotion": 10,
+    "GreaterCurePotion": 10,
+    "TotalRefreshPotion": 10,
+    "GreaterExplosionPotion": 10
+  },
+  "spellbook": false,
+  "modules": [
+    "melee"
+  ]
+}

@@ -701,16 +701,37 @@ class Reviver(threading.Thread):
             died_at = None  # still a ghost at the next look: another try after the delay
 
 
+def strangers(ground, names):
+    """Creatures in view inside the ground that are none of its own: the world's spawners around the yard send
+    some in (a dog, and a named orc that killed the character in 4 s, 2026-10-15)."""
+    cx, cy = ground["center"]
+    x1, y1, x2, y2 = ground["bounds"]
+    return [m for m in read_json(WORLD).get("mobiles", []) if not m.get("isHuman") and not m.get("isPet") and not m.get("isDead")
+            and cx + x1 <= m.get("x", -1) <= cx + x2 and cy + y1 <= m.get("y", -1) <= cy + y2
+            and m.get("name", "").lower() not in names]
+
+
 class Respawner(threading.Thread):
     """--ground: every `respawn` seconds the GM counts the ground's creatures and puts the missing ones back at
-    their places, as the world's spawners do, so that the ground stays the same through a session."""
+    their places, as the world's spawners do, and every 10 s it removes strangers the character can see, so that
+    the ground stays the same through a session."""
 
     def __init__(self, ground, player, stop):
         super().__init__(daemon=True)
         self.ground, self.player, self.stop = ground, player, stop
 
     def run(self):
-        while not self.stop.wait(self.ground.get("respawn", 120)):
+        beasts = {c["type"]: c for c in read_json(os.path.join(os.path.dirname(GROUNDS), "bestiary.json")).values()}
+        names = {beasts[s["type"]]["name"].lower() for s in self.ground["spawns"] if s["type"] in beasts}
+        counted = time.time()
+        while not self.stop.wait(10):
+            found = strangers(self.ground, names)
+            if found:
+                code, _ = gm(*[f"[Global Delete where BaseCreature Serial = {m['serial']}" for m in found])
+                self.player.record(kind="stranger", removed=[m["name"] for m in found], ok=code == 0)
+            if time.time() - counted < self.ground.get("respawn", 120):
+                continue
+            counted = time.time()
             now = census(self.ground)
             if now is None:
                 self.player.record(kind="respawn", ok=False)
