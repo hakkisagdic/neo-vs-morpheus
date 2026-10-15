@@ -12,6 +12,7 @@ services:
       context: ./server
       additional_contexts:
         modernuo: ./vendor/modernuo
+        sosariaai: ./vendor/sosariaai
     image: neo-vs-morpheus/modernuo:225c634
     ports:
       # The server hands clients NEO_PUBLIC_ADDRESS:2593 for the game connection, so the host

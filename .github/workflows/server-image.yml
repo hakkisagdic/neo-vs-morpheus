@@ -1,10 +1,11 @@
 name: server image
 
-# The world and arena server (ModernUO at deps.lock's commit with the NeoArena overlay, as
-# server/Dockerfile builds it) as a container image on GHCR, so that a machine with Docker pulls it
-# instead of building it for half an hour: amd64 for the Linux hosts, arm64 for Apple Silicon. The tag
-# names ModernUO's commit and the overlay's content: <modernuo>-<overlay>, plus latest
-# (scripts/server-image.sh pull computes the same tag). EA's client files are never in it.
+# The world and arena server (ModernUO at deps.lock's commit with the NeoArena overlay and the opt-in
+# SosariaAI plugin, as server/Dockerfile builds it) as a container image on GHCR, so that a machine
+# with Docker pulls it instead of building it for half an hour: amd64 for the Linux hosts, arm64 for
+# Apple Silicon. The tag names ModernUO's commit and the overlay's content (with the plugin's pin):
+# <modernuo>-<overlay>, plus latest (scripts/server-image.sh pull computes the same tag). EA's client
+# files are never in it.
 on:
   push:
     branches: [main]
@@ -43,13 +44,15 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: server
-          build-contexts: modernuo=vendor/modernuo
+          build-contexts: |
+            modernuo=vendor/modernuo
+            sosariaai=vendor/sosariaai
           platforms: linux/${{ matrix.arch }}
           push: true
           tags: ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}-${{ matrix.arch }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.description=ModernUO with the NeoArena overlay, for the Laya UO bot's arena and world servers
+            org.opencontainers.image.description=ModernUO with the NeoArena overlay and the opt-in SosariaAI plugin, for the Laya UO bot's arena and world servers
             org.opencontainers.image.licenses=GPL-3.0
           cache-from: type=gha,scope=server-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}

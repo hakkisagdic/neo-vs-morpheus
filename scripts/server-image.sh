@@ -7,7 +7,8 @@
 #                                  laya-modernuo:225c634), instead of building it for half an hour
 #
 # The overlay part hashes what goes into the image from this repo (server/Dockerfile,
-# server/entrypoint.sh, server/overlay), so a changed overlay gets a new tag.
+# server/entrypoint.sh, server/overlay) and the SosariaAI plugin's pin in deps.lock, so a changed
+# overlay or plugin gets a new tag.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE=ghcr.io/hakkisagdic/laya-modernuo
@@ -16,7 +17,10 @@ LOCAL=${2:-neo-vs-morpheus/modernuo:225c634}
 tag() {
   local modernuo overlay
   modernuo=$(awk '$1 == "modernuo" {print substr($2, 1, 7)}' "$ROOT/deps.lock")
-  overlay=$(git -C "$ROOT" ls-files -s server/Dockerfile server/entrypoint.sh server/overlay | git hash-object --stdin | cut -c1-8)
+  overlay=$({
+    git -C "$ROOT" ls-files -s server/Dockerfile server/entrypoint.sh server/overlay
+    awk '$1 == "sosariaai"' "$ROOT/deps.lock"
+  } | git hash-object --stdin | cut -c1-8)
   echo "$modernuo-$overlay"
 }
 

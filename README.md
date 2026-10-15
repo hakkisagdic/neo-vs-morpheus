@@ -234,6 +234,17 @@ for playing under Sphere's rules: `server/sphere/sphere.sh start`, then
 `server/sphere/sphere.sh bot login Neo`. The bots log in; the arena commands are not ported yet.
 See [server/sphere/README.md](server/sphere/README.md).
 
+## A world with SosariaAI's people
+
+The server image also carries [SosariaAI](https://github.com/hakkisagdic/SosariaAI) (our fork,
+pinned in `deps.lock`), a ModernUO plugin whose bots are server-side characters that work, trade,
+hunt and fight like players. It loads only when a container starts with `NEO_SOSARIA=1`, and only
+on a world volume of its own (its characters stay in the save; see `server/entrypoint.sh`).
+`lab/world.sh sosaria start` runs that world on the real map on 127.0.0.1:2651 with ten people on
+Trammel and none on Felucca, a Laya server on this Mac's GPU (127.0.0.1:8651) deciding their fight
+stances and no chat model; a new volume gets the plugin's First Time Setup on its own.
+`lab/world.sh sosaria activity` shows what they do, `lab/world.sh sosaria stop` ends it.
+
 ## Dependencies and backups
 
 Upstream sources are pinned by commit in `deps.lock`. `scripts/deps.sh backup` writes full-history
@@ -242,7 +253,7 @@ git bundles to `backups/`; `scripts/deps.sh sync` restores from them if an upstr
 ## Licenses
 
 The bot and scripts are MIT (see `LICENSE`). `server/overlay` is compiled into ModernUO and is
-therefore GPL-3.0-or-later like ModernUO. Laya is Apache-2.0, and so are SphereServer-X and
+therefore GPL-3.0-or-later like ModernUO; SosariaAI, which the image builds unmodified, is GPL-3.0. Laya is Apache-2.0, and so are SphereServer-X and
 Scripts-X, which `server/sphere` builds and runs unmodified. Ultima Online is a trademark of
 Electronic Arts; this project is not affiliated with EA, TypeSafe AI or Convai Innovations.
 Use bots only on servers you run or that allow them.
