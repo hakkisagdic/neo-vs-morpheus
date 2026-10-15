@@ -86,7 +86,8 @@ describe("a fight through Navrey's files", () => {
     write("world.json", { mobiles: [mobile("a timber wolf", "Timber Wolf", 101)], containers: [] });
     const { b, seen } = brain(() => write("world.json", { mobiles: [], containers: [{ name: "A Timber Wolf Corpse", x: 101, y: 100 }] }));
     const sent: string[] = [];
-    const result = await new NavreyFight(b, NEUTRAL, WOLF, { send: async (l) => (sent.push(l), []) }).run(10);
+    const rows: { snapshot?: DuelSnapshot; format?: unknown }[] = [];
+    const result = await new NavreyFight(b, NEUTRAL, WOLF, { send: async (l) => (sent.push(l), []), record: (r) => rows.push(r) }).run(10);
 
     expect(result.outcome).toBe("won");
     expect(result.decisions).toBe(1);
@@ -96,6 +97,8 @@ describe("a fight through Navrey's files", () => {
     expect(s.supplies).toMatchObject({ bandages: 60, healPotions: 3 });
     expect(s.them).toMatchObject({ healthPct: 60, distance: 1, inRange: true, weapon: "natural weapon" });
     expect(sent[0]).toBe("hp 0x0000925D"); // its health asked for first
+    expect(rows[0].snapshot?.them.name).toBe("a timber wolf"); // the whole state kept for training
+    expect(rows[0].format).toMatchObject({ describe: "melee-2" });
     expect(describeResult(result)).toMatch(/^won: a timber wolf is dead after \d+ s\. Your hits: 70\/85\./);
   });
 

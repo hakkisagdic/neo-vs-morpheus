@@ -60,6 +60,7 @@ HISTORY_CHARS = 60_000  # the most conversation kept beyond the instructions, ab
 SESSIONS = os.path.expanduser("~/UO/sessions")
 POI = os.path.expanduser("~/UO/poi")  # lab/poi.py's output, the folder Navrey's settings.json names
 PLACES = None
+WORLD_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh")
 FIRST = "You are in the game now. Begin: look around and decide what to do."
 BOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bot")
 FIGHT = """
@@ -137,11 +138,15 @@ Good to know: New Haven is on an island (Haven Island), and walking cannot cross
 towns and the dungeons are reached through a moongate (`goto New Haven Moongate`; from 1 tile away
 `use` the gate and read `gumps`: each destination's name follows its [radio N] line, and
 `gumpresponse 1 N` travels there; Felucca's destinations are the 100s). Healing with a bandage takes several seconds and is interrupted if you are hit hard;
-the potion heals at once but has a delay between drinks. A dead character becomes a ghost: walk to
+the potion heals at once but has a delay between drinks. {death}"""
+DEATH_HEALER = """A dead character becomes a ghost: walk to
 a healer's shop (`goto closest healer`) and up to the healer (`mobiles`, `click <serial>` tells who is
 who). A healer offers to resurrect you when you come within a few steps: a Resurrection gump, where
 `gumpresponse 1` is CONTINUE. No offer? Step a few tiles away and walk back. Your body keeps
 your belongings until it decays."""
+DEATH_GM = """If you die, you are brought back to life about 30
+seconds later next to the nearest healer, with little health. Your body stays where you died and
+keeps what you were carrying (blessed items stay with you) until it decays."""
 
 TOOLS = [
     {"type": "function", "function": {
@@ -230,16 +235,24 @@ def command(text, timeout=12.0):
     return "\n".join(seen + [f"(no answer after {timeout:g} s; the client may still be busy)"])
 
 
-def place(name):
-    """The (x, y) of the place with exactly this name on the character's facet, from Navrey's POI files."""
+def points():
+    """Every place in Navrey's POI files (lab/poi.py's), read once."""
     global PLACES
     if PLACES is None:
-        PLACES = {}
-        for path in glob.glob(os.path.join(POI, "*.json")):
-            for cell in read_json(path).get("cells", {}).values():
-                for p in cell:
-                    PLACES.setdefault((p["name"].lower(), p.get("map")), (p["x"], p["y"]))
-    return PLACES.get((name.strip().lower(), read_json(STATE).get("map")))
+        PLACES = [p for path in glob.glob(os.path.join(POI, "*.json")) for cell in read_json(path).get("cells", {}).values() for p in cell]
+    return PLACES
+
+
+def place(name):
+    """The (x, y) of the place with exactly this name on the character's facet."""
+    facet, wanted = read_json(STATE).get("map"), name.strip().lower()
+    return next(((p["x"], p["y"]) for p in points() if p.get("map") == facet and p["name"].lower() == wanted), None)
+
+
+def nearest(category, facet, x, y):
+    """The closest place of a kind on a facet, or None."""
+    near = [p for p in points() if p.get("category") == category and p.get("map") == facet]
+    return min(near, key=lambda p: max(abs(p["x"] - x), abs(p["y"] - y))) if near else None
 
 
 def direction(dx, dy):
@@ -356,6 +369,7 @@ class Player:
         self.laya = laya
         self.log_offset = log_size()
         self.events = open(os.path.join(folder, "agent.jsonl"), "a")
+        self.lock = threading.Lock()
         self.decisions = open(os.path.join(folder, "decisions.jsonl"), "a")
         self.counts = {"command": 0, "look": 0, "wait": 0, "decide": 0, **({"fight": 0} if laya else {})}
         # Where the character died and what stood around it: a model sent back to the same spot four times
@@ -363,8 +377,9 @@ class Player:
         self.deaths, self.ghost = [], bool(read_json(STATE).get("charGhost"))
 
     def record(self, **event):
-        self.events.write(json.dumps({"t": time.time(), **event}) + "\n")
-        self.events.flush()
+        with self.lock:
+            self.events.write(json.dumps({"t": time.time(), **event}) + "\n")
+            self.events.flush()
 
     def call(self, name, args):
         """Runs a tool for the model and records it."""
@@ -450,6 +465,36 @@ def trimmed(system, turns, start):
             size -= sum(len(json.dumps(m)) for m in turns[start])
             start += 1
     return [system] + [m for turn in turns[start:] for m in turn], start
+
+
+class Reviver(threading.Thread):
+    """--revive gm: 30 s after a death the GM brings the character back next to the nearest healer, with a
+    resurrection's low health, its body left where it fell. A ghost that had to find a healer itself spent
+    25 of a session's 30 minutes at it (2026-10-13), which is not what the sessions are there to measure."""
+
+    def __init__(self, name, player, stop, delay=30):
+        super().__init__(daemon=True)
+        self.name, self.player, self.stop, self.delay = name, player, stop, delay
+
+    def run(self):
+        died_at = None
+        while not self.stop.wait(2):
+            s = read_json(STATE)
+            if not s.get("charGhost"):
+                died_at = None
+                continue
+            died_at = died_at or time.time()
+            if time.time() - died_at < self.delay:
+                continue
+            x, y, facet = s.get("charPosX"), s.get("charPosY"), s.get("map")
+            healer = nearest("healer", facet, x, y)
+            who = f"where PlayerMobile Name = {self.name}"
+            commands = [f"[Global Res {who}"]
+            if healer:
+                commands.append(f'[Global Set Location "({healer["x"]}, {healer["y"]}, {healer.get("z", 0)})" {who}')
+            done = subprocess.run(["bash", WORLD_SH, "gm", "--wait", "3", *commands], capture_output=True, text=True, timeout=180)
+            self.player.record(kind="revive", died=[x, y, facet], healer=healer and healer["name"], ok=done.returncode == 0)
+            died_at = None  # still a ghost at the next look: another try after the delay
 
 
 def fresh_start(name):
@@ -584,6 +629,8 @@ def main():
     ap.add_argument("--minutes", type=float, default=30)
     ap.add_argument("--name", default=None, help="the character's name (default: the player's, capitalised)")
     ap.add_argument("--as-is", action="store_true", help="play on from where the character is, as it is")
+    ap.add_argument("--revive", choices=["gm", "healer"], default="gm",
+                    help="after a death: the GM revives the character at the nearest healer 30 s later (gm), or it walks to one as a ghost")
     ap.add_argument("--laya", metavar="URL", help="a Laya server: the model gets `fight`, and Laya makes every move of a fight")
     ap.add_argument("--serve", metavar="FOLDER", help=argparse.SUPPRESS)  # the MCP server Claude Code starts
     args = ap.parse_args()
@@ -597,15 +644,17 @@ def main():
         fresh_start(name)
     folder = os.path.join(SESSIONS, f"{time.strftime('%Y-%m-%dT%H-%M')}-{args.player}")
     os.makedirs(folder, exist_ok=True)
-    system = SYSTEM.format(name=name, minutes=int(args.minutes)) + (FIGHT if args.laya else "")
+    system = SYSTEM.format(name=name, minutes=int(args.minutes), death=DEATH_GM if args.revive == "gm" else DEATH_HEALER) + (FIGHT if args.laya else "")
     with open(os.path.join(folder, "run.json"), "w") as f:
         json.dump({"player": args.player, "model": args.claude or args.model, "base": None if args.claude else args.base,
-                   "character": name, "fresh": not args.as_is, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
+                   "character": name, "fresh": not args.as_is, "revive": args.revive, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
                   f, indent=1)
 
     stop = threading.Event()
     threads = [threading.Thread(target=snapshots, args=(STATE, os.path.join(folder, "state.jsonl"), 2, stop), daemon=True),
                threading.Thread(target=snapshots, args=(WORLD, os.path.join(folder, "world.jsonl"), 5, stop), daemon=True)]
+    if args.revive == "gm":
+        threads.append(Reviver(name, Player(folder), stop))
     for t in threads:
         t.start()
     log_start = log_size()

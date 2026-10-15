@@ -7,6 +7,7 @@ import { appendFileSync, closeSync, openSync, readFileSync, readSync, statSync }
 import type { Tactics } from "../brain/tactics.ts";
 import { tacticsFor } from "../brain/tactics.ts";
 import type { Decision, DuelBrain, DuelSnapshot, Plan, Supplies, WeaponView } from "../brain/types.ts";
+import { MELEE_FORMAT } from "../brain/melee-policy.ts";
 import { GRAPHIC, HEAL_POTION_DELAY_MS, WEAPONS, abilityMana, selfBandageSeconds } from "../game/items.ts";
 
 const FILES = {
@@ -437,9 +438,14 @@ export class NavreyFight {
         target: { serial: hex(this.#target), name: them.name, species: them.species },
         us: { hits: snap.us.hits, hitsMax: snap.us.hitsMax, stam: snap.us.stam, poisoned: snap.us.poisoned, bandagingForMs: snap.us.bandagingForMs },
         them: { healthPct: snap.them.healthPct, distance: snap.them.distance },
+        // The whole state and answer, so that the question can be asked again in any later format
+        // (fights against monsters are training material the arena does not have).
+        snapshot: snap,
+        format: MELEE_FORMAT,
         plan: decision.plan,
         why: decision.why,
         mode: decision.mode,
+        parts: decision.parts,
         overrides: decision.overrides,
         latencyMs: decision.latencyMs,
         model: decision.model,
