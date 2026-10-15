@@ -51,6 +51,7 @@ import urllib.error
 import urllib.request
 
 import bestiary
+import skillplan
 
 CMD, LOG = "/tmp/cuocmd", "/tmp/cuolog"
 STATE, WORLD = "/tmp/cuostate.json", "/tmp/cuoworld.json"
@@ -689,6 +690,8 @@ class Reviver(threading.Thread):
             if self.ground:
                 code, _ = gm(*to_start(self.name, self.ground))
                 self.player.record(kind="revive", died=[x, y, facet], at=f"start of {self.ground['name']}", ok=code == 0)
+                time.sleep(2)
+                self.player.record(kind="plan", sent=apply_plan(every=True))  # the refit gave back the template's skills
             else:
                 # A town's healer, in the guards' reach: Old Haven's healer stands among its undead (2026-10-15).
                 healer = nearest("healer", facet, x, y, in_town=True) or nearest("healer", facet, x, y)
@@ -740,6 +743,39 @@ class Respawner(threading.Thread):
             if missing:
                 code, _ = gm(*[spawn(s) for s in self.ground["spawns"] for _ in range(missing.get(s["type"], 0))], *tune(self.ground))
                 self.player.record(kind="respawn", spawned=missing, ok=code == 0)
+
+
+def apply_plan(template="warrior-novice", every=False):
+    """The character's skill and stat locks set as its template's plan says (lab/skillplan.py): planned skills up
+    until reached, then locked; the rest down, so that what a fight trains by the way gives its points back at the
+    cap. every: the skills at 0 too (after a refit their locks are unknown). Returns the commands it sent."""
+    plan = skillplan.plan_of(template)
+    if not plan:
+        return []
+    now = skillplan.parse_skills(command("skills", harness=True).splitlines())
+    state = read_json(STATE)
+    stats = {k: state.get(k) for k in ("str", "dex", "int")}
+    locks = {k: state.get(f"{k}Lock") or "" for k in ("str", "dex", "int")}
+    sent = []
+    for line in skillplan.commands(now, skillplan.skill_locks(plan, now, every), locks, skillplan.stat_locks(plan, stats)):
+        if "unknown command" in command(line, harness=True):
+            return sent + [f"({line.split()[0]} is not in this client yet)"]
+        sent.append(line)
+    return sent
+
+
+class Planner(threading.Thread):
+    """Every 5 minutes the locks are set again as the plan says: a skill that reached its target gets locked."""
+
+    def __init__(self, player, stop, every=300):
+        super().__init__(daemon=True)
+        self.player, self.stop, self.every = player, stop, every
+
+    def run(self):
+        while not self.stop.wait(self.every):
+            sent = apply_plan()
+            if sent:
+                self.player.record(kind="plan", sent=sent)
 
 
 def fresh_start(name):
@@ -908,6 +944,7 @@ def main():
             ground_start(name, ground)
         else:
             fresh_start(name)
+    planned = apply_plan(every=True)  # skill and stat locks as the template's plan says
     folder = os.path.join(SESSIONS, f"{time.strftime('%Y-%m-%dT%H-%M')}-{args.player}")
     os.makedirs(folder, exist_ok=True)
     place = ground["prompt"] if ground else dict(TOWN, death=DEATH_GM if args.revive == "gm" else DEATH_HEALER)
@@ -915,7 +952,7 @@ def main():
                            death=place["death"]) + (FIGHT if args.laya else "")
     with open(os.path.join(folder, "run.json"), "w") as f:
         json.dump({"player": args.player, "model": args.claude or args.model, "base": None if args.claude else args.base,
-                   "character": name, "fresh": not args.as_is, "ground": args.ground, "revive": args.revive, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
+                   "character": name, "fresh": not args.as_is, "ground": args.ground, "revive": args.revive, "plan": planned, "minutes": args.minutes, "laya": args.laya, "started": time.time(), "harness": "lab/uo_agent.py", "system": system, "tools": TOOLS},
                   f, indent=1)
 
     stop = threading.Event()
@@ -923,6 +960,7 @@ def main():
                threading.Thread(target=snapshots, args=(WORLD, os.path.join(folder, "world.jsonl"), 5, stop), daemon=True)]
     if args.revive == "gm":
         threads.append(Reviver(name, Player(folder), stop, ground))
+    threads.append(Planner(Player(folder), stop))
     player = None if args.claude else Player(folder, args.laya)  # Claude Code's tools run in their own server (--serve)
     if player and args.laya:
         threads.append(Guard(player, stop))

@@ -1,10 +1,52 @@
 {
   "id": "warrior-novice",
   "title": "A young swordsman for open-world play (agents playing whole sessions, PvM): Swords, Tactics, Healing and Anatomy at 50",
-  "stats": { "str": 70, "dex": 60, "int": 20 },
-  "skills": { "Swords": 50, "Tactics": 50, "Healing": 50, "Anatomy": 50, "Parry": 30, "MagicResist": 30 },
-  "wear": ["VikingSword", "WoodenKiteShield", "LeatherChest", "LeatherLegs", "LeatherArms", "LeatherGloves", "LeatherGorget", "LeatherCap"],
-  "pack": { "Bandage": 60, "GreaterHealPotion": 3, "Gold": 1000 },
+  "stats": {
+    "str": 70,
+    "dex": 60,
+    "int": 20
+  },
+  "skills": {
+    "Swords": 50,
+    "Tactics": 50,
+    "Healing": 50,
+    "Anatomy": 50,
+    "Parry": 30,
+    "MagicResist": 30
+  },
+  "wear": [
+    "VikingSword",
+    "WoodenKiteShield",
+    "LeatherChest",
+    "LeatherLegs",
+    "LeatherArms",
+    "LeatherGloves",
+    "LeatherGorget",
+    "LeatherCap"
+  ],
+  "pack": {
+    "Bandage": 60,
+    "GreaterHealPotion": 3,
+    "Gold": 1000
+  },
   "spellbook": false,
-  "modules": ["melee"]
+  "modules": [
+    "melee"
+  ],
+  "plan": {
+    "about": "Where this fighter is headed: skill and stat targets within the shard's caps (data/shards.json). Planned skills go up, the rest down, reached ones are locked (lab/skillplan.py).",
+    "skills": {
+      "Swords": 100,
+      "Tactics": 100,
+      "Anatomy": 100,
+      "Healing": 100,
+      "Parry": 100,
+      "MagicResist": 100
+    },
+    "stats": {
+      "str": 100,
+      "dex": 100,
+      "int": 25
+    }
+  }
 }

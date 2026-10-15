@@ -1,0 +1,11 @@
+{
+  "laya": {
+    "about": "Our own ModernUO shard (laya-world and the arena lanes), Mondain's Legacy rules.",
+    "emulator": "ModernUO",
+    "era": "ML",
+    "skillsCap": 700,
+    "skillCap": 100,
+    "statCap": 225,
+    "source": "ModernUO defaults: Skills.Cap 7000 tenths (Server/Skills.cs), Mobile.StatCap 225 (Server/Mobiles/Mobile.cs)"
+  }
+}
