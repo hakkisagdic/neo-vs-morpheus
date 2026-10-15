@@ -105,6 +105,7 @@ public static class ArenaCommands
         CommandSystem.Register("NeoPlace", AccessLevel.GameMaster, OnPlace);
         CommandSystem.Register("NeoTemplate", AccessLevel.GameMaster, OnTemplate);
         CommandSystem.Register("NeoMage", AccessLevel.GameMaster, OnMage);
+        CommandSystem.Register("NeoSpawn", AccessLevel.GameMaster, OnSpawn);
         CommandSystem.Register("NeoClear", AccessLevel.GameMaster, OnClear);
         CommandSystem.Register("NeoArena", AccessLevel.GameMaster, OnArena);
     }
@@ -339,6 +340,41 @@ public static class ArenaCommands
         Prep(target);
         var note = problems.Count > 0 ? $" problems {string.Join("; ", problems)}" : "";
         Reply(e.Mobile, $"template {target.Name} {template.Id} stats {target.RawStr}/{target.RawDex}/{target.RawInt}{note}");
+    }
+
+    [Usage("NeoSpawn <type> <dx> <dy> [range=6] [slot]")]
+    [Description("Spawns any creature at an offset from the arena center, wandering within range of it: a training ground.")]
+    private static void OnSpawn(CommandEventArgs e)
+    {
+        if (e.Length < 3)
+        {
+            Reply(e.Mobile, "error usage: NeoSpawn <type> <dx> <dy> [range] [slot]");
+            return;
+        }
+
+        var typeName = e.GetString(0);
+        var type = AssemblyHandler.FindTypeByName(typeName);
+
+        if (type == null || !typeof(BaseCreature).IsAssignableFrom(type))
+        {
+            Reply(e.Mobile, $"error unknown creature type {typeName}");
+            return;
+        }
+
+        if (type.CreateInstance<BaseCreature>() is not { } creature)
+        {
+            Reply(e.Mobile, $"error cannot create {typeName}");
+            return;
+        }
+
+        var center = Center(Slot(e, 4));
+        var x = center.X + Math.Clamp(e.GetInt32(1), -40, 40);
+        var y = center.Y + Math.Clamp(e.GetInt32(2), -40, 40);
+        creature.Home = new Point3D(x, y, 0);
+        creature.RangeHome = Math.Clamp(e.Length > 3 ? e.GetInt32(3) : 6, 0, 30);
+        Place(creature, x, y);
+
+        Reply(e.Mobile, $"spawn {creature.Name} 0x{creature.Serial.Value:X8} {creature.X},{creature.Y},{creature.Z}");
     }
 
     [Usage("NeoMage [type=EvilMageLord] [distance=8] [slot]")]
