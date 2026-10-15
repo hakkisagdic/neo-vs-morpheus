@@ -1,8 +1,11 @@
 # syntax=docker/dockerfile:1
 #
-# ModernUO at the commit pinned in deps.lock, plus our NeoArena overlay (server/overlay).
-# The upstream source arrives as the named build context "modernuo"; docker-compose.yml points
-# it at vendor/modernuo, which `scripts/deps.sh sync` fills. Upstream is never modified.
+# ModernUO at the commit pinned in deps.lock, plus our NeoArena overlay (server/overlay), plus
+# SosariaAI (server-side player bots, our fork pinned in deps.lock) as an opt-in plugin that the
+# container loads only when it starts with NEO_SOSARIA=1 (entrypoint.sh).
+# The pinned sources arrive as the named build contexts "modernuo" and "sosariaai";
+# docker-compose.yml points them at vendor/modernuo and vendor/sosariaai, which
+# `scripts/deps.sh sync` fills. Upstream is never modified.
 ARG DOTNET_VERSION=10.0
 
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
@@ -23,6 +26,22 @@ RUN --mount=type=cache,id=neo-vs-morpheus-nuget,target=/root/.nuget/packages \
  && dotnet publish Projects/Application/Application.csproj -c Release -r "$rid" $props \
       --no-restore --self-contained=false -nologo \
  && find Distribution -name '*.pdb' -delete
+
+# SosariaAI, built as its README says: a project next to the ModernUO sources (ModernUODir) with
+# the same flags. Without a runtime identifier, because only such a build copies SQLite's native
+# library into runtimes/<rid>/native, where the plugin loads it from; its references (Server,
+# UOContent, Logger) are therefore compiled once more here. Only the plugin's own files leave
+# this stage, so the server in the image is the one published above.
+FROM build AS plugin
+COPY --from=sosariaai . /SosariaAI
+RUN --mount=type=cache,id=neo-vs-morpheus-nuget,target=/root/.nuget/packages \
+    rid="linux-$(dpkg --print-architecture | sed 's/amd64/x64/')" \
+ && props="-p:NBGV_GitEngine=Disabled -p:RuntimeIdentifiers=$rid -p:NuGetAudit=false -p:ModernUODir=/src" \
+ && dotnet build /SosariaAI/src/SosariaAI/SosariaAI.csproj -c Release $props -nologo \
+ && mkdir -p "/plugin/runtimes/$rid/native" \
+ && cd Distribution/Assemblies \
+ && cp SosariaAI.dll Microsoft.Data.Sqlite.dll SQLitePCLRaw.*.dll /plugin/ \
+ && cp "runtimes/$rid/native/libe_sqlite3.so" "/plugin/runtimes/$rid/native/"
 
 FROM mcr.microsoft.com/dotnet/runtime:${DOTNET_VERSION}
 
@@ -62,6 +81,10 @@ RUN mkdir -p /opt/arena-data \
  && mkdir -p World Configuration Logs \
  && chown -R uo:uo /app # the server writes next to itself (temp/, Logs/, crash reports)
 
+# The plugin next to UOContent.dll, with SQLite (which ModernUO does not ship), where its README
+# puts them: the plugin needs ModernUO's resolver to find SQLite there before its own takes over.
+# Nothing loads any of it unless the entrypoint lists SosariaAI.dll in Data/assemblies.json.
+COPY --from=plugin /plugin/ ./Assemblies/
 COPY --chmod=755 entrypoint.sh /usr/local/bin/neo-server
 
 USER uo

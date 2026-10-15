@@ -22,6 +22,7 @@ services:
       context: ../server
       additional_contexts:
         modernuo: ../vendor/modernuo
+        sosariaai: ../vendor/sosariaai
     image: laya-modernuo:225c634
     environment:
       NEO_OWNER_USER: ${NEO_OWNER_USER:-architect}
