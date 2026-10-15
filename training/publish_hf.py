@@ -62,10 +62,37 @@ def dataset_folder(args, out):
     shutil.copy(os.path.join(ROOT, args.card), os.path.join(out, "README.md"))
 
 
+def lineage(name, training):
+    """The card's "This revision" section: what this tag was trained on and from, out of rl_agent_config.json."""
+    if not training:
+        return ""
+    data = training.get("data") or {}
+    hold = training.get("held_out_agreement") or []
+    lines = [f"## This revision: {name}", ""]
+    if data:
+        lines.append(f"- Trained on `{data.get('file')}`: {data.get('items')} items, sha256 `{data.get('sha256')}`; the exact file is kept "
+                     f"in the private archive as `trained/{name}.jsonl` (hakkisagdic/neo-vs-morpheus-raw).")
+    lines.append(f"- Started from `{training.get('init') or training.get('base')}`; {training.get('epochs')} epochs, mode {training.get('mode')}.")
+    settings = training.get("settings") or {}
+    if settings:
+        lines.append("- Settings: " + ", ".join(f"{k} {v}" for k, v in settings.items()) + ".")
+    if len(hold) == 2:
+        lines.append(f"- Held-out agreement with the teacher: {hold[0]:.3f} before, {hold[1]:.3f} after.")
+    return "\n".join(lines) + "\n"
+
+
 def model_folder(args, out):
-    """The checkpoint in Laya's layout plus the model card."""
+    """The checkpoint in Laya's layout plus the model card, with what this revision was trained on."""
     shutil.copytree(os.path.join(ROOT, args.checkpoint), out, dirs_exist_ok=True)
-    shutil.copy(os.path.join(ROOT, args.card), os.path.join(out, "README.md"))
+    with open(os.path.join(ROOT, args.card)) as f:
+        card = f.read()
+    config = os.path.join(out, "rl_agent_config.json")
+    training = json.load(open(config)).get("training", {}) if os.path.exists(config) else {}
+    if card.startswith("---\n") and "datasets:" not in card.split("---", 2)[1]:
+        card = card.replace("---\n", "---\ndatasets:\n- hakkisagdic/neo-vs-morpheus-raw\n", 1)
+    section = lineage(args.tag or os.path.basename(os.path.normpath(args.checkpoint)), training)
+    with open(os.path.join(out, "README.md"), "w") as f:
+        f.write(card.rstrip() + ("\n\n" + section if section else "\n"))
 
 
 ARCHIVE_README = """---

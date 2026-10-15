@@ -110,29 +110,35 @@ def epochs_from_log(name):
 
 
 def archived(names):
-    """{name: (sha256, commit, bytes)} of the training sets archived as trained/<name>.jsonl, in one call to the Hub;
-    {} when it cannot be reached (offline, no `hf auth login`): the sync goes on without them."""
+    """{name: (path, sha256, commit, bytes)} of the training sets in the archive, in one call to the Hub: the exact
+    file a trainer uploaded when the run started (trained/<name>.jsonl) or, for runs started by hand on Colab before
+    that, the local set with exactly the run's row count, uploaded later (trained-inferred/<name>.jsonl).
+    {} when the Hub cannot be reached (offline, no `hf auth login`): the sync goes on without them."""
     try:
         from huggingface_hub import HfApi
 
-        infos = HfApi().get_paths_info(ARCHIVE, [f"trained/{n}.jsonl" for n in names], repo_type="dataset", expand=True)
+        paths = [f"{folder}/{n}.jsonl" for n in names for folder in ("trained", "trained-inferred")]
+        infos = HfApi().get_paths_info(ARCHIVE, paths, repo_type="dataset", expand=True)
     except Exception as e:
         print(f"(the archive was not read: {type(e).__name__}: {e})")
         return {}
-    return {os.path.basename(i.path)[:-len(".jsonl")]: (i.lfs.sha256, i.last_commit.oid, i.size)
-            for i in infos if getattr(i, "lfs", None) and getattr(i, "last_commit", None)}
+    found = {}
+    for i in sorted(infos, key=lambda i: i.path.startswith("trained/")):  # an exact copy wins over an inferred one
+        if getattr(i, "lfs", None) and getattr(i, "last_commit", None):
+            found[os.path.basename(i.path)[:-len(".jsonl")]] = (i.path, i.lfs.sha256, i.last_commit.oid, i.size)
+    return found
 
 
-def log_set(mlflow, run, name, sha, commit, size):
+def log_set(mlflow, run, name, path, sha, commit, size):
     """The run's training set as its MLflow input, once."""
     if any(d.dataset.digest == sha[:16] for d in run.inputs.dataset_inputs):
         return
     from mlflow.data.huggingface_dataset_source import HuggingFaceDatasetSource
     from mlflow.data.meta_dataset import MetaDataset
 
-    source = HuggingFaceDatasetSource(path=ARCHIVE, data_files=f"trained/{name}.jsonl", revision=commit)
-    mlflow.log_input(MetaDataset(source, name=f"{name} training set", digest=sha[:16]), context="training",
-                     tags={"sha256": sha, "bytes": str(size)})
+    source = HuggingFaceDatasetSource(path=ARCHIVE, data_files=path, revision=commit)
+    tags = {"sha256": sha, "bytes": str(size), **({"inferred": "by row count"} if path.startswith("trained-inferred/") else {})}
+    mlflow.log_input(MetaDataset(source, name=f"{name} training set", digest=sha[:16]), context="training", tags=tags)
 
 
 def outcome(state, name):
