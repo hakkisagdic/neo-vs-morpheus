@@ -85,6 +85,9 @@ LOOT_TOOL = {"type": "function", "function": {
 FIGHTER = {"swords": 50, "tactics": 50, "anatomy": 50, "parry": 30, "damage": 16, "swing": 3.75}
 WORLD_SH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "world.sh")
 FIRST = "You are in the game now. Begin: look around and decide what to do."
+REREAD = ("Your last reply could not be read. Call only your tools (look, command, wait, decide, loot and, if you have it, "
+          "fight); a game command such as status, inv, container or target goes inside `command`, e.g. "
+          "command {\"command\": \"status\"}.")
 BOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "bot")
 FIGHT = """
 
@@ -119,7 +122,8 @@ Your tools:
 - look: your hit points, stamina, mana, position, equipment, backpack, how your walk is going, and
   the creatures, corpses and items around you with their serials, each creature with how dangerous a
   fight with it would be for you now (from the game's own numbers). Use it often; it is free.
-- command: one game command (the list is below). Answers come back as text.
+- command: one game command (the list is below). Answers come back as text. The game commands are
+  not tools of their own: `status`, `inv` or `mobiles` go inside `command`.
 - wait: let a few seconds pass (walking, fighting, healing take time) and see what happened; it
   ends early when you are hurt.
 - decide: note a decision and its reason.
@@ -789,6 +793,11 @@ def play_openai(base, model, system, player, deadline):
             if failures >= 5:
                 print(f"{time.strftime('%H:%M')} the model failed 5 times in a row: {e}", flush=True)
                 break
+            if isinstance(e, urllib.error.HTTPError) and e.code == 500:
+                # Ollama answers 500 when the model's reply cannot be read: gpt-oss called game commands (status,
+                # inv, container) as tools of their own and repeated it on every retry of the same conversation,
+                # ending three night sessions in minutes (2026-10-16). Say so instead of asking the same again.
+                turns.append([{"role": "user", "content": REREAD}])
             time.sleep(10)
             continue
         failures = 0
