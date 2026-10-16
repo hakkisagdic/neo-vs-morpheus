@@ -8,6 +8,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type ConvertedLabel, convertLabel, needsRelabel, snapshotsFor } from "./distill/convert.ts";
 import { daggerLabels } from "./distill/dagger.ts";
+import { oracleLabels } from "./distill/oracle.ts";
 import { outcomeLabels, scoreRuns } from "./distill/outcomes.ts";
 import { type LabeledState, labelStates, readJsonl } from "./distill/label.ts";
 import { sampleTrainState, skillRows } from "./distill/skill.ts";
@@ -818,7 +819,7 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
   if (setAt >= 0) {
     rest.splice(setAt, 2);
   }
-  const sets: Record<string, string[]> = { mage: ["movement", "relabel", "refresh", "mixed", "laya"], melee: ["mixed", "laya"] };
+  const sets: Record<string, string[]> = { mage: ["movement", "relabel", "refresh", "mixed", "laya"], melee: ["mixed", "laya", "novice"] };
   if (set !== null && !sets[module].includes(set)) {
     throw new Error(`unknown set ${set} for the ${module}; it has ${sets[module].join(", ")}`);
   }
@@ -869,6 +870,29 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
       }
       fromRuns = all.slice(0, n);
       sampled = [] as TrainingState[];
+    } else if (set === "novice") {
+      // A novice's fights against creatures in the real game (runs/navrey, lab/navrey_runs.py), written as the
+      // model will read them (run with MELEE_DESCRIBE=melee-3): a seeded sample, as many from each danger level
+      // as there are, so that the deadly fights a novice should leave are not drowned by the rats.
+      const all = (await statesFromRuns(join(runs, "navrey"), "melee", (sn) => !!sn.them.creature)).map((t) => ({ ...t, id: t.id.replace("run:", "run:navrey/") }));
+      const snaps = await snapshotsFor(all.map((t) => t.id), runs);
+      const levels = new Map<string, TrainingState[]>();
+      for (const t of all) {
+        const level = (snaps.get(t.id) as DuelSnapshot | undefined)?.them.creature?.danger ?? "low";
+        levels.set(level, [...(levels.get(level) ?? []), t]);
+      }
+      let seed = 20261016;
+      const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+      fromRuns = [] as TrainingState[];
+      for (const [, group] of levels) {
+        for (let i = group.length - 1; i > 0; i--) {
+          const j = Math.floor(rand() * (i + 1));
+          [group[i], group[j]] = [group[j], group[i]];
+        }
+        fromRuns.push(...group.slice(0, Math.ceil(n / levels.size)));
+      }
+      console.log(`by danger: ${[...levels].map(([k, g]) => `${k} ${g.length}`).join(", ")}`);
+      sampled = [] as TrainingState[];
     } else if (set === "laya") {
       // The states Laya met in clean runs since --since (a run file time stamp), for Jev to label.
       const sinceAt = rest.indexOf("--since");
@@ -888,6 +912,16 @@ async function distill(sub: string | undefined, rest: string[]): Promise<void> {
     const all = [...fromRuns, ...sampled];
     await writeFile(statesPath, all.map((s) => JSON.stringify(s)).join("\n") + "\n");
     console.log(`${all.length} ${set ?? module} states (${fromRuns.length} from runs, ${sampled.length} sampled) -> ${statesPath}`);
+  } else if (sub === "oracle") {
+    // The danger oracle's answers (distill/oracle.ts) for the states of a set, where it has a view (a creature).
+    const states = await readJsonl<TrainingState>(statesPath);
+    const snaps = await snapshotsFor(states.map((t) => t.id), join(import.meta.dirname, "..", "..", "runs"));
+    const rows = oracleLabels(states, snaps);
+    const path = join(DATA, `labeled${suffix}-oracle.jsonl`);
+    await writeFile(path, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    const picks = Object.entries(Object.groupBy(rows, (r) => Object.entries(r.teacher.probabilities).sort((a, b) => b[1] - a[1])[0][0]))
+      .map(([k, rs]) => `${k} ${rs?.length}`);
+    console.log(`${rows.length} of ${states.length} states answered by the oracle (${picks.join(", ")}) -> ${path}`);
   } else if (sub === "convert") {
     // Every mage label, whatever question it was asked with, carried over to the current one. A
     // state the teacher answered again with the current question (relabeled-mage.jsonl) keeps
